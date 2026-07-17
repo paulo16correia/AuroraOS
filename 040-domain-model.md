@@ -69,9 +69,9 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `EntityState` | `state_id`, `entity_id`, `availability`, `focus`, `energy`, `pending_goals`, `version`, `updated_at` | observado e versionado; VS-004 só usa `READY|STOPPED` e não representa emoção. |
 | `Need` | `need_id`, `entity_id`, `kind`, `reason`, `intensity`, `recommended_goal_ref`, `evidence_refs[]`, `status` | `DETECTED → SATISFIED`; VS-004 não permite que Need crie Action, Task ou Plan. |
 | `GoalEvaluation` | `evaluation_id`, `entity_id`, `goal_id`, `observation_id`, `progress_delta`, `evidence_refs[]`, `outcome`, `evaluated_at` | imutável; só é criado após Observation/Reflection. |
-| `Plan` | `plan_id`, `entity_id`, `type`, `goal_ref`, `created_from_need`, `steps[]`, `basis_memory_refs[]`, `execution_mode`, `version` | `PROPOSED → REVIEWED → APPROVED → REJECTED|COMPLETED`. VS-005 só cria `ASSISTANCE_PLAN/PROPOSED/SIMULATION_ONLY`; não cria Task ou Action. |
+| `Plan` | `plan_id`, `entity_id`, `type`, `goal_ref`, `created_from_need`, `steps[]`, `basis_memory_refs[]`, `execution_mode`, `version` | `PROPOSED → REVIEWED → APPROVED → REJECTED|COMPLETED`. VS-006 pode criar uma Task interna a partir de um Plan explícito; nunca cria Action. |
 | `PlanStep` | `sequence`, `action`, `execution_mode`, `status` | `PENDING → READY → EXECUTED|SKIPPED|BLOCKED`; VS-005 só permite `PENDING` e não os executa. |
-| `Task` | `goal_id`, `kind`, `dependencies[]`, `acceptance_tests[]`, `risk`, `assignee` | `DRAFT → READY → RUNNING → SUCCEEDED|FAILED|WAITING_*|CANCELLED`. |
+| `Task` | `task_id`, `entity_id`, `goal_ref`, `plan_ref`, `type`, `status`, `result_summary`, `version` | `READY → RUNNING → COMPLETED|FAILED`. VS-006 só permite `INTERNAL_ANALYSIS`; é persistente e não possui efeito externo. |
 | `Thought` | `intent`, `objective_ref`, `evidence_refs[]`, `options[]`, `uncertainty[]`, `recommendation` | `DRAFT → VALIDATED → SUPERSEDED|REJECTED`; não executa. |
 | `Decision` | `mode`, `alternatives[]`, `policy_refs[]`, `expiry_at`, `approval_required` | `PROPOSED → COMMITTED → EXECUTED|SUPERSEDED|EXPIRED`. |
 | `Action` | `decision_id`, `effect_type`, `target_ref`, `parameters_hash`, `reversibility` | `PROPOSED → AUTHORIZED → DISPATCHED → OBSERVED|CANCELLED|UNKNOWN`. |

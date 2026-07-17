@@ -28,6 +28,7 @@ Unidade: máquinas de estado e regras puras             muitos
 | Persistência | criar memória, reiniciar, restaurar snapshot isolado, confirmar dados e auditoria. |
 | Goals/Needs | Goal só é atualizado por Observation/Reflection; Need não cria Action/Task/Plan sem decisão e aprovação posteriores. |
 | Planeamento VS-005 | pedido explícito cria `Plan(PROPOSED, SIMULATION_ONLY)` com referências válidas; shutdown/restauro preserva-o; o trace não contém `ActionCreated`, `TaskCreated` ou eventos de capacidade. |
+| Tasks VS-006 | Plan explícito cria `Task(INTERNAL_ANALYSIS)` e só aceita `READY → RUNNING → COMPLETED|FAILED`; restauro não reexecuta; conclusão gera progresso do Goal; pedido externo não cria Action, ToolCall ou CapabilityRequest. |
 | Estados | cada transição válida é aceite; cada salto inválido é rejeitado com código de erro. |
 | Segurança | negação por defeito, revogação imediata, redação de segredos e injeção em conteúdo externo. |
 | Capabilities | intenção resolve provider permitido; fallback não muda destinatário/efeito sem decisão. |
