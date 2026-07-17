@@ -117,3 +117,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [Execution Trace VS-004 — Goals + Controlled Agency Loop](execution-traces/VS-004-goals-controlled-agency.md)
 - [Execution Trace VS-005 — Persistent Planning Layer](execution-traces/VS-005-persistent-planning-simulation.md)
 - [Execution Trace VS-006 — Controlled Internal Execution Loop](execution-traces/VS-006-controlled-execution-loop.md)
+- [Execution Trace VS-007 — Capability Framework](execution-traces/VS-007-capability-framework.md)

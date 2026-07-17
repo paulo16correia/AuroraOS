@@ -71,7 +71,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `GoalEvaluation` | `evaluation_id`, `entity_id`, `goal_id`, `observation_id`, `progress_delta`, `evidence_refs[]`, `outcome`, `evaluated_at` | imutável; só é criado após Observation/Reflection. |
 | `Plan` | `plan_id`, `entity_id`, `type`, `goal_ref`, `created_from_need`, `steps[]`, `basis_memory_refs[]`, `execution_mode`, `version` | `PROPOSED → REVIEWED → APPROVED → REJECTED|COMPLETED`. VS-006 pode criar uma Task interna a partir de um Plan explícito; nunca cria Action. |
 | `PlanStep` | `sequence`, `action`, `execution_mode`, `status` | `PENDING → READY → EXECUTED|SKIPPED|BLOCKED`; VS-005 só permite `PENDING` e não os executa. |
-| `Task` | `task_id`, `entity_id`, `goal_ref`, `plan_ref`, `type`, `status`, `result_summary`, `version` | `READY → RUNNING → COMPLETED|FAILED`. VS-006 só permite `INTERNAL_ANALYSIS`; é persistente e não possui efeito externo. |
+| `Task` | `task_id`, `entity_id`, `goal_ref`, `plan_ref`, `type`, `status`, `result_summary`, `version` | `READY → RUNNING → COMPLETED|FAILED`. VS-007 pode usar uma Task concluída como origem de um CapabilityRequest, sem criar Action. |
 | `Thought` | `intent`, `objective_ref`, `evidence_refs[]`, `options[]`, `uncertainty[]`, `recommendation` | `DRAFT → VALIDATED → SUPERSEDED|REJECTED`; não executa. |
 | `Decision` | `mode`, `alternatives[]`, `policy_refs[]`, `expiry_at`, `approval_required` | `PROPOSED → COMMITTED → EXECUTED|SUPERSEDED|EXPIRED`. |
 | `Action` | `decision_id`, `effect_type`, `target_ref`, `parameters_hash`, `reversibility` | `PROPOSED → AUTHORIZED → DISPATCHED → OBSERVED|CANCELLED|UNKNOWN`. |
@@ -84,7 +84,8 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | --- | --- | --- |
 | `ToolCall` | `tool_id`, `capability`, `input_hash`, `idempotency_key`, `external_ref` | `PROPOSED → AUTHORIZED → QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED|UNKNOWN`. |
 | `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
-| `CapabilityRequest` | `decision_ref`, `capability_id`, `intent_payload`, `target_constraints`, `provider_ref?` | `REQUESTED → RESOLVED|BLOCKED → EXECUTED|FAILED`. |
+| `Capability` | `capability_id`, `entity_id`, `name`, `kind`, `enabled`, `trusted`, `version` | catálogo persistente e versionado; descreve disponibilidade, não autorização. VS-007 ativa apenas capacidades internas. |
+| `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007 só cria `UNAVAILABLE` para capacidades externas; não possui provider nem execução. |
 | `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; não recebe autoridade fora do manifesto. |
 | `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; apenas Kernel executa. |
 | `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; orienta Goals, não executa. |
