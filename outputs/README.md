@@ -26,6 +26,9 @@ Estratégia e operação
                          │
                          ▼
                   09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap → 090 Review Gate
+                                                                    │
+                                                                    ▼
+                   Freeze v1.0 → 100 Ordem de implementação → 105 Testes → 110 Standards → 120 Done
 ```
 
 Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
@@ -91,3 +94,15 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 13 | Roadmap e aceitação | 00–12 |
 | 060 | SDK de plugins e extensões | 06, 09, 040 |
 | 090 | Architecture Review Gate | 000–060 |
+| 100 | Ordem de implementação | Architecture Freeze v1.0 |
+| 105 | Estratégia de testes | Leis, 090, 100 |
+| 110 | Coding Standard | 040, 050, 090, 100 |
+| 120 | Definition of Done | 100, 105, 110 |
+
+## Governação pós-freeze
+
+- [Architecture Freeze v1.0](governance/architecture-freeze-v1.0.md)
+- [Architecture Review v1.0](reviews/architecture-review-v1.0.md)
+- [Matriz de dependências](reviews/dependency-matrix-v1.0.md)
+- [ADRs](adr/README.md)
+- [Topologia de repositórios](governance/repository-topology.md)
