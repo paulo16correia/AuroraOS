@@ -29,6 +29,9 @@ Estratégia e operação
                                                                     │
                                                                     ▼
                    Freeze v1.0 → 100 Ordem de implementação → 105 Testes → 110 Standards → 120 Done
+                                                                    │
+                                                                    ▼
+                                                   Execution Trace VS-000 → primeiro código Kernel
 ```
 
 Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
@@ -106,3 +109,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [Matriz de dependências](reviews/dependency-matrix-v1.0.md)
 - [ADRs](adr/README.md)
 - [Topologia de repositórios](governance/repository-topology.md)
+- [Execution Trace VS-000](execution-traces/VS-000-message-response.md)
