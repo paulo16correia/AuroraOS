@@ -110,3 +110,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [ADRs](adr/README.md)
 - [Topologia de repositórios](governance/repository-topology.md)
 - [Execution Trace VS-000](execution-traces/VS-000-message-response.md)
+- [Execution Trace VS-001 — Resurrection](execution-traces/VS-001-resurrection.md)

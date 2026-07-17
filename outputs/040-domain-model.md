@@ -25,6 +25,8 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
 | `Identity` | `name`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Mind. |
+| `Entity` | `entity_id`, `genome_id`, `lifecycle_state`, `mind_state_version`, `created_at` | `CREATED → RECOVERING → READY ↔ STOPPED → RETIRED`; é dona de Sessions, Mind State e Life History. |
+| `EntityRuntimeContext` | `entity_id`, `genome_id`, `lifecycle_state`, `active_session?`, `snapshot_ref?`, `restored_at?` | criado/carregado pelo Kernel por processo; não pertence a uma Session. |
 | `Genome` | `family`, `version`, `constitution_version`, `law_set_version`, `allowed_capabilities[]`, `signature` | `DRAFT → RELEASED → RETIRED`; é herdável e não contém dados adquiridos. |
 | `DevelopmentState` | `stage`, `autonomy_ceiling`, `evidence_refs[]`, `assessment_at` | `PROBATION|ACTIVE|RESTRICTED|PAUSED`; promoção é aprovada e reversível. |
 | `LifeEpisode` | `kind`, `occurred_at`, `narrative_summary`, `evidence_refs[]`, `significance` | `CANDIDATE → VERIFIED|RETRACTED`; não substitui auditoria. |
