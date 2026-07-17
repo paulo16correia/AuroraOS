@@ -24,14 +24,14 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
-| `Identity` | `name`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Mind. |
+| `Identity` | `identity_id`, `entity_id`, `name`, `purpose`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Entity/Mind. No VS-002, `name`, `purpose`, `locale` e a proveniência no Genome são obrigatórios. |
 | `Entity` | `entity_id`, `genome_id`, `lifecycle_state`, `mind_state_version`, `created_at` | `CREATED → RECOVERING → READY ↔ STOPPED → RETIRED`; é dona de Sessions, Mind State e Life History. |
 | `EntityRuntimeContext` | `entity_id`, `genome_id`, `lifecycle_state`, `active_session?`, `snapshot_ref?`, `restored_at?` | criado/carregado pelo Kernel por processo; não pertence a uma Session. |
 | `Genome` | `family`, `version`, `constitution_version`, `law_set_version`, `allowed_capabilities[]`, `signature` | `DRAFT → RELEASED → RETIRED`; é herdável e não contém dados adquiridos. |
 | `DevelopmentState` | `stage`, `autonomy_ceiling`, `evidence_refs[]`, `assessment_at` | `PROBATION|ACTIVE|RESTRICTED|PAUSED`; promoção é aprovada e reversível. |
 | `LifeEpisode` | `kind`, `occurred_at`, `narrative_summary`, `evidence_refs[]`, `significance` | `CANDIDATE → VERIFIED|RETRACTED`; não substitui auditoria. |
 | `InstanceLifecycle` | `state`, `entered_at`, `reason`, `active_cycles[]`, `last_snapshot` | `CREATED → BOOTSTRAPPING → RECOVERING → READY … → STOPPED|RETIRED`; Kernel é o dono. |
-| `SelfModel` | `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. |
+| `SelfModel` | `self_model_id`, `entity_id`, `identity_ref`, `genome_id`, `version`, `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus`, `observed_at` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. O VS-002 cria a versão inicial sem capacidades, permissões, crenças, preferências ou relações. |
 | `SituationAssessment` | `local_time`, `user_availability`, `signals`, `needs`, `risk_posture`, `expires_at` | `CURRENT → INVALIDATED|EXPIRED`; é temporal e nunca persistido como facto. |
 | `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versionada; `DRAFT → ACTIVE → RETIRED`. |
 | `Conversation` | `channel`, `participants[]`, `access_policy_id`, `last_activity_at` | `OPEN → ARCHIVED → DELETED`; arquivar não apaga memória. |
