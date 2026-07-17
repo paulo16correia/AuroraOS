@@ -85,7 +85,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `ToolCall` | `tool_id`, `capability`, `input_hash`, `idempotency_key`, `external_ref` | `PROPOSED → AUTHORIZED → QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED|UNKNOWN`. |
 | `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
 | `Capability` | `capability_id`, `entity_id`, `name`, `kind`, `enabled`, `trusted`, `version` | catálogo persistente e versionado; descreve disponibilidade, não autorização. VS-007 ativa apenas capacidades internas. |
-| `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007 só cria `UNAVAILABLE` para capacidades externas; não possui provider nem execução. |
+| `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007.1 exige uma request para toda a intenção externa reconhecida, mesmo quando a Task de origem é histórica; não possui provider nem execução. |
 | `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; não recebe autoridade fora do manifesto. |
 | `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; apenas Kernel executa. |
 | `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; orienta Goals, não executa. |
