@@ -5,20 +5,29 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
 ## Ordem de leitura e dependências
 
 ```text
-00 Visão → 01 Princípios → 02 Núcleo cognitivo
-                                │
-                ┌───────────────┼────────────────┐
-                ▼               ▼                ▼
-           03 Memória     05 Planeador      07 Personalidade
-                │               │                │
-                ▼               ▼                ▼
-           04 Grafo       06 Ferramentas    08 Aprendizagem
-                └───────────────┬────────────────┘
-                                ▼
-                  09 Segurança → 10 API → 11 UI → 12 Operação
-                                                    │
-                                                    ▼
-                                               13 Roadmap
+000 Filosofia → 00 Visão → 01 Princípios → 010 Mapa da Mind
+                                           │
+                                           ▼
+                                      020 Mind
+                                           │
+                                           ▼
+                                   040 Modelo de domínio
+                                           │
+                                           ▼
+                                    021 Ciclo cognitivo
+                                           │
+        ┌──────────────┬───────────┬─────────┬──────────────┐
+        ▼              ▼           ▼         ▼              ▼
+  022 Decisão   023 Atenção   024 Trabalho 025 Deliberação 026 Scheduler
+        └──────────────┬───────────┴─────────┴──────────────┘
+                       ▼
+                03 Memória → 04 Grafo → 041 Mundo
+                       │                       │
+                       ▼                       ▼
+                05 Planeador → 06 Ferramentas → 060 SDK de plugins
+                       │              │
+                       ▼              ▼
+                07 Personalidade → 08 Aprendizagem → 09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap
 ```
 
 Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
@@ -35,9 +44,20 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 
 | RFC | Tema | Dependências diretas |
 | --- | --- | --- |
-| 00 | Visão | — |
+| 000 | Filosofia de arquitetura | — |
+| 00 | Visão | 000 |
 | 01 | Princípios e governação | 00 |
-| 02 | Núcleo cognitivo | 00–01 |
+| 010 | Mapa-mestre da Mind | 000–01 |
+| 020 | Mind — modelo de estado cognitivo | 000, 01, 010 |
+| 021 | Ciclo cognitivo | 020, 040 |
+| 022 | Motor de decisão | 01, 021, 040 |
+| 023 | Sistema de atenção | 03–04, 020–021 |
+| 024 | Memória de trabalho | 03, 021, 023, 040 |
+| 025 | Deliberação interna | 021–024 |
+| 026 | Scheduler | 01, 021–022, 040 |
+| 040 | Modelo de domínio | 020 |
+| 041 | World Model | 04, 040 |
+| 02 | Núcleo cognitivo (orquestrador de implementação) | 00–01; refinado por 021–025 |
 | 03 | Memória | 01–02 |
 | 04 | Grafo de conhecimento | 03 |
 | 05 | Objetivos e planeamento | 02–03 |
@@ -49,4 +69,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 11 | Interface de utilizador | 10 |
 | 12 | Implementação e operação | 09–11 |
 | 13 | Roadmap e aceitação | 00–12 |
-
+| 060 | SDK de plugins e extensões | 06, 09, 040 |
