@@ -25,6 +25,10 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
 | `Identity` | `name`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Mind. |
+| `Genome` | `family`, `version`, `constitution_version`, `law_set_version`, `allowed_capabilities[]`, `signature` | `DRAFT → RELEASED → RETIRED`; é herdável e não contém dados adquiridos. |
+| `DevelopmentState` | `stage`, `autonomy_ceiling`, `evidence_refs[]`, `assessment_at` | `PROBATION|ACTIVE|RESTRICTED|PAUSED`; promoção é aprovada e reversível. |
+| `LifeEpisode` | `kind`, `occurred_at`, `narrative_summary`, `evidence_refs[]`, `significance` | `CANDIDATE → VERIFIED|RETRACTED`; não substitui auditoria. |
+| `InstanceLifecycle` | `state`, `entered_at`, `reason`, `active_cycles[]`, `last_snapshot` | `CREATED → BOOTSTRAPPING → RECOVERING → READY … → STOPPED|RETIRED`; Kernel é o dono. |
 | `SelfModel` | `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. |
 | `SituationAssessment` | `local_time`, `user_availability`, `signals`, `needs`, `risk_posture`, `expires_at` | `CURRENT → INVALIDATED|EXPIRED`; é temporal e nunca persistido como facto. |
 | `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versionada; `DRAFT → ACTIVE → RETIRED`. |
@@ -48,6 +52,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `WorldModel` | `mind_id`, `schema_version`, `node_refs[]`, `edge_refs[]`, `last_reconciled_at` | `BUILDING → ACTIVE → DEGRADED|RETIRED`. |
 | `Observation` | `observer`, `observed_at`, `modality`, `payload_ref`, `integrity`, `external_ref` | `RAW → VALIDATED|REJECTED → CONSOLIDATED|EXPIRED`. |
 | `Signal` | `source_event`, `kind`, `severity`, `urgency`, `interruptibility`, `expires_at` | `NEW → QUEUED|FOCUSED|SUPPRESSED → RESOLVED|EXPIRED`. |
+| `DomainEvent` | `type`, `producer`, `aggregate_ref`, `payload_ref`, `correlation_id`, `schema_version` | imutável; publicado pela outbox e entregue idempotentemente. |
 | `Need` | `kind`, `intensity`, `evidence_refs[]`, `recommended_goal`, `satisfaction_condition` | `DETECTED → ACKNOWLEDGED|PLANNED → SATISFIED|DEFERRED|EXPIRED`. |
 | `CuriosityProposal` | `question`, `expected_value`, `allowed_sources`, `budget`, `approval_required` | `CANDIDATE → APPROVED|SCHEDULED → RESEARCHING → LEARNED|REJECTED|EXPIRED`. |
 | `ResourceState` | `cpu`, `memory`, `disk`, `queue`, `cost`, `operational_energy` | `NORMAL|CONSTRAINED|CRITICAL|UNKNOWN`; substituído por observação mais recente. |
@@ -72,6 +77,10 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | --- | --- | --- |
 | `ToolCall` | `tool_id`, `capability`, `input_hash`, `idempotency_key`, `external_ref` | `PROPOSED → AUTHORIZED → QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED|UNKNOWN`. |
 | `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
+| `CapabilityRequest` | `decision_ref`, `capability_id`, `intent_payload`, `target_constraints`, `provider_ref?` | `REQUESTED → RESOLVED|BLOCKED → EXECUTED|FAILED`. |
+| `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; não recebe autoridade fora do manifesto. |
+| `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; apenas Kernel executa. |
+| `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; orienta Goals, não executa. |
 | `ConstitutionalAssessment` | `subject`, `articles_checked[]`, `result`, `conflicts[]`, `evidence_refs[]` | `PASS|FAIL|REVIEW`; é anexado a decisão/política de risco elevado. |
 | `VaultItem` | `provider_ref`, `purpose`, `allowed_tool_ids[]`, `rotation_due_at` | `ACTIVE → ROTATING → REVOKED|EXPIRED`; valor nunca entra no domínio. |
 | `LearningProposal` | `type`, `change_set`, `evaluation_plan`, `rollback_plan` | `PROPOSED → APPROVED → TESTING → DEPLOYED|REJECTED|ROLLED_BACK`. |

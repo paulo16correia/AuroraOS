@@ -39,6 +39,17 @@ flowchart TB
   AUDIT --- TO
 ```
 
+## Hierarquia de plataforma
+
+```text
+Aurora Platform
+├─ Aurora Kernel       governa ciclo de vida, estado, eventos, permissões, recursos e execução
+├─ Aurora Mind         agrega identidade, memória, conhecimento, crenças, objetivos e cognição
+└─ Aurora Applications  concretizam capacidades através de conectores isolados
+```
+
+Mind e Applications são subsistemas geridos; nenhum assume responsabilidades do Kernel. A RFC 045 especifica este plano de controlo, e a RFC 051 impede que a Mind fique acoplada a fornecedores.
+
 ## Arquitetura e responsabilidades
 
 ```text

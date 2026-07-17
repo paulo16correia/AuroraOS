@@ -4,7 +4,7 @@
 
 ## Objetivo
 
-Definir a **Mind** como agregado canónico de estado persistente da Aurora. A Mind não é um processo, um prompt nem uma base de dados única; é o contrato que liga identidade, realidade conhecida, experiência e intenção. As RFCs de memória, conhecimento, objetivos, personalidade e aprendizagem concretizam os seus componentes sem alterar este contrato.
+Definir a **Mind** como agregado canónico de estado persistente da Aurora, gerido pelo Aurora Kernel. A Mind não é um prompt nem uma base de dados única; é o contrato que liga identidade, realidade conhecida, experiência e intenção. As RFCs de memória, conhecimento, objetivos, personalidade e aprendizagem concretizam os seus componentes sem alterar este contrato.
 
 ## Composição
 

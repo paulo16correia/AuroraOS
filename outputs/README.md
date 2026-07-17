@@ -5,32 +5,27 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
 ## Ordem de leitura e dependências
 
 ```text
-000 Filosofia → 00 Visão → 01 Princípios → 035 Constituição → Leis → 010 Mapa da Mind → 011 Camadas
-                                           │
-                                           ▼
-                                      020 Mind → 027 Self
-                                           │
-                                           ▼
-                                   040 Modelo de domínio
-                                           │
-                                           ▼
-                                    021 Ciclo cognitivo
-                                           │
-        ┌──────────────┬───────────┬─────────┬──────────────┐
-        ▼              ▼           ▼         ▼              ▼
-  022 Decisão   023 Atenção   024 Trabalho 025 Deliberação 026 Scheduler
-        └──────────────┬───────────┴─────────┴──────────────┘
-                       ▼
-                030 Sinais → 031 Necessidades → 032 Curiosidade → 033 Recursos → 034 Situação
-                       │
-                       ▼
-                03 Memória → 04 Grafo → 041 Mundo → 042 Tempo → 043 Mind State
-                       │                       │
-                       ▼                       ▼
-                05 Planeador → 06 Ferramentas → 060 SDK de plugins
-                       │              │
-                       ▼              ▼
-                07 Personalidade → 028 Crenças → 029 Relações/Preferências → 08 Aprendizagem → 09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap
+Fundação normativa
+000 Filosofia → 00 Visão → 01 Princípios → 035 Constituição → laws/
+                                  │
+                                  ▼
+                 036 Genome → 037 Desenvolvimento → 038 História → 039 Ciclo de vida
+                                  │
+                                  ▼
+Aurora Platform
+├─ Aurora Kernel: 045 Kernel → 050 Event Bus → 051 Capabilities
+├─ Aurora Mind: 010 Mapa → 011 Camadas → 020 Mind → 040 Domínio
+│  ├─ 021 Ciclo → 022 Decisão → 023 Atenção → 024 Trabalho → 025 Deliberação
+│  ├─ 027 Self → 028 Crenças → 029 Relações/Preferências
+│  ├─ 030 Sinais → 031 Necessidades → 032 Curiosidade → 033 Recursos → 034 Situação
+│  └─ 03 Memória → 04 Grafo → 041 Mundo → 042 Tempo → 043 Mind State
+└─ Aurora Applications: 06 Ferramentas → 060 SDK e providers de capacidades
+
+Estratégia e operação
+052 Missões → 05 Objetivos/Planos/Tarefas → 07 Personalidade → 08 Aprendizagem
+                         │
+                         ▼
+                  09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap → 090 Review Gate
 ```
 
 Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
@@ -52,6 +47,11 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 01 | Princípios e governação | 00 |
 | 035 | Constituição da Aurora | 000–01, Leis |
 | Leis | Invariantes de arquitetura | Constituição |
+| LAW-007 | Comunicação mediada por eventos | Constituição |
+| 036 | Genome | 035, 040 |
+| 037 | Modelo de desenvolvimento | 07, 027–028, 036, 040 |
+| 038 | História de vida | 020, 036–037, 040, 043 |
+| 039 | Ciclo de vida da instância | 011, 026–027, 033, 036, 043 |
 | 010 | Mapa-mestre da Mind | 000–01 |
 | 011 | Camadas cognitivas e fronteiras | 000, 010 |
 | 020 | Mind — modelo de estado cognitivo | 000, 01, 010 |
@@ -73,6 +73,10 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 041 | World Model | 04, 040 |
 | 042 | Modelo temporal e validade | 040–041 |
 | 043 | Mind State e continuidade | 020, 024, 027–029, 040–042 |
+| 045 | Aurora Kernel | 011, 035, 039–040, 043 |
+| 050 | Event Bus | LAW-007, 040, 045 |
+| 051 | Sistema de capacidades | 06, 045, 050 |
+| 052 | Missões, objetivos e tarefas | 05, 035, 040, 051 |
 | 02 | Núcleo cognitivo (orquestrador de implementação) | 00–01; refinado por 021–025 |
 | 03 | Memória | 01–02 |
 | 04 | Grafo de conhecimento | 03 |
@@ -86,3 +90,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 12 | Implementação e operação | 09–11 |
 | 13 | Roadmap e aceitação | 00–12 |
 | 060 | SDK de plugins e extensões | 06, 09, 040 |
+| 090 | Architecture Review Gate | 000–060 |
