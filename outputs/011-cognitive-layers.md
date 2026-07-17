@@ -50,7 +50,7 @@ flowchart TB
 | --- | --- | --- |
 | Mundo externo | produz sinais e recebe efeitos | altera políticas ou a Mind diretamente |
 | Perceção | normaliza, autentica e classifica observações | decide objetivos ou executa ações |
-| Cognição | seleciona contexto, delibera, planeia e decide | guarda segredos ou contorna permissões |
+| Cognição | seleciona contexto, delibera, planeia e decide; avalia sinais, necessidades, situação e recursos | guarda segredos ou contorna permissões |
 | Mind | mantém estado canónico, temporal e governado | chama conectores diretamente |
 | Execução | autoriza, agenda e materializa decisões | inventa intenção ou factos |
 | Infraestrutura | persiste, isola, mede e recupera | define semântica de produto |
@@ -90,4 +90,3 @@ As camadas tornam a Aurora um organismo arquitetural: entradas são percebidas, 
 ## Expansões futuras
 
 Perceção multimodal em tempo real, subcamadas de segurança, execução remota isolada e Minds federadas.
-

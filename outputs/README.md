@@ -5,7 +5,7 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
 ## Ordem de leitura e dependências
 
 ```text
-000 Filosofia → 00 Visão → 01 Princípios → 010 Mapa da Mind → 011 Camadas
+000 Filosofia → 00 Visão → 01 Princípios → 035 Constituição → Leis → 010 Mapa da Mind → 011 Camadas
                                            │
                                            ▼
                                       020 Mind → 027 Self
@@ -20,6 +20,9 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
         ▼              ▼           ▼         ▼              ▼
   022 Decisão   023 Atenção   024 Trabalho 025 Deliberação 026 Scheduler
         └──────────────┬───────────┴─────────┴──────────────┘
+                       ▼
+                030 Sinais → 031 Necessidades → 032 Curiosidade → 033 Recursos → 034 Situação
+                       │
                        ▼
                 03 Memória → 04 Grafo → 041 Mundo → 042 Tempo → 043 Mind State
                        │                       │
@@ -47,6 +50,8 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 000 | Filosofia de arquitetura | — |
 | 00 | Visão | 000 |
 | 01 | Princípios e governação | 00 |
+| 035 | Constituição da Aurora | 000–01, Leis |
+| Leis | Invariantes de arquitetura | Constituição |
 | 010 | Mapa-mestre da Mind | 000–01 |
 | 011 | Camadas cognitivas e fronteiras | 000, 010 |
 | 020 | Mind — modelo de estado cognitivo | 000, 01, 010 |
@@ -59,6 +64,11 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 027 | Self — autoconsciência operacional | 011, 020, 040 |
 | 028 | Sistema de crenças e incerteza | 03, 040–041 |
 | 029 | Relações e preferências | 04, 028, 040–042 |
+| 030 | Sistema de sinais | 011, 021, 040, LAW-001 |
+| 031 | Necessidades operacionais | 020, 026, 030, 033, 040 |
+| 032 | Curiosidade governada | 028, 030–031, 033–034, LAW-006 |
+| 033 | Recursos e energia operacional | 027, 040 |
+| 034 | Consciência situacional operacional | 027, 030–033, 042–043 |
 | 040 | Modelo de domínio | 020 |
 | 041 | World Model | 04, 040 |
 | 042 | Modelo temporal e validade | 040–041 |

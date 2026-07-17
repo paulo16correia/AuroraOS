@@ -26,6 +26,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | --- | --- | --- |
 | `Identity` | `name`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Mind. |
 | `SelfModel` | `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. |
+| `SituationAssessment` | `local_time`, `user_availability`, `signals`, `needs`, `risk_posture`, `expires_at` | `CURRENT → INVALIDATED|EXPIRED`; é temporal e nunca persistido como facto. |
 | `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versionada; `DRAFT → ACTIVE → RETIRED`. |
 | `Conversation` | `channel`, `participants[]`, `access_policy_id`, `last_activity_at` | `OPEN → ARCHIVED → DELETED`; arquivar não apaga memória. |
 | `Session` | `conversation_id`, `principal_id`, `started_at`, `expires_at`, `auth_context` | `ACTIVE → EXPIRED|REVOKED`; nunca sobrevive a revogação. |
@@ -46,6 +47,10 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `Edge` | `subject_node_id`, `predicate`, `object_node_id|literal`, `qualifiers`, `valid_time` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
 | `WorldModel` | `mind_id`, `schema_version`, `node_refs[]`, `edge_refs[]`, `last_reconciled_at` | `BUILDING → ACTIVE → DEGRADED|RETIRED`. |
 | `Observation` | `observer`, `observed_at`, `modality`, `payload_ref`, `integrity`, `external_ref` | `RAW → VALIDATED|REJECTED → CONSOLIDATED|EXPIRED`. |
+| `Signal` | `source_event`, `kind`, `severity`, `urgency`, `interruptibility`, `expires_at` | `NEW → QUEUED|FOCUSED|SUPPRESSED → RESOLVED|EXPIRED`. |
+| `Need` | `kind`, `intensity`, `evidence_refs[]`, `recommended_goal`, `satisfaction_condition` | `DETECTED → ACKNOWLEDGED|PLANNED → SATISFIED|DEFERRED|EXPIRED`. |
+| `CuriosityProposal` | `question`, `expected_value`, `allowed_sources`, `budget`, `approval_required` | `CANDIDATE → APPROVED|SCHEDULED → RESEARCHING → LEARNED|REJECTED|EXPIRED`. |
+| `ResourceState` | `cpu`, `memory`, `disk`, `queue`, `cost`, `operational_energy` | `NORMAL|CONSTRAINED|CRITICAL|UNKNOWN`; substituído por observação mais recente. |
 | `Experience` | `episode_ref`, `outcome`, `lessons[]`, `evidence_refs[]` | `CAPTURED → REVIEWED → CONSOLIDATED|DISCARDED`. |
 
 ## Objetos de intenção e deliberação
@@ -67,6 +72,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | --- | --- | --- |
 | `ToolCall` | `tool_id`, `capability`, `input_hash`, `idempotency_key`, `external_ref` | `PROPOSED → AUTHORIZED → QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED|UNKNOWN`. |
 | `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
+| `ConstitutionalAssessment` | `subject`, `articles_checked[]`, `result`, `conflicts[]`, `evidence_refs[]` | `PASS|FAIL|REVIEW`; é anexado a decisão/política de risco elevado. |
 | `VaultItem` | `provider_ref`, `purpose`, `allowed_tool_ids[]`, `rotation_due_at` | `ACTIVE → ROTATING → REVOKED|EXPIRED`; valor nunca entra no domínio. |
 | `LearningProposal` | `type`, `change_set`, `evaluation_plan`, `rollback_plan` | `PROPOSED → APPROVED → TESTING → DEPLOYED|REJECTED|ROLLED_BACK`. |
 
