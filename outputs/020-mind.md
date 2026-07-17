@@ -10,9 +10,12 @@ Definir a **Mind** como agregado canónico de estado persistente da Aurora. A Mi
 
 ```text
 Mind
+├─ Self                     capacidades, limites, saúde e trabalho atual
 ├─ Identity                 quem é e como comunica
 ├─ Memory / Experience      o que aconteceu e o que foi aprendido
 ├─ Knowledge / World Model  o que é conhecido sobre entidades e relações
+├─ Beliefs / Preferences    padrões revisáveis e escolhas do utilizador
+├─ Relationships            relações sociais, profissionais e de recursos
 ├─ Goals / Plans / Tasks    o que se pretende alcançar
 ├─ Attention                o que merece recursos agora
 ├─ Working Memory            contexto ativo, temporário e isolado
@@ -25,8 +28,9 @@ Mind
 ```text
 Mind
   id, tenant_id, status: INITIALIZING|ACTIVE|DEGRADED|PAUSED|RECOVERING|RETIRED
-  identity_id, policy_set_version, world_model_version
-  active_context_ids[], active_goal_ids[], last_consolidation_at
+  self_model_id, identity_id, policy_set_version, world_model_version
+  belief_ids[], preference_ids[], relationship_ids[]
+  active_context_ids[], active_goal_ids[], active_task_ids[], last_consolidation_at
   created_at, updated_at
 
 MindChangeSet

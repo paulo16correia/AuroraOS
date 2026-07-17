@@ -4,7 +4,7 @@
 
 ## Objetivo
 
-Manter uma representação temporal, evidenciada e consultável da realidade relevante para a Aurora. O World Model não guarda frases isoladas: modela entidades, recursos, relações, capacidades e estados observados.
+Manter uma representação temporal, evidenciada e consultável da realidade relevante para a Aurora. O World Model não guarda frases isoladas: modela entidades, atributos, estado, histórico, relações, eventos e capacidades observadas.
 
 ## Arquitetura
 
@@ -83,4 +83,3 @@ O modelo do mundo torna possível planear sobre realidade operacional (“qual V
 ## Expansões futuras
 
 Estado de inventário, gémeos digitais de infraestrutura, simulação de impacto, fontes verificadas e regras declarativas de consistência.
-

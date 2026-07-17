@@ -25,6 +25,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
 | `Identity` | `name`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Mind. |
+| `SelfModel` | `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. |
 | `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versionada; `DRAFT → ACTIVE → RETIRED`. |
 | `Conversation` | `channel`, `participants[]`, `access_policy_id`, `last_activity_at` | `OPEN → ARCHIVED → DELETED`; arquivar não apaga memória. |
 | `Session` | `conversation_id`, `principal_id`, `started_at`, `expires_at`, `auth_context` | `ACTIVE → EXPIRED|REVOKED`; nunca sobrevive a revogação. |
@@ -38,6 +39,9 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `Memory` | `kind`, `subject`, `predicate`, `object`, `confidence`, `evidence_refs[]`, `retention_until` | `CANDIDATE → ACTIVE ↔ DISPUTED → SUPERSEDED|RETRACTED|EXPIRED`. |
 | `MemoryLink` | `from_memory_id`, `to_memory_id`, `relation_type`, `weight`, `reason_refs[]` | `PROPOSED → ACTIVE → RETRACTED`; não é inferência livre. |
 | `Knowledge` | `claim`, `scope`, `evidence_refs[]`, `valid_time`, `certainty` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
+| `Belief` | `claim`, `scope`, `confidence`, `evidence_for[]`, `evidence_against[]`, `review_at` | `CANDIDATE → ACTIVE ↔ CHALLENGED → SUPERSEDED|RETRACTED|EXPIRED`. |
+| `Preference` | `owner`, `dimension`, `value`, `strength`, `basis`, `scope`, `consent_required` | `CANDIDATE|ACTIVE → REJECTED|EXPIRED`; explícita prevalece sobre inferida. |
+| `RelationshipAssertion` | `subject`, `relation_type`, `object`, `authority_scope`, `confidence`, `valid_time` | `PROPOSED → ACTIVE|DISPUTED → ENDED|RETRACTED`. |
 | `Node` | `world_model_id`, `type`, `canonical_name`, `aliases[]`, `attributes_json` | `ACTIVE → MERGED|ARCHIVED`; fusão preserva redirecionamento. |
 | `Edge` | `subject_node_id`, `predicate`, `object_node_id|literal`, `qualifiers`, `valid_time` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
 | `WorldModel` | `mind_id`, `schema_version`, `node_refs[]`, `edge_refs[]`, `last_reconciled_at` | `BUILDING → ACTIVE → DEGRADED|RETIRED`. |

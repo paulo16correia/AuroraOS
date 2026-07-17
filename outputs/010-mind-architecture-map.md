@@ -8,6 +8,8 @@ Fixar a planta de arquitetura da Aurora. Qualquer módulo novo DEVE declarar ond
 
 ## Mapa de componentes
 
+O mapa desta RFC é a visão de fluxo de ponta a ponta. A RFC 011 introduz a vista complementar por camadas e é a referência para fronteiras de dependência.
+
 ```mermaid
 flowchart TB
   U[Utilizador e mundo externo] --> P[Perceção e Gateway]
@@ -15,11 +17,11 @@ flowchart TB
   A --> WM[Working Memory]
   WM --> CC[Cognitive Cycle]
   subgraph M[Mind — estado persistente governado]
-    I[Identity e Personality]
-    ME[Memory e Experience]
-    K[Knowledge Graph e World Model]
-    G[Goals, Plans e Tasks]
-    R[Reflections e Learning]
+    I[Self, Identity e Personality]
+    ME[Memory, Experience e Beliefs]
+    K[Knowledge Graph, Relationships e World Model]
+    G[Goals, Plans, Tasks e Preferences]
+    R[Attention, Working Memory, Reflections e Learning]
   end
   M <--> WM
   M <--> CC
@@ -77,4 +79,3 @@ O mapa impede que conectores e modelos se transformem em centros de autoridade. 
 ## Expansões futuras
 
 Sub-Minds por domínio, partilha consentida de conhecimento, módulos de perceção multimodal e escalamento de componentes independentes.
-

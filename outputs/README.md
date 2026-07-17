@@ -5,10 +5,10 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
 ## Ordem de leitura e dependências
 
 ```text
-000 Filosofia → 00 Visão → 01 Princípios → 010 Mapa da Mind
+000 Filosofia → 00 Visão → 01 Princípios → 010 Mapa da Mind → 011 Camadas
                                            │
                                            ▼
-                                      020 Mind
+                                      020 Mind → 027 Self
                                            │
                                            ▼
                                    040 Modelo de domínio
@@ -21,13 +21,13 @@ Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs u
   022 Decisão   023 Atenção   024 Trabalho 025 Deliberação 026 Scheduler
         └──────────────┬───────────┴─────────┴──────────────┘
                        ▼
-                03 Memória → 04 Grafo → 041 Mundo
+                03 Memória → 04 Grafo → 041 Mundo → 042 Tempo → 043 Mind State
                        │                       │
                        ▼                       ▼
                 05 Planeador → 06 Ferramentas → 060 SDK de plugins
                        │              │
                        ▼              ▼
-                07 Personalidade → 08 Aprendizagem → 09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap
+                07 Personalidade → 028 Crenças → 029 Relações/Preferências → 08 Aprendizagem → 09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap
 ```
 
 Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
@@ -48,6 +48,7 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 00 | Visão | 000 |
 | 01 | Princípios e governação | 00 |
 | 010 | Mapa-mestre da Mind | 000–01 |
+| 011 | Camadas cognitivas e fronteiras | 000, 010 |
 | 020 | Mind — modelo de estado cognitivo | 000, 01, 010 |
 | 021 | Ciclo cognitivo | 020, 040 |
 | 022 | Motor de decisão | 01, 021, 040 |
@@ -55,8 +56,13 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 024 | Memória de trabalho | 03, 021, 023, 040 |
 | 025 | Deliberação interna | 021–024 |
 | 026 | Scheduler | 01, 021–022, 040 |
+| 027 | Self — autoconsciência operacional | 011, 020, 040 |
+| 028 | Sistema de crenças e incerteza | 03, 040–041 |
+| 029 | Relações e preferências | 04, 028, 040–042 |
 | 040 | Modelo de domínio | 020 |
 | 041 | World Model | 04, 040 |
+| 042 | Modelo temporal e validade | 040–041 |
+| 043 | Mind State e continuidade | 020, 024, 027–029, 040–042 |
 | 02 | Núcleo cognitivo (orquestrador de implementação) | 00–01; refinado por 021–025 |
 | 03 | Memória | 01–02 |
 | 04 | Grafo de conhecimento | 03 |
