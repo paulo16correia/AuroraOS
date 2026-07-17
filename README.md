@@ -115,3 +115,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [Execution Trace VS-002 — Entity Birth + Self Model](execution-traces/VS-002-entity-birth-self-model.md)
 - [Execution Trace VS-003 — Memory Retrieval + Personal Continuity](execution-traces/VS-003-memory-retrieval-personal-continuity.md)
 - [Execution Trace VS-004 — Goals + Controlled Agency Loop](execution-traces/VS-004-goals-controlled-agency.md)
+- [Execution Trace VS-005 — Persistent Planning Layer](execution-traces/VS-005-persistent-planning-simulation.md)
