@@ -26,6 +26,7 @@ Unidade: máquinas de estado e regras puras             muitos
 | LAW-007 | duplicação de evento não duplica efeito; consumidor incompatível vai para falha controlada. |
 | LAW-008 | provider não consegue descrever uma identidade cujo `entity_id` ou `identity_ref` não foi validado pelo Kernel. |
 | Persistência | criar memória, reiniciar, restaurar snapshot isolado, confirmar dados e auditoria. |
+| Goals/Needs | Goal só é atualizado por Observation/Reflection; Need não cria Action/Task/Plan sem decisão e aprovação posteriores. |
 | Estados | cada transição válida é aceite; cada salto inválido é rejeitado com código de erro. |
 | Segurança | negação por defeito, revogação imediata, redação de segredos e injeção em conteúdo externo. |
 | Capabilities | intenção resolve provider permitido; fallback não muda destinatário/efeito sem decisão. |

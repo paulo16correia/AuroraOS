@@ -66,6 +66,9 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
 | `Goal` | `outcome`, `owner`, `priority`, `success_criteria[]`, `constraints`, `deadline` | `DRAFT → ACTIVE ↔ PAUSED|BLOCKED → COMPLETED|CANCELLED|FAILED`. |
+| `EntityState` | `state_id`, `entity_id`, `availability`, `focus`, `energy`, `pending_goals`, `version`, `updated_at` | observado e versionado; VS-004 só usa `READY|STOPPED` e não representa emoção. |
+| `Need` | `need_id`, `entity_id`, `kind`, `reason`, `intensity`, `recommended_goal_ref`, `evidence_refs[]`, `status` | `DETECTED → SATISFIED`; VS-004 não permite que Need crie Action, Task ou Plan. |
+| `GoalEvaluation` | `evaluation_id`, `entity_id`, `goal_id`, `observation_id`, `progress_delta`, `evidence_refs[]`, `outcome`, `evaluated_at` | imutável; só é criado após Observation/Reflection. |
 | `Plan` | `goal_id`, `revision`, `assumptions[]`, `task_refs[]`, `rationale` | `PROPOSED → APPROVED → ACTIVE → SUPERSEDED|CLOSED`. |
 | `Task` | `goal_id`, `kind`, `dependencies[]`, `acceptance_tests[]`, `risk`, `assignee` | `DRAFT → READY → RUNNING → SUCCEEDED|FAILED|WAITING_*|CANCELLED`. |
 | `Thought` | `intent`, `objective_ref`, `evidence_refs[]`, `options[]`, `uncertainty[]`, `recommendation` | `DRAFT → VALIDATED → SUPERSEDED|REJECTED`; não executa. |
