@@ -24,7 +24,6 @@ aurora-apps
 - `aurora-apps` declara a versão de SDK/Capability e não importa módulos internos da Mind.
 - Alteração incompatível percorre `ADR → spec → kernel SDK → apps`, com testes de compatibilidade.
 
-## Migração prática
+## Estado atual
 
-O repositório atual funciona temporariamente como `aurora-spec`. Antes do primeiro código de produto, mover `outputs/` para a raiz de `aurora-spec` e criar `aurora-kernel` e `aurora-apps` vazios com CI de contratos. Esta reorganização é estrutural, não altera a baseline congelada.
-
+Este repositório é o `aurora-spec`: os RFCs e a documentação normativa vivem na raiz, enquanto os documentos agrupados vivem em diretórios próprios (`adr/`, `laws/`, `governance/`, `reviews/` e `execution-traces/`). O `aurora-kernel` é mantido como repositório independente. Esta organização é estrutural e não altera a baseline congelada.
