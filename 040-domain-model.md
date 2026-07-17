@@ -43,7 +43,8 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 
 | Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
 | --- | --- | --- |
-| `Memory` | `kind`, `subject`, `predicate`, `object`, `confidence`, `evidence_refs[]`, `retention_until` | `CANDIDATE → ACTIVE ↔ DISPUTED → SUPERSEDED|RETRACTED|EXPIRED`. |
+| `Memory` | `memory_id`, `entity_id`, `kind`, `subject`, `predicate`, `object_value`, `confidence`, `provenance`, `signal_id`, `observation_id`, `anchors[]`, `status` | `CANDIDATE → ACTIVE ↔ DISPUTED → SUPERSEDED|RETRACTED|EXPIRED`. VS-003 só cria `EPISODIC/ACTIVE` com `USER_ASSERTION`. |
+| `MemoryRetrieval` | `memory_id`, `reason`, `confidence`, `retrieved_at` | efémero por ciclo; é a única forma de uma Memory entrar em Context. |
 | `MemoryLink` | `from_memory_id`, `to_memory_id`, `relation_type`, `weight`, `reason_refs[]` | `PROPOSED → ACTIVE → RETRACTED`; não é inferência livre. |
 | `Knowledge` | `claim`, `scope`, `evidence_refs[]`, `valid_time`, `certainty` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
 | `Belief` | `claim`, `scope`, `confidence`, `evidence_for[]`, `evidence_against[]`, `review_at` | `CANDIDATE → ACTIVE ↔ CHALLENGED → SUPERSEDED|RETRACTED|EXPIRED`. |

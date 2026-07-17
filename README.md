@@ -54,6 +54,7 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 | 035 | Constituição da Aurora | 000–01, Leis |
 | Leis | Invariantes de arquitetura | Constituição |
 | LAW-007 | Comunicação mediada por eventos | Constituição |
+| LAW-008 | Integridade da identidade pelo Self Model | RFC 027, RFC 040 |
 | 036 | Genome | 035, 040 |
 | 037 | Modelo de desenvolvimento | 07, 027–028, 036, 040 |
 | 038 | História de vida | 020, 036–037, 040, 043 |
@@ -112,3 +113,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [Execution Trace VS-000](execution-traces/VS-000-message-response.md)
 - [Execution Trace VS-001 — Resurrection](execution-traces/VS-001-resurrection.md)
 - [Execution Trace VS-002 — Entity Birth + Self Model](execution-traces/VS-002-entity-birth-self-model.md)
+- [Execution Trace VS-003 — Memory Retrieval + Personal Continuity](execution-traces/VS-003-memory-retrieval-personal-continuity.md)

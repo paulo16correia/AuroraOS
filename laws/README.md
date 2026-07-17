@@ -13,3 +13,4 @@ Constituição → Leis → Políticas → Decisões → Ações
 
 Cada Lei deve ser aplicada por pelo menos um controlo de arquitetura, teste de conformidade e registo de auditoria.
 
+- [LAW-008 — Integridade da identidade pelo Self Model](LAW-008-self-model-identity-integrity.md)

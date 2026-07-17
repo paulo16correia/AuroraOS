@@ -24,6 +24,7 @@ Unidade: máquinas de estado e regras puras             muitos
 | LAW-003 | cada Action termina em Observation; timeout gera `UNKNOWN` e reconciliação. |
 | LAW-004 | memória órfã não entra em `ACTIVE`; relações conservam evidência. |
 | LAW-007 | duplicação de evento não duplica efeito; consumidor incompatível vai para falha controlada. |
+| LAW-008 | provider não consegue descrever uma identidade cujo `entity_id` ou `identity_ref` não foi validado pelo Kernel. |
 | Persistência | criar memória, reiniciar, restaurar snapshot isolado, confirmar dados e auditoria. |
 | Estados | cada transição válida é aceite; cada salto inválido é rejeitado com código de erro. |
 | Segurança | negação por defeito, revogação imediata, redação de segredos e injeção em conteúdo externo. |
@@ -39,4 +40,3 @@ Unidade: máquinas de estado e regras puras             muitos
 ## Critérios de falha
 
 Qualquer violação de Lei, perda de auditabilidade, duplicação de efeito ou exposição de segredo bloqueia release. Cobertura numérica não substitui casos de risco e recuperação.
-
