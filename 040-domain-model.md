@@ -86,6 +86,7 @@ Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 | `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
 | `Capability` | `capability_id`, `entity_id`, `name`, `kind`, `enabled`, `trusted`, `version` | catálogo persistente e versionado; descreve disponibilidade, não autorização. VS-007 ativa apenas capacidades internas. |
 | `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007.1 exige uma request para toda a intenção externa reconhecida, mesmo quando a Task de origem é histórica; não possui provider nem execução. |
+| `CapabilityResult` | `result_id`, `entity_id`, `request_ref`, `executor_id`, `status`, `summary`, `created_at` | imutável; VS-008 só produz `DRY_RUN|NOT_IMPLEMENTED` através de `NOOP_EXECUTOR`. Não prova efeito externo. |
 | `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; não recebe autoridade fora do manifesto. |
 | `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; apenas Kernel executa. |
 | `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; orienta Goals, não executa. |

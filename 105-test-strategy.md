@@ -31,6 +31,7 @@ Unidade: máquinas de estado e regras puras             muitos
 | Tasks VS-006 | Plan explícito cria `Task(INTERNAL_ANALYSIS)` e só aceita `READY → RUNNING → COMPLETED|FAILED`; restauro não reexecuta; conclusão gera progresso do Goal; pedido externo não cria Action, ToolCall ou CapabilityRequest. |
 | Capacidades VS-007 | catálogo interno ativo e externo desativado é persistido; pedido de email cria `CapabilityRequest(EMAIL_SEND, UNAVAILABLE)` sem Action, ToolCall, provider ou efeito externo. |
 | Alinhamento VS-007.1 | pedido de email após uma Task histórica cria/carrega request antes de Thought e termina `CAPABILITY(UNAVAILABLE)`; a Task histórica não incrementa novamente o Goal. |
+| Executor VS-008 | request elegível produz um único `CapabilityResult(NOT_IMPLEMENTED|DRY_RUN)` idempotente; resultado não altera request nem produz Action, ToolCall, provider ou efeito externo. |
 | Estados | cada transição válida é aceite; cada salto inválido é rejeitado com código de erro. |
 | Segurança | negação por defeito, revogação imediata, redação de segredos e injeção em conteúdo externo. |
 | Capabilities | intenção resolve provider permitido; fallback não muda destinatário/efeito sem decisão. |

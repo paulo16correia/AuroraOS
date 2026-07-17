@@ -119,3 +119,4 @@ Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de ar
 - [Execution Trace VS-006 — Controlled Internal Execution Loop](execution-traces/VS-006-controlled-execution-loop.md)
 - [Execution Trace VS-007 — Capability Framework](execution-traces/VS-007-capability-framework.md)
 - [Execution Trace VS-007.1 — Capability Pipeline Alignment](execution-traces/VS-007.1-capability-pipeline-alignment.md)
+- [Execution Trace VS-008 — Executor Interface](execution-traces/VS-008-executor-interface.md)
