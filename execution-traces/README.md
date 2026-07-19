@@ -30,6 +30,7 @@ altera uma decisão arquitetural, um ADR.
 | 027 | World Model temporal: transições para histórico | Implementado | `VS-027-temporal-world-assertions.md` |
 | 028 | World Model temporal: reativação de relações | Implementado | `VS-028-world-relationship-reactivation.md` |
 | 029 | World Model temporal: consultas as-of | Implementado | `VS-029-temporal-as-of-queries.md` |
+| 030 | World Model: relações em disputa | Implementado | `VS-030-world-assertion-disputes.md` |
 
 ## Histórico de colisões resolvidas
 
