@@ -29,6 +29,7 @@ altera uma decisão arquitetural, um ADR.
 | 026 | World Model: relações explícitas com proveniência | Implementado | `VS-026-world-model-foundation.md` |
 | 027 | World Model temporal: transições para histórico | Implementado | `VS-027-temporal-world-assertions.md` |
 | 028 | World Model temporal: reativação de relações | Implementado | `VS-028-world-relationship-reactivation.md` |
+| 029 | World Model temporal: consultas as-of | Implementado | `VS-029-temporal-as-of-queries.md` |
 
 ## Histórico de colisões resolvidas
 
