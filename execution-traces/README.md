@@ -28,6 +28,7 @@ altera uma decisão arquitetural, um ADR.
 | 025 | Ciclo de vida de eventos Google Calendar | Implementado | `VS-025-calendar-event-lifecycle.md` |
 | 026 | World Model: relações explícitas com proveniência | Implementado | `VS-026-world-model-foundation.md` |
 | 027 | World Model temporal: transições para histórico | Implementado | `VS-027-temporal-world-assertions.md` |
+| 028 | World Model temporal: reativação de relações | Implementado | `VS-028-world-relationship-reactivation.md` |
 
 ## Histórico de colisões resolvidas
 
