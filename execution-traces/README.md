@@ -24,7 +24,8 @@ altera uma decisão arquitetural, um ADR.
 | 021 | Orquestração Calendar + Email com aprovações independentes | Implementado | `VS-021-multi-capability-orchestration.md` |
 | 022 | Resolução explícita de entidades para destinatários | Implementado | `VS-022-entity-resolution.md` |
 | 023 | Compensação conservadora de ramos falhados | Implementado | `VS-023-workflow-compensation.md` |
-| 024 | Workflows recorrentes | Em implementação | A criar neste ciclo |
+| 024 | Workflows recorrentes | Implementado | `VS-024-recurring-workflows.md` |
+| 025 | Ciclo de vida de eventos Google Calendar | Implementado | `VS-025-calendar-event-lifecycle.md` |
 
 ## Histórico de colisões resolvidas
 
@@ -35,6 +36,5 @@ de Calendar são uma expansão futura e receberão outro número.
 
 ## Próximo slice
 
-O VS-024 introduz recorrência persistente sobre o Scheduler do VS-018. O
-agendamento não concede autorização para efeitos externos; Email e outros
-conectores continuam sujeitos a Policy e Approval.
+O catálogo aguarda a priorização do próximo comportamento. Qualquer novo VS
+tem de ser registado aqui antes de receber implementação no Kernel.
