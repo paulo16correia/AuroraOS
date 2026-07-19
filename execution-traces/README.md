@@ -31,6 +31,7 @@ altera uma decisão arquitetural, um ADR.
 | 028 | World Model temporal: reativação de relações | Implementado | `VS-028-world-relationship-reactivation.md` |
 | 029 | World Model temporal: consultas as-of | Implementado | `VS-029-temporal-as-of-queries.md` |
 | 030 | World Model: relações em disputa | Implementado | `VS-030-world-assertion-disputes.md` |
+| 031 | World Model: correção explícita de relação disputada | Implementado | `VS-031-world-assertion-corrections.md` |
 
 ## Histórico de colisões resolvidas
 
@@ -41,5 +42,6 @@ de Calendar são uma expansão futura e receberão outro número.
 
 ## Próximo slice
 
+O VS-031 fecha a criação explícita de uma relação substituta após uma disputa.
 O catálogo aguarda a priorização do próximo comportamento. Qualquer novo VS
 tem de ser registado aqui antes de receber implementação no Kernel.
