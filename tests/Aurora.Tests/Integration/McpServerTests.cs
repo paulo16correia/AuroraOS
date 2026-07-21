@@ -1,0 +1,175 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Aurora.Tests.Support;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using Xunit;
+
+namespace Aurora.Tests.Integration;
+
+/// <summary>
+/// End-to-end tests over the real MCP HTTP transport and security middleware, driven by the
+/// official MCP client against an in-memory host.
+/// </summary>
+public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
+{
+    private readonly AuroraAppFactory _factory;
+
+    public McpServerTests(AuroraAppFactory factory) => _factory = factory;
+
+    private static CancellationToken Timeout() => new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token;
+
+    private async Task<McpClient> ConnectAsync(string? bearer = null)
+    {
+        var http = _factory.CreateClient();
+        var transport = new HttpClientTransport(
+            new HttpClientTransportOptions
+            {
+                Endpoint = new Uri("http://localhost/mcp"),
+                TransportMode = HttpTransportMode.StreamableHttp,
+                AdditionalHeaders = new Dictionary<string, string>
+                {
+                    ["Authorization"] = $"Bearer {bearer ?? _factory.BearerToken}",
+                },
+            },
+            http);
+
+        return await McpClient.CreateAsync(transport, cancellationToken: Timeout());
+    }
+
+    private static string ToJson(CallToolResult result)
+    {
+        if (result.StructuredContent is { } structured)
+        {
+            return structured.GetRawText();
+        }
+
+        var text = result.Content.OfType<TextContentBlock>().FirstOrDefault();
+        return text?.Text ?? throw new InvalidOperationException("Tool result carried no JSON payload.");
+    }
+
+    [Fact]
+    public async Task ListTools_ExposesTheTwoFixedTools()
+    {
+        await using var client = await ConnectAsync();
+        var names = (await client.ListToolsAsync(cancellationToken: Timeout())).Select(t => t.Name).ToList();
+
+        Assert.Contains("aurora_catalog", names);
+        Assert.Contains("aurora_execute", names);
+    }
+
+    [Fact]
+    public async Task Catalog_ListsClockAndEcho()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_catalog", new Dictionary<string, object?>(), cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        var ids = doc.RootElement.GetProperty("actions").EnumerateArray()
+            .Select(a => a.GetProperty("action_id").GetString())
+            .ToList();
+
+        Assert.Contains("clock.now", ids);
+        Assert.Contains("echo.say", ids);
+    }
+
+    [Fact]
+    public async Task Execute_Echo_Completes_WithAuditRef()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "echo.say",
+                ["input"] = new Dictionary<string, object?> { ["message"] = "hi there" },
+            },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("completed", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal("hi there", doc.RootElement.GetProperty("result").GetProperty("said").GetString());
+        Assert.NotEmpty(doc.RootElement.GetProperty("audit_ref").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Execute_ClockNow_NoInput_Completes()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?> { ["action_id"] = "clock.now" },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("completed", doc.RootElement.GetProperty("status").GetString());
+        Assert.True(doc.RootElement.GetProperty("result").TryGetProperty("utc", out _));
+    }
+
+    [Fact]
+    public async Task Execute_UnknownAction_IsInvalid()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?> { ["action_id"] = "nope.nope" },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("invalid", doc.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Execute_Idempotent_ReplayReturnsSameResult()
+    {
+        await using var client = await ConnectAsync();
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "echo.say",
+            ["input"] = new Dictionary<string, object?> { ["message"] = "once" },
+            ["idempotency_key"] = "integration-key-1",
+        };
+
+        var first = ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout()));
+        var second = ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout()));
+
+        using var d1 = JsonDocument.Parse(first);
+        using var d2 = JsonDocument.Parse(second);
+        Assert.Equal("completed", d1.RootElement.GetProperty("status").GetString());
+        Assert.Equal("completed", d2.RootElement.GetProperty("status").GetString());
+        Assert.Equal(
+            d1.RootElement.GetProperty("result").GetProperty("said").GetString(),
+            d2.RootElement.GetProperty("result").GetProperty("said").GetString());
+    }
+
+    [Fact]
+    public async Task WrongBearer_IsRejected()
+    {
+        await Assert.ThrowsAnyAsync<Exception>(() => ConnectAsync(bearer: "definitely-wrong-token"));
+    }
+
+    [Fact]
+    public async Task RawRequest_WrongHost_Returns421()
+    {
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Host = "evil.example.com";
+
+        var response = await http.PostAsync(
+            "/mcp", new StringContent("{}", Encoding.UTF8, "application/json"), Timeout());
+
+        Assert.Equal(HttpStatusCode.MisdirectedRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RawRequest_NoBearer_Returns401()
+    {
+        var http = _factory.CreateClient();
+
+        var response = await http.PostAsync(
+            "/mcp", new StringContent("{}", Encoding.UTF8, "application/json"), Timeout());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+}
