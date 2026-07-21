@@ -1,0 +1,45 @@
+using Aurora.Adapters.Persistence;
+using Aurora.Core.Abstractions;
+using Aurora.Server;
+using Aurora.Server.Mcp;
+using Aurora.Server.Security;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var options = AuroraServerOptions.FromConfiguration(builder.Configuration);
+
+// Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
+builder.WebHost.ConfigureKestrel(kestrel =>
+{
+    kestrel.ListenLocalhost(options.Port);
+    // Resource guard: reject oversized bodies at the transport before any parsing/canonicalization.
+    kestrel.Limits.MaxRequestBodySize = 64 * 1024;
+});
+
+builder.Services.AddAurora(options);
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport(http => http.Stateless = true)
+    .WithTools<AuroraTools>();
+
+var app = builder.Build();
+
+// Migrate, then fail closed if the existing audit chain fails its integrity check.
+app.Services.GetRequiredService<SqliteDatabase>().Initialize();
+var auditVerification = await app.Services.GetRequiredService<IAuditStore>().VerifyChainAsync(CancellationToken.None);
+if (!auditVerification.Ok)
+{
+    throw new InvalidOperationException(
+        $"Audit chain integrity verification failed at sequence {auditVerification.BrokenSequence}; refusing to start.");
+}
+
+// Security pipeline: loopback/Origin guard, then bearer auth, before the MCP endpoints.
+app.UseMiddleware<LoopbackGuardMiddleware>();
+app.UseMiddleware<BearerAuthMiddleware>();
+
+app.MapMcp("/mcp");
+
+app.Run();
+
+/// <summary>Exposed so WebApplicationFactory can host the app in integration tests.</summary>
+public partial class Program;

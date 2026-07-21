@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Aurora.Adapters</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!-- Pin patched SQLite native bundle (CVE-2025-6965); overrides the transitive 2.1.11. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="JsonSchema.Net" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Aurora.Core/Aurora.Core.csproj" />
+  </ItemGroup>
+</Project>

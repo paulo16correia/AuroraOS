@@ -1,0 +1,35 @@
+using Aurora.Core.Contracts;
+
+namespace Aurora.Core.Abstractions;
+
+public sealed record AuditVerification(bool Ok, long? BrokenSequence);
+
+/// <summary>Append-only, hash-chained audit log. Integrity failure is fail-closed.</summary>
+public interface IAuditStore
+{
+    /// <summary>Appends a record and returns its record_hash.</summary>
+    Task<string> AppendAsync(
+        string principalClientId,
+        string principalWindowsUser,
+        string actionId,
+        string inputHash,
+        string outcome,
+        CancellationToken ct);
+
+    /// <summary>Recomputes the chain and reports the first break, if any.</summary>
+    Task<AuditVerification> VerifyChainAsync(CancellationToken ct);
+}
+
+/// <summary>Idempotency ledger keyed by (principal client, idempotency_key).</summary>
+public interface IIdempotencyStore
+{
+    Task<IdempotencyBegin> BeginAsync(Principal principal, string key, string requestHash, CancellationToken ct);
+
+    /// <summary>
+    /// Transitions ACCEPTED→EXECUTING. Returns false when the row is not in ACCEPTED state (the
+    /// reservation is no longer owned by this caller); the caller must then fail closed.
+    /// </summary>
+    Task<bool> MarkExecutingAsync(Principal principal, string key, CancellationToken ct);
+
+    Task CompleteAsync(Principal principal, string key, string state, string resultJson, CancellationToken ct);
+}
