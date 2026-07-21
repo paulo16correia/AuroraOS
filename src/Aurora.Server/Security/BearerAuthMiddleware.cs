@@ -33,8 +33,12 @@ public sealed class BearerAuthMiddleware
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             context.Response.Headers.WWWAuthenticate = "Bearer";
-            context.Response.ContentType = "text/plain";
-            await context.Response.WriteAsync("unauthorized");
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "invalid_token",
+                error_description = "unauthorized",
+            });
             return;
         }
 

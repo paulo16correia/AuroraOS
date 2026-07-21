@@ -163,7 +163,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
     }
 
     [Fact]
-    public async Task RawRequest_NoBearer_Returns401()
+    public async Task RawRequest_NoBearer_Returns401_WithJsonOAuthError()
     {
         var http = _factory.CreateClient();
 
@@ -171,5 +171,11 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             "/mcp", new StringContent("{}", Encoding.UTF8, "application/json"), Timeout());
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("invalid_token", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal("unauthorized", doc.RootElement.GetProperty("error_description").GetString());
     }
 }
