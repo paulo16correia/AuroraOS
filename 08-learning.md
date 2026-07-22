@@ -1,29 +1,29 @@
-# Aurora OS — RFC 08: Aprendizagem, reflexão e avaliação
+# Aurora OS — RFC 08: Learning, reflection and evaluation
 
-**Estado:** Normativo · **Depende de:** RFC 02–07
+**State:** Normative · **Depends on:** RFC 02–07
 
-## Objetivo
+## Objective
 
-Permitir melhoria operacional a partir de resultados observados sem transformar cada conversa em alteração permanente de comportamento. Aprender significa propor, avaliar e consolidar conhecimento ou procedimento sob governação.
+Allow operational improvement based on observed results without transforming each conversation into a permanent change in behavior. Learning means proposing, evaluating and consolidating knowledge or procedures under governance.
 
-## Responsabilidades e arquitetura
+## Responsibilities and architecture
 
 ```text
-Conclusão de WorkItem/Task
+WorkItem/Task Completion
              │
              ▼
-     recolher evidência e métricas
+collect evidence and metrics
              │
              ▼
-  Reflection candidata → validação → ação de aprendizagem
+Candidate reflection → validation → learning action
              │                                │
              ▼                                ▼
-          relatório                    memória/procedimento/política
+memory/procedure/policy report
 ```
 
-O componente produz reflexões breves sobre sucesso, falha, incerteza, custo e segurança. Não reescreve o perfil, políticas ou ferramentas diretamente.
+The component produces brief reflections on success, failure, uncertainty, cost, and safety. Does not rewrite the profile, policies, or tools directly.
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Reflection
@@ -51,26 +51,25 @@ Evaluator.run(proposal_id, test_scope) -> EvaluationRun
 Learning.apply(proposal_id, approval) -> ChangeRecord
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Uma reflexão DEVE citar evidência concreta; uma impressão do modelo não é causa-raiz confirmada.
-2. Apenas alterações de memória de baixo risco podem ser consolidadas automaticamente e ainda assim obedecem à RFC 03.
-3. Mudanças de personalidade, política, ferramentas, modelos ou automação DEVEM ser aprovadas, testadas e reversíveis.
-4. Avaliações DEVEM medir também regressão de segurança, custo e privacidade, não só qualidade textual.
-5. O sistema NÃO DEVE treinar modelos com dados do utilizador sem consentimento específico e contrato de dados apropriado.
+1. A reflection MUST cite concrete evidence; a printout of the model is not confirmed root cause.
+2. Only low-risk memory changes can be automatically committed and still comply with RFC 03.
+3. Changes to personality, policy, tools, templates, or automation MUST be approved, tested, and reversible.
+4. Assessments MUST also measure security regression, cost and privacy, not just textual quality.
+5. The system MUST NOT train models with user data without specific consent and appropriate data agreement.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Resultado desconhecido:** criar reflexão `UNKNOWN`; não inferir sucesso a partir de ausência de erro.
-- **Proposta conflitua com uma política:** rejeitar e guardar razão; nunca tentar um desvio alternativo.
-- **Métrica melhora num caso e piora noutro:** manter em teste e requerer decisão humana segundo limiar definido.
-- **Falha durante aplicação:** executar rollback ou marcar estado parcial, bloquear nova aplicação e abrir incidente.
+- **Unknown result:** create reflection `UNKNOWN`; do not infer success from the absence of error.
+- **Proposal conflicts with a policy:** reject and keep reason; never attempt an alternative detour.
+- **Metric improves in one case and worsens in another:** keep in test and require human decision according to defined threshold.
+- **Failure during application:** execute rollback or mark partial status, block new application and open incident.
 
-## Justificação
+## Justification
 
-Separar observação, proposta, teste e aplicação impede a deriva silenciosa de comportamento. A aprendizagem fica rastreável e pode ser revertida, condição essencial num assistente persistente.
+Separating observation, proposal, testing and application prevents the silent drift of behavior. Learning is traceable and can be reversed, an essential condition for a persistent assistant.
 
-## Expansões futuras
+## Future expansions
 
-Conjuntos de avaliação privados, experimentação canário, aprendizagem federada com consentimento e recomendações de manutenção preditiva.
-
+Private evaluation sets, canary experimentation, federated learning with consent, and predictive maintenance recommendations.

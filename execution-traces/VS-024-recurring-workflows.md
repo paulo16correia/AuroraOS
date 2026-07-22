@@ -1,21 +1,21 @@
-# VS-024 — Workflows recorrentes
+# VS-024 — Recurring workflows
 
-## Objetivo
+## Objective
 
-Permitir que uma Entity mantenha uma intenção temporal persistente, por exemplo
-“Lembra-me todas as segundas às 09:00”, e materialize cada ocorrência uma única
-vez através do Scheduler do VS-018.
+Allow an Entity to maintain a persistent temporal intent, e.g.
+“Remind me every Monday at 09:00”, and materialize each occurrence as a single
+time through the VS-018 Scheduler.
 
-## Limite
+## Limit
 
-Este slice entrega uma notificação local auditável. Um pedido futuro para Email,
-Discord ou outro conector cria uma capability separada e atravessa as Policies
-e Approvals normais; uma regra recorrente não é autorização permanente.
+This slice delivers an auditable local notification. A future request for Email,
+Discord or another connector creates a separate capability and traverses the Policies
+and normal Approvals; a recurring rule is not permanent authorization.
 
-## Fluxo
+## Flow
 
 ```text
-Mensagem do utilizador
+User message
        ↓
 RecurringWorkflow(ACTIVE, next_due_at)
        ↓
@@ -25,42 +25,42 @@ Scheduler.tick()
        ↓
 Task(READY)
        ↓
-RecurringRun(DELIVERED) + notificação local
+RecurringRun(DELIVERED) + local notification
        ↓
-Task(COMPLETED) + próxima Task(WAITING_FOR_TIME)
+Task(COMPLETED) + next Task(WAITING_FOR_TIME)
 ```
 
-## Objetos
+## Objects
 
-`RecurringWorkflow` possui `weekday`, `time_of_day`, `timezone`,
-`delivery_channel`, `next_due_at`, `last_triggered_at`, estado e versão.
+`RecurringWorkflow` has `weekday`, `time_of_day`, `timezone`,
+`delivery_channel`, `next_due_at`, `last_triggered_at`, status and version.
 
-`RecurringRun` representa uma ocorrência concreta, com a hora prevista, a Task
-que a materializou, resultado e instante de entrega.
+`RecurringRun` represents a concrete occurrence, with the expected time, the Task
+that materialized it, result and moment of delivery.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. A recorrência semanal usa `Europe/Lisbon` e calcula a próxima ocorrência com
-   uma biblioteca de timezone, incluindo horário de verão.
-2. A identificação de cada Run deriva de `workflow_id + scheduled_for`; repetir
-   um tick nunca duplica uma notificação.
-3. O Scheduler apenas liberta a Task; a criação do Run conclui a entrega local e
-   agenda a ocorrência seguinte.
-4. Pausar ou cancelar uma regra impede novas ocorrências, sem apagar Runs
-   anteriores.
-5. Reiniciar a Entity preserva Workflow, Task pendente e Runs concluídos.
+1. Weekly recurrence uses `Europe/Lisbon` and calculates the next occurrence with
+   a timezone library, including daylight saving time.
+2. The identification of each Run is derived from `workflow_id + scheduled_for`; repeat
+   a tick never duplicates a notification.
+3. The Scheduler only releases the Task; Run creation completes local delivery and
+   Schedule the next occurrence.
+4. Pausing or canceling a rule prevents new occurrences, without deleting Runs
+   previous ones.
+5. Restarting the Entity preserves Workflow, pending Task and completed Runs.
 
-## Casos de erro
+## Error cases
 
-- Dia ou hora não reconhecidos: não criar workflow e explicar o formato aceite.
-- Tick atrasado: entrega no máximo uma ocorrência vencida e avança para a
-  próxima semana; nunca recupera uma avalanche silenciosa.
-- Data ambígua na transição de hora: o `scheduled_for` absoluto garante uma
-  única ocorrência.
+- Day or time not recognized: do not create workflow and explain the accepted format.
+- Delayed Tick: delivers at most one incident due and advances to the
+  next week; never recovers a silent avalanche.
+- Ambiguous date in the time transition: absolute `scheduled_for` guarantees a
+  single occurrence.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-- A mensagem de exemplo cria uma regra semanal e uma Task em espera.
-- Ao chegar à hora, é criado exatamente um `RecurringRun` e a Task é concluída.
-- A Task seguinte é persistida para a semana seguinte.
-- Um segundo tick não duplica o Run nem a notificação.
+- The example message creates a weekly rule and a waiting Task.
+- When the time arrives, exactly one `RecurringRun` is created and the Task is completed.
+- The next Task is persisted for the following week.
+- A second tick does not duplicate the Run or the notification.

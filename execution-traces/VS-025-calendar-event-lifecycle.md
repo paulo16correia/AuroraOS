@@ -1,23 +1,23 @@
-# VS-025 - Ciclo de vida de eventos Calendar
+# VS-025 - Calendar Event Lifecycle
 
-## Objetivo
+## Objective
 
-Permitir alterar ou cancelar um evento do Google Calendar de forma
-auditável, aprovada pelo utilizador e idempotente. Este slice introduz as
-capabilities `CALENDAR_UPDATE_EVENT` e `CALENDAR_DELETE_EVENT`.
+Allow you to change or cancel a Google Calendar event
+auditable, user approved and idempotent. This slice introduces the
+capabilities `CALENDAR_UPDATE_EVENT` and `CALENDAR_DELETE_EVENT`.
 
-## Limite funcional
+## Functional limit
 
-O Kernel não procura eventos por título, participante ou semelhança. Cada
-operação de escrita recebe obrigatoriamente um identificador explícito do
-provider: `Evento: <google_event_id>`. Uma alteração também requer `Titulo`,
-`Inicio` e `Fim` em ISO 8601. Esta escolha impede que uma mensagem ambígua
-altere a reunião errada.
+Kernel does not search for events by title, participant, or similarity. Each
+write operation must receive an explicit identifier of the
+provider: `Evento: <google_event_id>`. A change also requires `Titulo`,
+`Start` and `End` in ISO 8601. This choice prevents an ambiguous message
+change the wrong meeting.
 
-## Fluxo de execução
+## Execution flow
 
 ```text
-Mensagem
+Message
   |
   v
 Plan + Task(INTERNAL_ANALYSIS)
@@ -31,9 +31,9 @@ Policy -> ExecutionPreparation(PENDING_APPROVAL)
   v
 ApprovalRequest(PENDING)
   |
-  +-- utilizador rejeita --> sem chamada ao provider
++-- user rejects --> no call to provider
   |
-  +-- utilizador aprova --> ExecutionRecord(EXECUTING)
++-- user approves --> ExecutionRecord(EXECUTING)
                                  |
                                  v
                        Google Calendar API
@@ -42,56 +42,56 @@ ApprovalRequest(PENDING)
                   CapabilityResult(SUCCESS | FAILED)
 ```
 
-## Contratos
+## Contracts
 
-`CalendarEventMutation` representa a intenção validada, nunca o evento
-remoto completo. Contém `mutation_id`, `entity_id`, `event_id`, `operation`,
-campos propostos de evento, `status`, `validation_error` e `created_at`.
+`CalendarEventMutation` represents the validated intent, never the event
+full remote. Contains `mutation_id`, `entity_id`, `event_id`, `operation`,
+proposed event fields, `status`, `validation_error` and `created_at`.
 
-Operações suportadas:
+Supported operations:
 
-- `CALENDAR_UPDATE_EVENT`: substitui os campos explicitamente fornecidos no
-  evento remoto; nesta primeira versão título, início e fim são obrigatórios.
-- `CALENDAR_DELETE_EVENT`: remove o evento cujo `event_id` foi fornecido.
+- `CALENDAR_UPDATE_EVENT`: replaces fields explicitly provided in the
+  remote event; In this first version title, beginning and end are mandatory.
+- `CALENDAR_DELETE_EVENT`: removes the event whose `event_id` was provided.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Uma mutação inválida é persistida para auditoria, mas fica `BLOCKED` e não
-   cria pedido de aprovação.
-2. Toda a escrita Calendar requer Policy permitida e Approval explícita.
-3. O `ExecutionRecord` usa a chave idempotente do pedido. Um pedido aprovado
-   que já esteja `COMPLETED` devolve o resultado guardado e não chama o
-   provider outra vez.
-4. Estados `EXECUTING` ou desconhecidos nunca são repetidos automaticamente
-   após reinício. Exigem reconciliação com o provider.
-5. O provider recebe `sendUpdates=none`; notificações a convidados ficam fora
-   deste slice e exigem uma capability própria.
-6. Nenhuma correspondência aproximada por título é permitida neste slice.
+1. An invalid mutation is persisted for auditing, but becomes `BLOCKED` and not
+   creates approval request.
+2. All Calendar writing requires Policy Enabled and Explicit Approval.
+3. `ExecutionRecord` uses the request idempotent key. An approved request
+   that is already `COMPLETED` returns the saved result and does not call the
+   provider again.
+4. `EXECUTING` or unknown states are never automatically repeated
+   after restart. Require reconciliation with the provider.
+5. The provider receives `sendUpdates=none`; guest notifications are off
+   of this slice and require their own capability.
+6. No approximate title matches are allowed in this slice.
 
-## Formatos de entrada aceites
+## Accepted input formats
 
 ```text
-Remarca o evento | Evento: abc123 | Titulo: Revisao | Inicio: 2026-07-20T15:00:00+01:00 | Fim: 2026-07-20T16:00:00+01:00
+Reschedule the event | Event: abc123 | Title: Review | Start: 2026-07-20T15:00:00+01:00 | End: 2026-07-20T16:00:00+01:00
 
 Cancela o evento | Evento: abc123
 ```
 
-Os nomes de campo sem acentos são recomendados na CLI Windows para evitar
-dependência da página de códigos do terminal.
+Field names without accents are recommended in the Windows CLI to avoid
+terminal code page dependency.
 
-## Casos de erro
+## Error cases
 
-- Evento sem identificador: `EVENT_ID_REQUIRED`.
-- Alteração sem título, início ou fim: `TITLE_START_END_REQUIRED`.
-- Intervalo inválido: `INVALID_EVENT_INTERVAL`.
-- Provider não configurado: `GOOGLE_CALENDAR_NOT_CONFIGURED`.
-- Falha da API: persistir `FAILED`; não repetir automaticamente.
+- Event without identifier: `EVENT_ID_REQUIRED`.
+- Change without title, beginning or end: `TITLE_START_END_REQUIRED`.
+- Invalid range: `INVALID_EVENT_INTERVAL`.
+- Provider not configured: `GOOGLE_CALENDAR_NOT_CONFIGURED`.
+- API failure: persist `FAILED`; do not repeat automatically.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Update e delete criam uma `CalendarEventMutation` persistida.
-2. Nenhuma chamada Google ocorre antes de `Approval(APPROVED)`.
-3. Cada mutação aprovada chama o provider exatamente uma vez.
-4. Reinício, replay ou confirmação repetida não duplicam a escrita.
-5. O trace inclui `CAPABILITY_REQUEST`, `CALENDAR_EVENT_MUTATION`,
-   `APPROVAL_REQUEST`, `EXECUTION` e `CAPABILITY_RESULT`.
+1. Update and delete create a persisted `CalendarEventMutation`.
+2. No Google calls occur before `Approval(APPROVED)`.
+3. Each approved mutation calls the provider exactly once.
+4. Restart, replay or repeated confirmation do not duplicate writing.
+5. The trace includes `CAPABILITY_REQUEST`, `CALENDAR_EVENT_MUTATION`,
+   `APPROVAL_REQUEST`, `EXECUTION` and `CAPABILITY_RESULT`.

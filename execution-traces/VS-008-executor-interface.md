@@ -1,28 +1,28 @@
 # Aurora OS — Execution Trace Specification: VS-008 Executor Interface
 
-**Estado:** Autorizado por ADR-008  
-**Caso de utilização:** pedido externo indisponível → executor de referência → resultado persistente sem efeito
+**Status:** Authorized by ADR-008
+**Use case:** external request unavailable → reference executor → persistent result no effect
 
-## Objetivo
+## Objective
 
-Definir a ponte contratual para execução sem executar capacidades reais. VS-008 prova que o Kernel consegue despachar uma request para um componente separado e receber um resultado que pode ser auditado.
+Define contractual bridge to execution without executing actual capabilities. VS-008 proves that the Kernel can dispatch a request to a separate component and receive a result that can be audited.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
-User: "Envia um email por mim"
+User: "Send an email for me"
   → Task(INTERNAL_ANALYSIS, COMPLETED)
   → CapabilityRequest(EMAIL_SEND, UNAVAILABLE)
   → Executor(NoopExecutor)
   → CapabilityResult(NOT_IMPLEMENTED)
   → Thought / Decision(RESPOND)
-  → Response: nenhum email foi enviado
+→ Response: no email was sent
   → Observation / Reflection
 
-Nenhuma Action, ToolCall, provider, rede, segredo ou chamada externa.
+No Action, ToolCall, provider, network, secret or external call.
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Executor.execute(request, capability) -> CapabilityResult
@@ -37,31 +37,31 @@ CapabilityResult
   created_at
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Um Executor recebe apenas uma `CapabilityRequest` persistida e a Capability referida pela mesma Entity.
-2. VS-008 só permite `NOOP_EXECUTOR`; qualquer executor externo falha na composição do Kernel.
-3. `NOT_IMPLEMENTED` e `DRY_RUN` nunca são prova de efeito externo, sucesso, envio ou autorização.
-4. A request não muda de estado quando o executor devolve resultado.
-5. Cada resultado DEVE referenciar a request, o executor e o trace que o originou.
-6. O resultado é idempotente por `request_ref`; repetir o ciclo carrega-o, não recria nem reexecuta.
+1. An Executor receives only a persisted `CapabilityRequest` and the Capability referred to by the same Entity.
+2. VS-008 only allows `NOOP_EXECUTOR`; any external executor fails to compose the Kernel.
+3. `NOT_IMPLEMENTED` and `DRY_RUN` are never proof of external effect, success, shipping or authorization.
+4. The request does not change state when the executor returns results.
+5. Each result MUST reference the request, the executor and the trace that originated it.
+6. The result is idempotent by `request_ref`; repeating the cycle loads it, does not recreate or rerun it.
 
-## Eventos e trace
+## Events and trace
 
-| Situação | Evento | Trace |
+| Situation | Event | Trace |
 | --- | --- | --- |
-| Despacho interno | `ExecutorInvoked` | `EXECUTOR(NOT_IMPLEMENTED)` |
-| Resultado criado | `CapabilityResultCreated` | `CAPABILITY_RESULT(CREATED)` |
-| Resultado existente | `CapabilityResultLoaded` | `CAPABILITY_RESULT(LOADED)` |
+| Internal dispatch | `ExecutorInvoked` | `EXECUTOR(NOT_IMPLEMENTED)` |
+| Result created | `CapabilityResultCreated` | `CAPABILITY_RESULT(CREATED)` |
+| Existing result | `CapabilityResultLoaded` | `CAPABILITY_RESULT(LOADED)` |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Um pedido de email cria/recupera `CapabilityRequest(UNAVAILABLE)` e um `CapabilityResult(NOT_IMPLEMENTED)`.
-2. O resultado sobrevive a shutdown/restauro e não é duplicado.
-3. Resposta e trace distinguem `UNAVAILABLE` de `NOT_IMPLEMENTED`.
-4. Não existe Action, ToolCall, provider, plugin, rede, ficheiro ou segredo.
-5. VS-000–VS-007.1 permanecem verdes.
+1. An email request creates/retrieves a `CapabilityRequest(UNAVAILABLE)` and a `CapabilityResult(NOT_IMPLEMENTED)`.
+2. The result survives shutdown/restore and is not duplicated.
+3. Response and trace distinguish `UNAVAILABLE` from `NOT_IMPLEMENTED`.
+4. There is no Action, ToolCall, provider, plugin, network, file or secret.
+5. VS-000–VS-007.1 remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-Não existe LLM Adapter, executor de email, approval workflow, plugin SDK, scheduler, queue externa, retry ou autonomia temporal. VS-008 define somente o contrato de passagem de intenção para resultado inerte.
+There is no LLM Adapter, email executor, approval workflow, SDK plugin, scheduler, external queue, retry or temporal autonomy. VS-008 only defines the contract of passing from intention to inert result.

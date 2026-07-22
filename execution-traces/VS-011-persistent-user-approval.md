@@ -1,13 +1,13 @@
 # Aurora OS — Execution Trace Specification: VS-011 Persistent User Approval
 
-**Estado:** Autorizado por ADR-011  
-**Caso de utilização:** pedido de email → preparação pendente → confirmação persistente → nenhuma execução externa
+**Status:** Authorized by ADR-011
+**Use case:** email request → pending preparation → persistent commit → no external execution
 
-## Objetivo
+## Objective
 
-Introduzir autorização explícita, persistente e atribuída a um utilizador. Uma mensagem de confirmação deixa de ser contexto transitório: torna-se uma `Approval` ligada a uma `ApprovalRequest`, que por sua vez referencia uma `ExecutionPreparation` concreta.
+Introduce explicit, persistent, user-assigned authorization. A confirmation message stops being a transient context: it becomes a `Approval` linked to a `ApprovalRequest`, which in turn references a concrete `ExecutionPreparation`.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 CapabilityRequest(EMAIL_SEND, READY_FOR_APPROVAL)
@@ -18,9 +18,9 @@ ExecutionPreparation(PENDING_APPROVAL)
         ↓
 ApprovalRequest(PENDING)
         ↓
-Response: "Posso preparar este envio. Queres confirmar?"
+Response: "I can prepare this shipment. Do you want to confirm?"
 
---- reinício permitido; não prepara nem executa novamente ---
+--- restart allowed; does not prepare or execute again ---
 
 User: "Sim"
         ↓
@@ -28,12 +28,12 @@ Approval(APPROVED, actor_id)
         ↓
 ApprovalRequest(APPROVED)
         ↓
-Response: aprovação registada; execução externa ainda desativada
+Response: approval registered; external execution still disabled
 ```
 
-VS-011 não chama `Executor.execute`, não usa SMTP e não pode produzir `CapabilityResult(SUCCESS)` para uma ação externa.
+VS-011 does not call `Executor.execute`, does not use SMTP, and cannot produce `CapabilityResult(SUCCESS)` for an external action.
 
-## Modelo de domínio
+## Domain model
 
 ```text
 ExecutionPreparation 1 ─── 1 ApprovalRequest 0 ─── 1 Approval
@@ -60,44 +60,44 @@ Approval
   decided_at
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Só uma `ExecutionPreparation(PENDING_APPROVAL)` pode originar uma `ApprovalRequest`.
-2. A confirmação só é aceite quando existe exatamente uma aprovação pendente para a Entity ativa.
-3. A decisão regista `actor_id`, instante e a request exata; não é reutilizável por outra Entity, preparação ou capability.
-4. Uma `Approval(APPROVED)` não é uma execução nem concede capacidades novas.
-5. Repetir o pedido, restaurar a Entity ou repetir a confirmação não pode recriar a preparação nem a aprovação.
-6. `REJECTED` e `EXPIRED` encerram a autorização; VS-011 não reabre automaticamente o pedido.
-7. A LLM pode descrever o estado, mas o Kernel é o único componente que interpreta a confirmação e persiste a aprovação.
+1. Only a `ExecutionPreparation(PENDING_APPROVAL)` can create a `ApprovalRequest`.
+2. Confirmation is only accepted when there is exactly one approval pending for the active Entity.
+3. Decision registers `actor_id`, instant and exact request; is not reusable by another Entity, preparation or capability.
+4. A `Approval(APPROVED)` is not an execution nor does it grant new capabilities.
+5. Retrying the order, restoring the Entity, or repeating the confirmation cannot recreate the preparation or approval.
+6. `REJECTED` and `EXPIRED` terminate authorization; VS-011 does not automatically reopen the request.
+7. The LLM can describe the state, but the Kernel is the only component that interprets the confirmation and persists the approval.
 
-## Eventos e trace
+## Events and trace
 
-| Situação | Evento | Trace |
+| Situation | Event | Trace |
 | --- | --- | --- |
-| Pedido criado | `ApprovalRequestCreated` | `APPROVAL_REQUEST(PENDING)` |
-| Pedido restaurado | `ApprovalRequestLoaded` | `APPROVAL_REQUEST(LOADED)` |
-| Decisão persistida | `ApprovalRecorded` | `APPROVAL(APPROVED|REJECTED)` |
+| Order created | `ApprovalRequestCreated` | `APPROVAL_REQUEST(PENDING)` |
+| Order restored | `ApprovalRequestLoaded` | `APPROVAL_REQUEST(LOADED)` |
+| Decision persisted | `ApprovalRecorded` | `APPROVAL(APPROVED|REJECTED)` |
 
-`MindState` inclui `approval_request_refs` e `approval_refs` no shutdown.
+`MindState` includes `approval_request_refs` and `approval_refs` at shutdown.
 
-## Casos limite
+## Limit cases
 
-| Condição | Resultado obrigatório |
+| Condition | Mandatory result |
 | --- | --- |
-| mensagem "Sim" sem pedido pendente | não cria Approval; resposta explica a ausência |
-| mais de um pedido pendente | confirmação textual é recusada por ambiguidade |
-| restart antes de confirmar | recarrega o pedido PENDING; não prepara nem executa de novo |
-| confirmação repetida | usa o Approval já persistido; não duplica decisão |
-| pedido rejeitado | não invoca executor externo |
+| "Yes" message with no pending order | does not create Approval; response explains the absence |
+| more than one pending order | textual confirmation is refused due to ambiguity |
+| restart before confirming | reload the PENDING request; does not prepare or execute again |
+| repeated confirmation | uses the already persisted Approval; does not duplicate decision |
+| request rejected | does not invoke external executor |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. EMAIL_SEND gera `ExecutionPreparation(PENDING_APPROVAL)` e `ApprovalRequest(PENDING)`.
-2. Após restart, a preparação, o resultado e o pedido de aprovação são carregados sem duplicação.
-3. `Sim` cria `Approval(APPROVED)` e atualiza a request para `APPROVED`.
-4. Não existe rede, SMTP, segredo, Action, ToolCall ou execução de capability.
-5. Todos os testes VS-000–VS-010 permanecem verdes.
+1. EMAIL_SEND generates `ExecutionPreparation(PENDING_APPROVAL)` and `ApprovalRequest(PENDING)`.
+2. After restart, the preparation, result and approval request are loaded without duplication.
+3. `Sim` creates `Approval(APPROVED)` and updates the request to `APPROVED`.
+4. There is no network, SMTP, secret, Action, ToolCall or capability execution.
+5. All VS-000–VS-010 tests remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-Esta versão não recolhe ainda destinatário, assunto ou corpo de email, nem implementa expiração temporal ativa ou UI de aprovação. VS-012 adicionará o executor de email real apenas quando a request tiver preparação completa e `Approval(APPROVED)` válida.
+This version does not yet collect recipient, subject or email body, nor does it implement active time expiration or approval UI. VS-012 will add the actual mail executor only when the request has full preparation and valid `Approval(APPROVED)`.

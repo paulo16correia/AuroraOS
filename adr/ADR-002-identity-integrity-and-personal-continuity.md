@@ -1,23 +1,23 @@
-# ADR-002 — Integridade de identidade e continuidade pessoal
+# ADR-002 — Identity Integrity and Personal Continuity
 
-**Estado:** ACEITE  
-**Data:** 2026-07-17  
-**RFCs afetadas:** RFC 03, RFC 027, RFC 040, LAW-008
+**Status:** ACCEPT
+**Date:** 2026-07-17
+**RFCs affected:** RFC 03, RFC 027, RFC 040, LAW-008
 
-## Contexto
+## Context
 
-VS-002 tornou persistente a identidade mínima de uma Entity. A continuação correta é recuperar memórias pessoais verificáveis, sem permitir que um provider de raciocínio invente identidade, biografia ou preferências.
+VS-002 made the minimum identity of an Entity persistent. The correct course of action is to recover verifiable personal memories, without allowing an LLM client to invent identity, biography, or preferences.
 
-## Decisão
+## Decision
 
-Adicionar LAW-008 e o VS-003. A fonte exclusiva para afirmações sobre a identidade da Aurora é `Identity`/`SelfModel` persistidos e validados pelo Kernel. VS-003 introduz recuperação determinística de memórias `ACTIVE`, delimitada por `entity_id`, com proveniência direta de mensagem de utilizador e registo obrigatório no trace.
+Add LAW-008 and VS-003. The exclusive source for assertions about Aurora's identity is `Identity`/`SelfModel` persisted and validated by the Kernel. VS-003 introduces deterministic recovery of `ACTIVE` memories, delimited by `entity_id`, with direct user message provenance and mandatory recording in the trace.
 
-## Consequências
+## Consequences
 
-- A interface do provider de raciocínio recebe apenas o Self e as memórias selecionadas pelo Kernel; não pode escolher memória fora do serviço de recuperação.
-- A primeira implementação usa correspondência estruturada e regras determinísticas. Não introduz embeddings, vector store, conhecimento global, crenças ou preferências inferidas.
-- Alterações futuras ao Self ou a uma estratégia de recuperação que permita inferência nova exigem ADR e testes de não-alucinação.
+- The MCP client boundary receives only the Self and the memories selected by the Kernel; cannot choose memory outside of the recovery service.
+- The first implementation uses structured matching and deterministic rules. It does not introduce embeddings, vector stores, global knowledge, inferred beliefs or preferences.
+- Future changes to the Self or a recovery strategy that allows new inference require ADR and non-hallucination tests.
 
-## Migração e reversão
+## Migration and rollback
 
-Memórias VS-000 existentes, sem campos estruturados, mantêm-se recuperáveis apenas como episódios genéricos. Novas memórias VS-003 incluem sujeito, predicado, objeto, confiança e proveniência. Revogar esta decisão remove a recuperação do contexto, sem apagar auditoria ou memórias persistidas.
+Existing VS-000 memories, without structured fields, remain retrievable only as generic episodes. New VS-003 memories include subject, predicate, object, trust, and provenance. Overturning this decision removes recovery from context, without erasing audit or persisted memories.

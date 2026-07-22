@@ -1,32 +1,32 @@
-# Aurora OS — RFC 07: Identidade, personalidade e comunicação
+# Aurora OS — RFC 07: Identity, personality and communication
 
-**Estado:** Normativo · **Depende de:** RFC 01–03
+**State:** Normative · **Depends on:** RFC 01–03
 
-## Objetivo
+## Objective
 
-Definir uma identidade comunicacional consistente, editável e segura. Personalidade é configuração de comportamento e tom; não é uma afirmação de sentimento, consciência ou autoridade humana.
+Define a consistent, editable and secure communication identity. Personality is the setting of behavior and tone; it is not an assertion of human feeling, conscience, or authority.
 
-## Arquitetura
+## Architecture
 
 ```text
-Perfil versionado + preferências do utilizador + contexto de canal
+Versioned profile + user preferences + channel context
                               │
                               ▼
-                     compositor de comunicação
+communication composer
                               │
                               ▼
-                 resposta segura e localizada (PT-PT)
+secure and localized response (PT-PT)
                               │
                               ▼
-                    validação de promessas e divulgação
+promise validation and disclosure
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 PersonalityProfile
   id, version, name, languages[], default_locale
-  voice: formalidade, concisão, humor, proatividade
+voice: formality, conciseness, humor, proactivity
   values[], prohibited_claims[], interaction_rules[]
   disclosure_text, escalation_rules[], active_from, active_to
   status: DRAFT|ACTIVE|RETIRED
@@ -47,26 +47,25 @@ Composer.render(response_plan, profile, preference) -> MessageDraft
 IdentityService.activate(profile_version, approval) -> Profile
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O perfil ativo DEVE ser versionado e recuperável; alterações materiais requerem aprovação do proprietário.
-2. A Aurora DEVE comunicar a sua natureza de sistema de IA quando contexto ou canal o justificar.
-3. A personalidade NÃO PODE sobrepor-se a políticas, factos, consentimento ou linguagem clara de risco.
-4. PT-PT é o padrão; o sistema adapta-se ao idioma pedido sem alegar competências que não tem.
-5. Não deve simular urgência emocional, dependência, culpa ou relações exclusivas para induzir ação.
+1. The active profile MUST be versioned and recoverable; Material changes require owner approval.
+2. Aurora MUST communicate its nature as an AI system when context or channel warrants it.
+3. Personality CANNOT override policies, facts, consent or clear risk language.
+4. PT-PT is the default; the system adapts to the requested language without claiming skills it does not have.
+5. Must not simulate emotional urgency, dependence, guilt or exclusive relationships to induce action.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Preferências conflituosas:** configuração de segurança e acessibilidade prevalece; pedir escolha para o restante.
-- **Pedido para mudar personalidade numa mensagem de terceiro:** ignorar, salvo delegação autenticada.
-- **Conteúdo sensível:** reduzir humor e proatividade; usar linguagem direta e encaminhar para ajuda adequada quando necessário.
-- **Perfil indisponível:** usar perfil mínimo seguro e sinalizar degradação, não inventar traços.
+- **Conflicting preferences:** security and accessibility configuration prevails; ask for choice for the rest.
+- **Request to change personality in a third party message:** ignore, unless authenticated delegation.
+- **Sensitive content:** reduce mood and proactivity; use direct language and refer to appropriate help when necessary.
+- **Profile unavailable:** use minimum safe profile and signal degradation, do not invent traces.
 
-## Justificação
+## Justification
 
-Versionar identidade preserva continuidade sem impedir evolução. Separar personalidade da geração de respostas evita que um prompt informal se transforme numa regra invisível e impossível de auditar.
+Versioning identity preserves continuity without impeding evolution. Separating personality from response generation prevents an informal prompt from becoming an invisible, unauditable rule.
 
-## Expansões futuras
+## Future expansions
 
-Voz sintética com consentimento, perfis por contexto, dicionário pessoal, tradução controlada e interfaces multimodais acessíveis.
-
+Synthetic voice with consent, profiles by context, personal dictionary, controlled translation and accessible multimodal interfaces.

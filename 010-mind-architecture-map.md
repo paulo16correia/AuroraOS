@@ -1,22 +1,20 @@
-# Aurora OS — RFC 010: Mapa-mestre da Mind
+# Aurora OS — RFC 010: Mind Master Map
 
-**Estado:** Normativo · **Depende de:** RFC 000–01
+**State:** Normative · **Depends on:** RFC 000–01
 
-## Objetivo
+## Objective
 
-Fixar a planta de arquitetura da Aurora. Qualquer módulo novo DEVE declarar onde vive neste mapa, que dados lê/escreve, que políticas aplica e que eventos emite.
+Fix Aurora's architectural plan. Any new module MUST declare where it lives on this map, what data it reads/writes, what policies it applies and what events it emits.
 
-## Mapa de componentes
+## Component map
 
-O mapa desta RFC é a visão de fluxo de ponta a ponta. A RFC 011 introduz a vista complementar por camadas e é a referência para fronteiras de dependência.
-
-```mermaid
+The map of this RFC is the end-to-end flow view. RFC 011 introduces the layered complementary view and is the reference for dependency boundaries.```mermaid
 flowchart TB
-  U[Utilizador e mundo externo] --> P[Perceção e Gateway]
+U[User and external world] --> P[Perception and Gateway]
   P --> A[Attention System]
   A --> WM[Working Memory]
   WM --> CC[Cognitive Cycle]
-  subgraph M[Mind — estado persistente governado]
+subgraph M[Mind — governed persistent state]
     I[Self, Identity e Personality]
     ME[Memory, Experience e Beliefs]
     K[Knowledge Graph, Relationships e World Model]
@@ -31,7 +29,7 @@ flowchart TB
   TO --> EW[Email · Discord · Browser · GitHub · SSH · APIs]
   EW --> O[Observations]
   O --> CC
-  CC --> OUT[Resposta, relatório ou pedido de confirmação]
+CC --> OUT[Response, report or confirmation request]
   SCH[Scheduler] --> P
   SCH --> CC
   VAULT[Vault] --> TO
@@ -39,28 +37,28 @@ flowchart TB
   AUDIT --- TO
 ```
 
-## Hierarquia de plataforma
+## Platform hierarchy
 
 ```text
 Aurora Platform
-├─ Aurora Kernel       governa ciclo de vida, estado, eventos, permissões, recursos e execução
-├─ Aurora Mind         agrega identidade, memória, conhecimento, crenças, objetivos e cognição
-└─ Aurora Applications  concretizam capacidades através de conectores isolados
+├─ Aurora Kernel governs lifecycle, state, events, permissions, resources and execution
+├─ Aurora Mind brings together identity, memory, knowledge, beliefs, goals and cognition
+└─ Aurora Applications realize capabilities through isolated connectors
 ```
 
-Mind e Applications são subsistemas geridos; nenhum assume responsabilidades do Kernel. A RFC 045 especifica este plano de controlo, e a RFC 051 impede que a Mind fique acoplada a fornecedores.
+Mind and Applications are managed subsystems; none assume Kernel responsibilities. RFC 045 specifies this control plane, and RFC 051 prevents Mind from being coupled to suppliers.
 
-## Arquitetura e responsabilidades
+## Architecture and responsibilities
 
 ```text
-Mind              mantém realidade, identidade, intenções e experiências persistentes
-Cognitive Cycle   orquestra uma unidade de deliberação sem saltar etapas
-Decision Engine   escolhe um modo de ação permitido
-Tool Orchestrator materializa uma ação autorizada e observa o resultado
-Scheduler         cria eventos temporais; não executa efeitos diretamente
+Mind maintains persistent reality, identity, intentions and experiences
+Cognitive Cycle orchestrates a unity of deliberation without skipping steps
+Decision Engine chooses a permitted mode of action
+Tool Orchestrator materializes an authorized action and observes the result
+Scheduler creates temporal events; does not perform effects directly
 ```
 
-## Estruturas e interfaces
+## Structures and interfaces
 
 ```text
 MindSnapshot
@@ -72,21 +70,21 @@ Mind.apply(change_set, policy_decision) -> MindSnapshot
 ArchitectureRegistry.register(module_manifest) -> Registration
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Nenhum módulo externo escreve diretamente na Mind; envia um `ChangeSet` validado.
-2. Nenhum módulo salta o `Decision Engine` para chamar uma ferramenta.
-3. O Scheduler apenas cria `Event`; uma ação agendada percorre o ciclo cognitivo completo.
-4. A fonte de dados, classificação e correlação acompanham cada passagem entre componentes.
+1. No external modules write directly to Mind; sends a validated `ChangeSet`.
+2. No module skips `Decision Engine` to call a tool.
+3. The Scheduler only creates `Event`; a scheduled action goes through the complete cognitive cycle.
+4. Data source, classification, and correlation accompany each pass between components.
 
-## Casos limite e erro
+## Limit and error cases
 
-Se a Mind estiver indisponível, ações com efeito são bloqueadas e novas observações ficam numa fila durável. Se Attention ou Working Memory falhar, o ciclo termina em modo seguro, sem recuperar “todas as memórias” como alternativa.
+If Mind is unavailable, effective actions are blocked and new observations are in a durable queue. If Attention or Working Memory fails, the cycle ends in safe mode, without recovering “all memories” as an alternative.
 
-## Justificação
+## Justification
 
-O mapa impede que conectores e modelos se transformem em centros de autoridade. Também torna explícito que a Mente é um sistema de estado, não uma base vetorial.
+The map prevents connectors and models from becoming centers of authority. It also makes explicit that Mind is a state system, not a vector basis.
 
-## Expansões futuras
+## Future expansions
 
-Sub-Minds por domínio, partilha consentida de conhecimento, módulos de perceção multimodal e escalamento de componentes independentes.
+Sub-Minds per domain, consented knowledge sharing, multimodal perception modules and scaling of independent components.

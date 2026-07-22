@@ -1,21 +1,20 @@
 # ADR — Architecture Decision Records
 
-Os ADRs registam alterações à baseline congelada. Uma RFC é o contrato estável; um ADR explica por que motivo, como e a partir de que versão esse contrato muda.
+ADRs record changes to the frozen baseline. An RFC is the stable contract; an ADR explains why, how and from what version this contract changes.
 
-## Formato obrigatório
+## Mandatory format
 
 ```text
-ADR-<número>-<nome>.md
-Estado: PROPOSTO | ACEITE | REJEITADO | SUBSTITUÍDO
+ADR-<number>-<name>.md
+Status: PROPOSED | ACCEPT | REJECTED | SUBSTITUTED
 Data, decisores, RFCs afetadas
-Contexto, decisão, alternativas, consequências
-Migração, compatibilidade, testes e plano de reversão
+Context, decision, alternatives, consequences
+Migration, compatibility, testing and rollback plan
 ```
 
-## Processo
+## Process
 
-1. Abrir ADR com problema concreto e evidência de implementação/revisão.
-2. Avaliar Constituição, Leis, segurança, estado, eventos e dependências.
-3. Aceitar ou rejeitar explicitamente.
-4. Só um ADR `ACEITE` autoriza alterar RFCs, código ou migrações afetadas.
-
+1. Open ADR with concrete problem and evidence of implementation/review.
+2. Evaluate Constitution, Laws, security, state, events and dependencies.
+3. Explicitly accept or reject.
+4. Only an ADR `ACCEPTED` authorizes changing affected RFCs, code or migrations.

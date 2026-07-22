@@ -1,24 +1,24 @@
-# Aurora OS — RFC 042: Modelo temporal e validade
+# Aurora OS — RFC 042: Temporal model and validity
 
-**Estado:** Normativo · **Depende de:** RFC 040–041
+**State:** Normative · **Depends on:** RFC 040–041
 
-## Objetivo
+## Objective
 
-Fornecer semântica uniforme para tempo, recorrência, validade, cronologia e referência humana (“ontem”, “daqui a três dias”, “na semana passada”). Tempo é parte do significado de memória, crença, relação, estado e decisão.
+Provide uniform semantics for time, recurrence, validity, chronology, and human reference (“yesterday”, “in three days”, “last week”). Time is part of the meaning of memory, belief, relationship, state and decision.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
-texto/evento + fuso horário + relógio de confiança
+text/event + time zone + trust clock
                          │
                          ▼
-   interpretação temporal → intervalo/ocorrência normalizada
+temporal interpretation → normalized interval/occurrence
                          │
                          ▼
-  validade do domínio → scheduler → consulta histórica “as of”
+domain validity → scheduler → historical query “as of”
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 TemporalExpression
@@ -34,7 +34,7 @@ TemporalPolicy
   retention_rules[], recurrence_limits[], ambiguity_policy
 ```
 
-Todos os instantes persistidos são UTC; o fuso de origem é guardado para apresentação e cálculo. Intervalos são semiabertos `[start, end)` para evitar sobreposição de fronteira.
+All persisted instants are UTC; the origin zone is saved for display and calculation. Ranges are semi-open `[start, end)` to avoid boundary overlap.
 
 ## Interfaces
 
@@ -45,25 +45,24 @@ Time.isValid(object, at) -> boolean
 Time.queryAsOf(pattern, at) -> Result[]
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Um evento DEVE ter `occurred_at`; uma afirmação DEVE separar ocorrência, observação e asserção quando diferirem.
-2. Expressões ambíguas exigem locale/fuso e podem requerer clarificação; não assumir data quando implica ação.
-3. Recorrências têm limite de materialização e política para execuções perdidas, conforme RFC 026.
-4. Tempo do cliente não é confiado para aprovação, expiração ou auditoria crítica.
+1. An event MUST have `occurred_at`; an assertion MUST separate occurrence, observation, and assertion when they differ.
+2. Ambiguous expressions require locale/zone and may require clarification; do not assume a date when it implies action.
+3. Recurrences have a materialization limit and policy for lost executions, according to RFC 026.
+4. Customer time is not entrusted for approval, expiration or critical audit.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **“Próxima sexta-feira” ambígua:** apresentar data absoluta antes de agendar/enviar.
-- **Mudança de hora:** usar biblioteca de calendário com zona IANA; nunca adicionar 24h manualmente a uma ocorrência local.
-- **Relógio divergente:** bloquear ações assinadas/expiráveis até sincronização segura.
-- **Facto sem data:** permitir `unknown`, não inventar uma cronologia.
+- **“Next Friday” ambiguous:** present absolute date before scheduling/sending.
+- **Time change:** use calendar library with IANA zone; Never add 24 hours manually to a local occurrence.
+- **Different clock:** block signed/expiring actions until secure synchronization.
+- **Undated fact:** allow `unknown`, do not invent a chronology.
 
-## Justificação
+## Justification
 
-Sem modelo temporal, a Aurora confunde estado atual com histórico, falha lembretes e não consegue explicar quando algo era válido. A temporalidade é uma dimensão do World Model, não metadado opcional.
+Without a temporal model, Aurora confuses current state with history, misses reminders, and cannot explain when something was valid. Temporality is a dimension of the World Model, not optional metadata.
 
-## Expansões futuras
+## Future expansions
 
-Tempo de negócio, feriados regionais, calendários de equipa, causalidade entre eventos e simulação temporal.
-
+Business time, regional holidays, team calendars, causality between events and temporal simulation.

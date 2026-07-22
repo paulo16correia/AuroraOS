@@ -1,27 +1,27 @@
-# ADR-004 — Planeamento persistente, deliberativo e apenas em simulação
+# ADR-004 — Persistent, deliberative, simulation-only planning
 
-**Estado:** ACEITE  
-**Data:** 2026-07-17  
-**RFCs afetadas:** RFC 05, RFC 021, RFC 022, RFC 031, RFC 040, LAW-006
+**Status:** ACCEPT
+**Date:** 2026-07-17
+**RFCs affected:** RFC 05, RFC 021, RFC 022, RFC 031, RFC 040, LAW-006
 
-## Contexto
+## Context
 
-VS-004 introduziu continuidade operacional: a Entity possui Goal, EntityState e Need, mas ainda não consegue representar uma hipótese de trabalho futura. Criar uma `Action` neste ponto confundiria uma necessidade interna com autorização para agir.
+VS-004 introduced operational continuity: Entity has Goal, EntityState and Need, but still cannot represent a future working hypothesis. Creating a `Action` at this point would confuse an internal need with authorization to act.
 
-## Decisão
+## Decision
 
-VS-005 introduz `Plan` persistente como proposta deliberativa. Um pedido explícito do utilizador — inicialmente, “Como poderias ajudar-me melhor?” — pode materializar o encadeamento `Goal → Need → Plan(PROPOSED)`. O primeiro plano é `ASSISTANCE_PLAN`, referenciando o Goal `ASSIST_USER` e a Need `UNDERSTAND_USER`.
+VS-005 introduces persistent `Plan` as a deliberative proposal. An explicit request from the user — initially, “How could you help me better?” — can materialize the `Goal → Need → Plan(PROPOSED)` thread. The foreground is `ASSISTANCE_PLAN`, referencing the Goal `ASSIST_USER` and the Need `UNDERSTAND_USER`.
 
-O plano contém somente os passos `ASK_CLARIFICATION` e `PROVIDE_RECOMMENDATION`, ambos `PENDING` e `SIMULATION_ONLY`. Não existem `Action`, `Task`, `ToolCall`, execução externa, agendamento ou alteração automática do estado para `REVIEWED`, `APPROVED` ou `COMPLETED`.
+The plan contains only steps `ASK_CLARIFICATION` and `PROVIDE_RECOMMENDATION`, both `PENDING` and `SIMULATION_ONLY`. There are no `Action`, `Task`, `ToolCall`, external execution, scheduling, or automatic state change for `REVIEWED`, `APPROVED`, or `COMPLETED`.
 
-## Consequências
+## Consequences
 
-- A Need continua a ser evidência e justificação; não cria efeitos por si própria.
-- O Kernel é o único criador e leitor de Plans no slice. O provider recebe um Plan já validado, não o inventa.
-- Um Plan é preservado no snapshot de shutdown e pode ser carregado numa sessão posterior.
-- O trace passa a incluir `PLANNING`, `PLAN_CREATED` ou `PLAN(LOADED)`; os eventos correspondentes são `PlanCreated` e `PlanLoaded`.
-- A passagem para aprovação e execução requer slice e ADR posteriores, incluindo política, Capability Boundary e Observation obrigatória.
+- Need continues to be evidence and justification; it does not create effects on its own.
+- The Kernel is the only creator and reader of Plans in the slice. The provider receives an already validated Plan, does not invent it.
+- A Plan is preserved in the shutdown snapshot and can be loaded in a later session.
+- The trace now includes `PLANNING`, `PLAN_CREATED` or `PLAN(LOADED)`; the corresponding events are `PlanCreated` and `PlanLoaded`.
+- Moving to approval and execution requires subsequent slice and ADR, including policy, Capability Boundary and mandatory Observation.
 
-## Migração e reversão
+## Migration and rollback
 
-Não há migração de dados: Entities existentes não recebem Plans automaticamente. Remover VS-005 desativa a proposta e a exposição de Plans, mas preserva objetos e eventos para auditoria.
+There is no data migration: Existing Entities do not receive Plans automatically. Removing VS-005 disables Plans proposal and exposure, but preserves objects and events for auditing.

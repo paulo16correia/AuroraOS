@@ -1,75 +1,88 @@
-# Aurora OS — RFC 021: Ciclo cognitivo obrigatório
+# Aurora OS — RFC 021: Mandatory cognitive cycle
 
-**Estado:** Normativo · **Depende de:** RFC 020, 040
+**Status:** Normative · **Depends on:** RFC 020, 040, 045, 050
 
-## Objetivo
+## Objective
 
-Definir o ciclo completo de uma decisão. É proibido responder, memorizar ou agir por um caminho que omita fases obrigatórias, salvo a resposta estática de saúde documentada.
+Define the complete cycle for a request or event. Natural-language understanding, conversation, clarification, and response writing belong to the compatible LLM client. Persistent cognition belongs to Aurora. No MCP tool, memory update, decision, or external effect may bypass the mandatory Aurora stages, except the documented static health response.
 
-## Fluxograma normativo
+## Normative flow
 
 ```text
-Input/Event
+User
   ↓
-Perception → valida origem, normaliza e classifica risco
+LLM client (understands the request; decides which MCP tool to invoke)
   ↓
-Intent → determina pedido, urgência, ambiguidade e destinatário
+MCP tool call
   ↓
-Attention → seleciona o que merece processamento
+Perception → validates origin, normalizes input, and classifies risk
   ↓
-Working Memory → cria contexto isolado da unidade de trabalho
+Attention → selects what deserves processing
   ↓
-Memory + Knowledge + World Model → recupera evidência autorizada
+Working Memory → creates isolated context for the work item
   ↓
-Planner → decompõe se existir objetivo ou ação composta
+Memory → retrieves authorized evidence
   ↓
-Decision Engine → responde | pergunta | planeia | espera | propõe ferramenta | recusa
+World Model → resolves current and temporal facts
   ↓
-Policy + Tools → autoriza e executa quando aplicável
+Planner → decomposes an explicit goal or composite action
   ↓
-Observation → interpreta resultado externo
+Decision Engine → answers with state | asks for information | plans | waits | proposes a capability | refuses
   ↓
-Reflection → avalia resultado e propostas de consolidação
+Policy → permits, requires approval, limits, or denies
   ↓
-Learning → aplica apenas mudanças aprovadas
+Capabilities → resolves the permitted operation
   ↓
-Output → resposta, relatório, pedido de confirmação ou silêncio justificado
+Executor → performs the approved effect
+  ↓
+Observation → records and interprets the outcome
+  ↓
+Reflection → evaluates the outcome and consolidation proposals
+  ↓
+Learning → applies only approved changes
+  ↓
+MCP tool result → LLM client writes the natural-language response
 ```
 
-## Estruturas e interfaces
+The LLM client may invoke several MCP tools for one user request. It never becomes an Aurora state writer, policy authority, executor, or persistent cognitive layer.
+
+## Structures and interfaces
 
 ```text
 CognitiveCycle
   id, work_item_id, stage, status: RUNNING|WAITING|COMPLETED|FAILED|CANCELLED
-  stage_refs{}, started_at, deadline_at, completed_at
+  ingress_ref, mcp_session_ref, stage_refs{}, started_at, deadline_at, completed_at
 
 CycleStageRecord
   cycle_id, stage, input_refs[], output_refs[], decision_ref
   started_at, ended_at, status, error_ref
 
-Cycle.run(event_id) -> CognitiveCycle
+Cycle.run(mcp_tool_call) -> CognitiveCycle
 Cycle.advance(cycle_id, stage) -> CycleStageRecord
 Cycle.resume(cycle_id, trigger) -> CognitiveCycle
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada estágio DEVE produzir um registo mínimo ou uma razão de omissão permitida.
-2. `Output` só ocorre após `Decision Engine`; `ToolCall` só ocorre depois de política.
-3. O ciclo pode terminar em `WAITING` para dados, tempo, aprovação ou disponibilidade externa.
-4. A passagem à reflexão é obrigatória após qualquer tarefa ou ferramenta, mesmo que a reflexão conclua “sem aprendizagem”.
+1. Every stage MUST produce a minimum record or an allowed-omission reason.
+2. An MCP tool result containing persistent state or an execution result MUST be produced only after the relevant Decision Engine and Policy stages.
+3. A capability effect MUST occur only after policy evaluation and, where required, persisted approval.
+4. The cycle MAY end in `WAITING` for data, time, approval, or external availability.
+5. Observation and Reflection are mandatory after every task or capability execution, even when reflection concludes “no learning”.
+6. The LLM client MAY formulate a request and interpret an MCP result for the user, but MUST NOT be treated as the source of Aurora identity, memory, world facts, plans, decisions, approvals, or audit records.
 
-## Casos limite e erro
+## Edge cases and failure
 
-- **Interrupção em qualquer etapa:** persistir estágio atual; retomar ou cancelar de forma idempotente.
-- **Input de baixo valor:** Attention pode decidir não iniciar ciclo completo; a decisão e razão são registadas.
-- **Prazo excedido:** terminar em `FAILED`/`WAITING`, emitir saída segura e não executar a próxima etapa automaticamente.
+- **Interruption at any stage:** persist the current stage; resume or cancel idempotently.
+- **Low-value ingress:** Attention may decline a full cycle; record the decision and reason.
+- **Deadline exceeded:** end in `FAILED` or `WAITING`, return a safe tool result, and do not automatically execute a later stage.
+- **Invalid MCP request:** Perception rejects it without creating a persistent cognitive mutation.
+- **Disconnected LLM client:** the Kernel preserves its state and resumes only according to policy and scheduler rules; it does not require an LLM to retain continuity.
 
-## Justificação
+## Rationale
 
-O ciclo evita atalhos onde uma frase do modelo vira ação ou memória. Tornar a sequência observável permite testar, depurar e evoluir a arquitetura sem perder governação.
+The cycle prevents a sentence generated by a model from becoming an action or memory. MCP makes the boundary explicit: the LLM is an interchangeable client of Aurora capabilities, while the Kernel remains the persistent digital entity and the authority over cognition and effects.
 
-## Expansões futuras
+## Future extensions
 
-Ciclos paralelos por prioridade, simulação antes da execução, ciclos multimodais e métricas de qualidade por estágio.
-
+Parallel priority cycles, simulation before execution, multimodal MCP clients, and quality metrics per stage.

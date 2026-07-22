@@ -1,24 +1,24 @@
-# Aurora Platform — RFC 052: Missões, objetivos e tarefas
+# Aurora Platform — RFC 052: Missions, objectives and tasks
 
-**Estado:** Normativo · **Depende de:** RFC 05, 035, 040, 051
+**State:** Normative · **Depends on:** RFC 05, 035, 040, 051
 
-## Objetivo
+## Objective
 
-Introduzir **Missão** como nível de intenção acima de Goal. Uma missão descreve um propósito duradouro e os limites de sucesso; Goals convertem esse propósito em resultados; Plans e Tasks realizam trabalho verificável.
+Enter **Mission** as an intention level above Goal. A mission describes an enduring purpose and the limits of success; Goals convert this purpose into results; Plans and Tasks do verifiable work.
 
-## Hierarquia
+## Hierarchy
 
 ```text
-Constituição / Genome
+Constitution/Genome
           │ limita
-Mission: “manter o utilizador organizado”
+Mission: “keep the user organized”
           │ orienta
 Goal: “organizar os emails desta semana”
           │ decomposto em
-Plan → Task: “criar rascunho de classificação” → Action/ToolCall
+Plan → Task: “create classification draft” → Action/ToolCall
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Mission
@@ -35,23 +35,22 @@ Missions.align(goal_id, mission_id) -> Goal
 Missions.review(mission_id) -> ReviewReport
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Missões não são ordens de execução e não substituem aprovação de Goals/Tasks de risco.
-2. Todo Goal persistente deve estar associado a uma missão ou ser marcado `AD_HOC` com prazo de revisão.
-3. A missão não pode justificar recolha de dados, comunicação ou autonomia fora da Constituição/Leis/políticas.
-4. Missões são revistas, pausadas e retiradas pelo proprietário; não evoluem por inferência automática.
+1. Missions are not execution orders and do not replace approval of risk Goals/Tasks.
+2. Every persistent Goal must be associated with a mission or be marked `AD_HOC` with a review deadline.
+3. The mission cannot justify data collection, communication or autonomy outside the Constitution/Laws/policies.
+4. Missions are reviewed, paused and removed by the owner; they do not evolve by automatic inference.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Missões em conflito:** Decision Engine usa prioridades/limites definidos e pede orientação se não houver resolução segura.
-- **Goal sem missão:** permitido apenas como `AD_HOC`, com dono e expiração.
+- **Conflicting missions:** Decision Engine uses defined priorities/thresholds and asks for guidance if there is no safe resolution.
+- **Goal without mission:** only allowed as `AD_HOC`, with owner and expiration.
 
-## Justificação
+## Justification
 
-Missões evitam que tarefas isoladas pareçam estratégia. Separar propósito de execução mantém a Aurora coerente ao longo de semanas ou meses.
+Missions keep isolated tasks from feeling like strategy. Separating purpose from execution keeps Aurora coherent over weeks or months.
 
-## Expansões futuras
+## Future expansions
 
-Missões partilhadas de equipa, indicadores de missão e revisão estratégica periódica.
-
+Shared team missions, mission indicators and periodic strategic review.

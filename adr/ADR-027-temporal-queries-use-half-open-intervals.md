@@ -1,20 +1,20 @@
-# ADR-027 - Consultas temporais usam intervalos semiabertos
+#ADR-027 - Temporal queries use half-open ranges
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Decisao
+## Decision
 
-O World Model representa validade como `[valid_from, valid_to)`. O inicio e
-inclusivo; o fim, quando existe, e exclusivo.
+The World Model represents validity as `[valid_from, valid_to)`. The beginning and
+inclusive; the end, when it exists, is exclusive.
 
-## Justificacao
+## Justification
 
-Esta convencao evita sobreposicao no instante de transicao entre duas
-relacoes consecutivas. E permite que o Kernel determine a validade sem pedir
-ao modelo linguistico para raciocinar sobre tempo.
+This convention avoids overlapping at the moment of transition between two
+consecutive relationships. And it allows the Kernel to determine validity without asking
+to the linguistic model for reasoning about time.
 
-## Alternativa rejeitada
+## Alternative rejected
 
-- **Fim inclusivo:** cria ambiguidade quando uma relacao termina no mesmo
-  instante em que outra comeca.
+- **Inclusive ending:** creates ambiguity when a relationship ends in the same
+  the moment another one begins.

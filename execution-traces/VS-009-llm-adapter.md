@@ -1,106 +1,62 @@
 # Aurora OS — Execution Trace Specification: VS-009 LLM Adapter
 
-**Estado:** Autorizado por ADR-009  
-**Caso de utilização:** mensagem local → contexto imutável → proposta linguística → validação pelo Kernel → resposta auditável
+**Status:** Replaced by MCP-first boundary while retaining identifier compatibility.
 
-## Objetivo
+## Purpose
 
-Introduzir um motor de linguagem substituível sem transferir para ele a posse da Mind. O VS-009 prova que uma resposta pode ser proposta por um provider, incluindo OpenAI quando explicitamente configurado, mas que apenas o Kernel pode aceitar a proposta, criar `Thought`, decidir, persistir ou alterar o estado da entidade.
+VS-009 defines the boundary between an interchangeable LLM client and Aurora. The previous outbound language-provider adapter is replaced: Aurora does not call an LLM to obtain a proposal. A compatible LLM client (Claude, GPT, Gemini, or a local model) uses Aurora through MCP.
 
-## Fluxo normativo
-
-```text
-Input → Signal → Context
-                 │
-                 ├─ Mind state (leitura): Identity, SelfModel, Memory, Goal, Plan,
-                 │                         CapabilityRequest e CapabilityResult
-                 ▼
-         LanguageModelRequest (imutável, persistido pelo Kernel)
-                 ▼
-         LanguageModelProvider.propose(request)
-                 ▼
-         LanguageModelProposal (não confiada, sem acesso a persistência)
-                 ▼
-         KernelProposalValidator
-                 ├─ aceite → Thought → Decision → Response
-                 └─ rejeitada → Thought seguro → Decision → Response seguro
-                 ▼
-         Observation → Reflection → Goal Evaluation → Memory
-```
-
-O provider não recebe `Repository`, `EventBus`, `Executor`, `CapabilityRegistry` nem referência mutável para qualquer objeto da Mind.
-
-## Contratos mínimos
+## Trace
 
 ```text
-LanguageModelProvider
-  provider_id: str
-  model_id: str
-  propose(LanguageModelRequest) -> LanguageModelProposal
-
-LanguageModelRequest
-  request_id, entity_id, trace_id, session_id, message_id, context_id
-  provider_id, model_id, locale
-  system_instruction, user_input
-  identity_summary, memory_facts, goal_summaries, plan_summaries, capability_summaries
-  created_at
-
-LanguageModelProposal
-  proposal_id, request_ref, entity_id, trace_id, session_id
-  provider_id, model_id, text, intent, confidence, reason_summary
-  status: PROPOSED|REJECTED
-  created_at
+User → LLM Client → MCP.initialize → Aurora MCP Server
+                         ↓
+                  MCP.tools/call
+                         ↓
+              Perception → governed cognitive cycle
+                         ↓
+                MCP tool result → LLM Client → User
 ```
 
-Ambos os contratos são imutáveis. `LanguageModelProposal` é uma declaração não confiada: nunca é um `Thought`, uma `Decision`, uma `Action`, uma memória ou uma ordem de execução.
+The LLM owns natural-language understanding, conversational turn management, clarification questions, tool selection, and natural-language response production. The Kernel owns persistent identity, memory, world model, planning, missions, goals, policies, approvals, execution, audit, and continuity.
 
-## Implementações VS-009
+## Contracts
 
-| Provider | Uso | Rede | Efeito na Mind |
-| --- | --- | --- | --- |
-| `deterministic-rules-v1` | testes, replay e operação por defeito | não | nenhum |
-| `openai-responses-v1` | opt-in por configuração explícita | apenas API Responses | nenhum |
+```text
+McpToolCall
+  session_ref, tool_name, arguments, caller_metadata, correlation_id
 
-O provider OpenAI requer `OPENAI_API_KEY` no processo e um modelo explícito no comando. A chave não é persistida, registada ou incluída no contexto. Sem chave, erro de rede ou output vazio, o provider devolve `REJECTED`; o Kernel cria uma resposta segura e mantém o estado inalterado.
+McpToolResult
+  correlation_id, status, content, state_refs[], approval_ref?, audit_ref?
 
-## Regras obrigatórias
+McpClientContext
+  client_id?, model_id?, locale?, transport_metadata
+```
 
-1. A LLM nunca escreve no repositório e nunca publica eventos.
-2. A LLM nunca cria `Thought`, `Decision`, `Response`, `Memory`, `Goal`, `Plan`, `Task`, `CapabilityRequest` ou `CapabilityResult`.
-3. O `KernelProposalValidator` valida correlação (`entity_id`, `trace_id`, `session_id` e `request_ref`), estado, texto, intenção permitida e confiança antes de criar um `Thought`.
-4. A proposta não pode executar uma capability nem transformar uma capability indisponível numa capability disponível.
-5. Falha de provider é um resultado auditável, não uma exceção silenciosa ou uma alteração de estado.
-6. O provider por defeito é determinístico e sem rede, preservando replay reproduzível.
-7. Dados confidenciais ou segredos não pertencem ao `LanguageModelRequest`. A expansão de classificação e consentimento exige ADR própria.
+`McpClientContext` is transport context, not a persistence authority. The Kernel validates tool arguments independently and never treats model text as a trusted state mutation.
 
-## Eventos e trace
+## Invariants
 
-| Momento | Evento | Trace |
-| --- | --- | --- |
-| Kernel materializa o contexto externo | `LanguageModelRequestCreated` | `LLM_REQUEST(CREATED)` |
-| Provider devolve proposta | `LanguageModelProposalReceived` | `LLM_PROPOSAL(PROPOSED|REJECTED)` |
-| Kernel admite ou rejeita | `LanguageModelProposalValidated` | `LLM_VALIDATION(ACCEPTED|REJECTED)` |
-| Kernel cria o pensamento | `ThoughtCreated` | `THOUGHT` |
+1. An LLM client never writes Aurora persistence or publishes Aurora events directly.
+2. An LLM client never creates `Thought`, `Decision`, `Memory`, `Goal`, `Plan`, `Task`, `Approval`, `CapabilityRequest`, or `CapabilityResult` except through a governed MCP tool path.
+3. No MCP tool exposes credentials, unrestricted repositories, arbitrary shell access, or bypasses policy.
+4. Tool discovery and tool names are supplied by the MCP server contract; this specification does not hardcode a tool catalogue.
+5. A disconnected, replaced, or failed LLM client does not change Kernel state merely by failing.
+6. The Kernel records ingress, decisions, policy outcomes, effects, observations, and audit references independently of the client.
 
-## Casos limite e erro
+## Events
 
-| Condição | Comportamento obrigatório |
+| Boundary event | Trace state |
 | --- | --- |
-| `OPENAI_API_KEY` ausente | proposta `REJECTED`, resposta segura, sem alteração de estado |
-| timeout, erro HTTP ou erro de rede | proposta `REJECTED`, razão estruturada sem segredo |
-| output vazio | proposta `REJECTED` |
-| correlação de Entity/trace/sessão inválida | validação falha; o ciclo não cria `Thought` |
-| intenção fora da allow-list | proposta rejeitada pelo Kernel |
-| replay | usa o provider determinístico e continua sem rede |
+| MCP session accepted | `MCP_SESSION(OPEN)` |
+| Tool call validated | `MCP_TOOL_CALL(ACCEPTED|REJECTED)` |
+| Cognitive cycle advances | normal RFC 021 stage records |
+| Tool result emitted | `MCP_TOOL_RESULT(COMPLETED|FAILED|WAITING)` |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Um ciclo normal emite `LLM_REQUEST`, `LLM_PROPOSAL` e `LLM_VALIDATION` antes de `THOUGHT`.
-2. `LanguageModelRequest` e `LanguageModelProposal` sobrevivem para auditoria, mas não são parte editável da Mind.
-3. Sem chave OpenAI, a resposta é segura, o trace é `REJECTED` e Goals/Memórias/Capabilities não mudam por causa do provider.
-4. VS-000–VS-008 continuam verdes.
-5. Não existe chamada direta a fornecedor espalhada fora de `OpenAIResponsesProvider`.
-
-## Limites deliberados
-
-VS-009 não adiciona ferramentas, autonomia externa, aprovação, plugins, scheduler, aprendizagem de modelo, streaming, saída estruturada para planos ou acesso a segredos. O modelo é um componente de proposta linguística; a governação da Mind continua no Kernel.
+1. A normal request enters Aurora only as a validated MCP tool call and produces an auditable tool result.
+2. Replacing the LLM client preserves identity, memory, plans, policies, and audit history.
+3. An invalid or unauthorized tool call produces no persistent mutation or external effect.
+4. A client can describe state only from MCP results; it cannot claim unprovided private state as Aurora fact.
+5. Replay uses recorded MCP ingress and deterministic Kernel dependencies; no LLM network call is required.

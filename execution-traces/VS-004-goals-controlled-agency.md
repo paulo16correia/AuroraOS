@@ -1,16 +1,16 @@
 # Aurora OS — Execution Trace Specification: VS-004 Goals + Controlled Agency Loop
 
-**Estado:** Autorizado por ADR-003  
-**Caso de utilização:** criar propósito operacional → ajudar → avaliar progresso → restaurar → descrever objetivo
+**Status:** Authorized by ADR-003
+**Use case:** create operational purpose → help → evaluate progress → restore → describe objective
 
-## Objetivo
+## Objective
 
-Demonstrar que uma Entity possui direção operacional persistente sem executar autonomia silenciosa. VS-004 cria Goal, EntityState e Need inicial; o Kernel avalia progresso após Reflection e antes de persistir a memória do ciclo.
+Demonstrate that an Entity has persistent operational direction without executing silent autonomy. VS-004 creates initial Goal, EntityState and Need; the Kernel evaluates progress after Reflection and before persisting cycle memory.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
-CreateEntity(Roberto, purpose="ajudar-te a evoluir na programação")
+CreateEntity(Roberto, purpose="help you evolve in programming")
   → GoalCreated(ASSIST_USER, ACTIVE)
   → EntityStateInitialized(READY, USER_ASSISTANCE, energy=1.0)
   → NeedDetected(UNDERSTAND_USER, intensity=0.4)
@@ -19,16 +19,16 @@ User: "Estou a aprender Python."
   → ciclo normal → Observation → Reflection
   → GoalEvaluation(progress_events +1, evidence=interaction)
   → MemoryCreated(LEARNING_TOPIC, Python)
-  → NeedEvaluation(SATISFIED quando existe contexto suficiente)
+→ NeedEvaluation(SATISFIED when there is enough context)
 
 shutdown → restore
 
-User: "Qual é o teu objetivo?"
+User: "What is your goal?"
   → Goal carregado pelo Kernel
-  → "O meu objetivo ativo é ajudar-te a evoluir na programação."
+→ "My active goal is to help you advance in programming."
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Goal
@@ -55,33 +55,33 @@ GoalEvaluation
   progress_delta, evidence_refs[], outcome, evaluated_at
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O Goal inicial deriva apenas do propósito persistido na Identity; parâmetros posteriores não o substituem.
-2. `progress_events` só aumenta com Observation/Reflection do ciclo atual e evidência registada.
-3. EntityState é operacional, não emocional; `energy=1.0` é uma baseline de capacidade, não sentimento.
-4. Need não cria efeito externo, Goal adicional, Plan ou Task. Só é registada e pode ser lida pelo Kernel/UI futura.
-5. A resposta a “Qual é o teu objetivo?” vem de Goal `ACTIVE` carregado pelo Kernel, não de instrução textual no provider.
-6. Snapshot de shutdown inclui referências a Goal, EntityState e Need.
+1. The initial Goal derives only from the purpose persisted in Identity; later parameters do not override it.
+2. `progress_events` only increases with Observation/Reflection of the current cycle and recorded evidence.
+3. EntityState is operational, not emotional; `energy=1.0` is a baseline of capability, not sentiment.
+4. Need does not create an external effect, additional Goal, Plan or Task. It is only registered and can be read by the future Kernel/UI.
+5. The answer to “What is your goal?” comes from Goal `ACTIVE` loaded by the Kernel, not from a textual instruction in the provider.
+6. Shutdown snapshot includes references to Goal, EntityState and Need.
 
-## Eventos e trace
+## Events and trace
 
-| Situação | Evento | Trace |
+| Situation | Event | Trace |
 | --- | --- | --- |
-| Nascimento/compatibilidade | `GoalCreated`, `EntityStateInitialized`, `NeedDetected` | `GOAL(CREATED)`, `ENTITY_STATE(INITIALIZED)`, `NEED(DETECTED)` |
-| Ciclo | `GoalEvaluated`, `EntityStateUpdated` | `GOAL_EVALUATION(progress_delta, evidence)` |
+| Birth/compatibility | `GoalCreated`, `EntityStateInitialized`, `NeedDetected` | `GOAL(CREATED)`, `ENTITY_STATE(INITIALIZED)`, `NEED(DETECTED)` |
+| Cycle | `GoalEvaluated`, `EntityStateUpdated` | `GOAL_EVALUATION(progress_delta, evidence)` |
 | Need | `NeedUpdated` | `NEED(EVALUATED)` |
-| Pergunta sobre objetivo | `ThoughtCreated` | `GOAL(USED_FOR_GOAL_DESCRIPTION)` |
+| Objective question | `ThoughtCreated` | `GOAL(USED_FOR_GOAL_DESCRIPTION)` |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. O nascimento cria exatamente um Goal `ASSIST_USER`, um EntityState e uma Need por Entity.
-2. Uma interação de assistência incrementa `progress_events` e cria GoalEvaluation com referência à Observation.
-3. Após shutdown/restauro, Goal e progresso mantêm os mesmos IDs e versão coerente.
-4. “Qual é o teu objetivo?” responde apenas com o Goal ativo persistido.
-5. Uma Need é auditada, mas não resulta em Action, ToolCall, Plan ou Task.
-6. VS-000–VS-003 permanecem verdes.
+1. Birth creates exactly one Goal `ASSIST_USER`, one EntityState and one Need per Entity.
+2. An assistance interaction increments `progress_events` and creates GoalEvaluation with reference to the Observation.
+3. After shutdown/restore, Goal and progress maintain the same IDs and consistent version.
+4. “What is your goal?” responds only with the active Goal persisted.
+5. A Need is audited, but does not result in an Action, ToolCall, Plan or Task.
+6. VS-000–VS-003 remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-Não existem Planner, Scheduler, criação conversacional de Goals, Tasks, autonomia externa, notificações, ferramentas ou evolução de Genome. VS-004 cria estado orientador, não comportamento autónomo.
+There are no Planner, Scheduler, conversational creation of Goals, Tasks, external autonomy, notifications, tools or Genome evolution. VS-004 creates guiding state, not autonomous behavior.

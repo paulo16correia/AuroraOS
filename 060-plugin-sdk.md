@@ -1,27 +1,27 @@
-# Aurora OS — RFC 060: SDK de plugins e extensões
+# Aurora OS — RFC 060: Plugins and Extensions SDK
 
-**Estado:** Normativo · **Depende de:** RFC 06, 09, 040
+**State:** Normative · **Depends on:** RFC 06, 09, 040
 
-## Objetivo
+## Objective
 
-Permitir que terceiros adicionem capacidades à Aurora sem receberem autoridade implícita sobre a Mind, segredos ou ferramentas existentes. Um plugin é uma extensão declarativa e isolada, não código confiado por defeito.
+Allow third parties to add capabilities to Aurora without being granted implicit authority over Mind, secrets, or existing tools. A plugin is a declarative, isolated extension, not code trusted by default.
 
-## Arquitetura
+## Architecture
 
 ```text
-Autor do plugin → manifesto assinado → validação de compatibilidade
+Plugin author → signed manifest → compatibility validation
                                              │
                                              ▼
-                       catálogo de capacidades e políticas exigidas
+catalog of required capabilities and policies
                                              │
                                              ▼
-                   instalação isolada → autorização por capacidade
+isolated installation → authorization by capacity
                                              │
                                              ▼
                                Tool Orchestrator → plugin sandbox
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 PluginManifest
@@ -49,26 +49,25 @@ Plugin.invoke(authorised_tool_call) -> ToolResult
 Plugin.disable(installation_id, actor) -> PluginInstallation
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada plugin DEVE declarar capacidades, efeitos, dados tratados, domínios de rede e permissões; pedidos dinâmicos não declarados são negados.
-2. Plugins DEVEM executar isolados, sem acesso ao processo principal, base de dados, cofre ou rede geral.
-3. A instalação e qualquer aumento de permissão exigem revisão/consentimento explícito.
-4. Um plugin nunca recebe dados acima da classificação declarada nem pode subscrever eventos sem filtro de autorização.
-5. Atualizações com alterações incompatíveis, novas permissões ou nova origem exigem nova verificação e podem entrar em `QUARANTINED`.
+1. Each plugin MUST declare capabilities, effects, processed data, network domains and permissions; Undeclared dynamic requests are denied.
+2. Plugins MUST run in isolation, without access to the main process, database, vault or general network.
+3. Installation and any permit increases require explicit review/consent.
+4. A plugin never receives data above the declared rating nor can it subscribe to events without authorization filtering.
+5. Updates with incompatible changes, new permissions or new origin require re-verification and may enter `QUARANTINED`.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Assinatura inválida:** rejeitar antes de instalar; não executar sequer em modo de pré-visualização.
-- **Plugin falha repetidamente:** circuito de proteção desativa a capacidade e preserva chamadas pendentes para reconciliação.
-- **Atualização remove capacidade usada em plano ativo:** bloquear tarefas dependentes e pedir replaneamento.
-- **Plugin tenta enviar segredo em output:** redator bloqueia saída, abre evento de segurança e coloca instalação em quarentena.
+- **Invalid signature:** reject before installing; It doesn't even run in preview mode.
+- **Plugin fails repeatedly:** protection circuit disables capability and preserves pending calls for reconciliation.
+- **Update removes capacity used in active plan:** block dependent tasks and request replanning.
+- **Plugin tries to send secret in output:** writer blocks output, opens security event and puts installation in quarantine.
 
-## Justificação
+## Justification
 
-Um SDK maduro converte extensibilidade num contrato de segurança, em vez de transformar cada integração numa exceção privilegiada. Assim um plugin Spotify pode ser útil sem receber poderes sobre email, SSH ou a Mind.
+A mature SDK converts extensibility into a security contract, rather than turning every integration into a privileged exception. So a Spotify plugin can be useful without gaining powers over email, SSH or Mind.
 
-## Expansões futuras
+## Future expansions
 
-Marketplace com reputação, certificação, permissões delegadas, testes de conformidade e plugins declarativos sem código arbitrário.
-
+Marketplace with reputation, certification, delegated permissions, compliance testing and declarative plugins without arbitrary code.

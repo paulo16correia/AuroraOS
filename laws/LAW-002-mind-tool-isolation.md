@@ -1,26 +1,25 @@
-# LAW-002 — A Mind nunca comunica diretamente com ferramentas
+# LAW-002 — Mind never communicates directly with tools
 
-## Enunciado
+## Statement
 
-A Mind representa estado; não executa efeitos. Toda a intenção que possa usar uma ferramenta percorre `Decision Engine → Policy/Permission Engine → Execution Layer → Tool Manager`.
+Mind represents state; does not perform effects. Every intention that can use a tool runs through `Decision Engine → Policy/Permission Engine → Execution Layer → Tool Manager`.
 
-## Aplicação
+## Application
 
 ```text
-Mind state → Decision → autorização → Action/ToolCall → Tool Manager → conector
+Mind state → Decision → authorization → Action/ToolCall → Tool Manager → connector
 ```
 
-## Controlo verificável
+## Verifiable control
 
-- Só o Tool Manager pode possuir manifests de conector e leases do cofre.
-- `MindService` não expõe métodos de rede, shell, email ou credenciais.
-- Auditoria deve relacionar cada `ToolCall` com `Decision`, política e aprovação quando exigida.
+- Only Tool Manager can own connector manifests and vault leases.
+- `MindService` does not expose network, shell, email or credentials methods.
+- Audit must relate each `ToolCall` to `Decision`, policy and approval when required.
 
-## Exceções
+## Exceptions
 
-Não existem. Uma consulta de saúde é observação de infraestrutura e não uma chamada da Mind a uma ferramenta.
+They don't exist. A health consultation is an observation of infrastructure and not a call from Mind to a tool.
 
-## Justificação
+## Justification
 
-Evita lógica de negócio e efeitos externos escondidos dentro de memória ou modelos de conhecimento.
-
+Avoids business logic and external effects hidden within memory or knowledge models.

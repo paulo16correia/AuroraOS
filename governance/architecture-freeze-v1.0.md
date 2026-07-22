@@ -1,34 +1,33 @@
 # Aurora Platform — Architecture Freeze v1.0
 
-**Efetivo em:** 2026-07-17  
-**Baseline congelada:** commit `a720961` e respetivas correções aprovadas na revisão v1.0
+**Effective on:** 2026-07-17
+**Frozen baseline:** commit `a720961` and respective fixes approved in revision v1.0
 
-## Decisão
+## Decision
 
-A arquitetura cognitiva v1.0 está congelada. Não serão criadas novas RFCs de conceito, módulos, objetos de domínio ou camadas até a implementação revelar uma falha material que não possa ser resolvida dentro dos contratos existentes.
+Cognitive Architecture v1.0 is frozen. No new concept, module, domain object, or layer RFCs will be created until implementation reveals a material flaw that cannot be resolved within existing contracts.
 
-## O que fica congelado
+## What stays frozen
 
-- Hierarquia `Aurora Platform → Aurora Kernel / Aurora Mind / Aurora Applications`.
-- Constituição, Leis e fronteiras de autoridade.
-- Modelo de domínio, contratos de ciclo de vida e comunicação por Event Bus.
-- Separação entre missão, objetivo, plano, tarefa, decisão, ação e observação.
-- Responsabilidades de Kernel, Mind e Applications.
+- `Aurora Platform → Aurora Kernel / Aurora Mind / Aurora Applications` hierarchy.
+- Constitution, Laws and boundaries of authority.
+- Domain model, lifecycle contracts and Event Bus communication.
+- Separation between mission, objective, plan, task, decision, action and observation.
+- Kernel, Mind and Applications responsibilities.
 
-## Alterações permitidas
+## Changes allowed
 
-1. Correções editoriais sem alteração semântica.
-2. Clarificações compatíveis que não acrescentem estado, efeito, interface pública ou dependência.
-3. Implementações, testes, documentação de operação e exemplos conformes.
-4. ADRs para alterações necessárias, cada um com impacto, migração, compatibilidade e aprovação.
+1. Editorial corrections without semantic changes.
+2. Compatible clarifications that do not add state, effect, public interface or dependency.
+3. Implementations, tests, operation documentation and compliant examples.
+4. ADRs for required changes, each with impact, migration, compatibility and approval.
 
-## Alterações bloqueadas
+## Changes locked
 
-- Novos subsistemas cognitivos, novos tipos de estado canónico ou novas exceções às Leis.
-- Aumento de autonomia, permissões ou superfícies de ferramentas sem ADR e revisão de segurança.
-- Alterar uma RFC diretamente para resolver desacordo de implementação.
+- New cognitive subsystems, new types of canonical state or new exceptions to the Laws.
+- Increased autonomy, permissions or tool surfaces without ADR and security review.
+- Change an RFC directly to resolve implementation disagreement.
 
-## Critério para reabrir a arquitetura
+## Criteria for reopening the architecture
 
-Uma proposta só reabre o freeze se demonstrar: (a) violação de Lei/Constituição, (b) ambiguidade que bloqueia uma implementação de referência, (c) falha de segurança/recuperação, ou (d) incompatibilidade incontornável entre contratos congelados. O pedido inicia-se por ADR, não por uma RFC nova.
-
+A proposal only reopens the freeze if it demonstrates: (a) violation of Law/Constitution, (b) ambiguity that blocks a reference implementation, (c) security/recovery failure, or (d) unavoidable incompatibility between frozen contracts. The request starts with an ADR, not a new RFC.

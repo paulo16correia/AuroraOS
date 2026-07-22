@@ -1,31 +1,31 @@
-# ADR-014 — Política persistente antes de capacidades externas
+#ADR-014 — Persistent Policy Before External Capabilities
 
-**Estado:** aceite  
-**Data:** 2026-07-18
+**Status:** accepted
+**Date:** 2026-07-18
 
-## Contexto
+## Context
 
-O SDK de capabilities estabilizou o contrato dos executores, mas um executor não deve decidir se uma entidade pode agir. Sem uma camada própria, autorização, aprovação e limites acabariam distribuídos pelos adaptadores de email, ficheiros e calendários.
+The capabilities SDK stabilized the executors' contract, but an executor should not decide whether an entity can act. Without its own layer, authorization, approval and limits would end up distributed across email adapters, files and calendars.
 
-## Decisão
+## Decision
 
-Adotar `CapabilityPolicyService` como fronteira Kernel-owned. A política é persistida por entidade e capability e produz `PolicyEvaluation` imutável. A decisão é aplicada antes da preparação e reavaliada imediatamente antes da execução aprovada.
+Adopt `CapabilityPolicyService` as Kernel-owned boundary. The policy is persisted per entity and capability and produces immutable `PolicyEvaluation`. The decision is applied before preparation and reevaluated immediately before approved execution.
 
-`CapabilityPolicy` é a fonte de verdade para: principal, sessão, estado da regra, exigência de aprovação e limite diário. Um executor recebe apenas uma operação já autorizada; não recebe a política nem acede ao estado da Mind.
+`CapabilityPolicy` is the source of truth for: principal, session, rule state, approval requirement, and daily limit. An executor receives only an already authorized operation; does not receive the policy or access the Mind state.
 
-## Consequências
+## Consequences
 
-- A revogação de uma policy tem efeito mesmo sobre pedidos já aprovados.
-- Um denial é observável como `CapabilityResult(POLICY_DENIED)`.
-- A introdução de um novo executor não requer adicionar regras de autorização ao Kernel.
-- A configuração administrativa das policies permanece fora deste slice; os defaults são criados no nascimento da entidade.
+- Revoking a policy has effect even on requests that have already been approved.
+- A denial is observable as `CapabilityResult(POLICY_DENIED)`.
+- Introducing a new executor does not require adding authorization rules to the Kernel.
+- The administrative configuration of policies remains outside this slice; defaults are created at the entity's birth.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-1. **Verificar permissões dentro de cada executor.** Duplica lógica e cria bypasses.
-2. **Usar apenas aprovação humana.** Não cobre quotas, limites de sessão ou revogação.
-3. **Permitir quando não existir policy.** Viola o princípio fail-closed.
+1. **Check permissions within each executor.** Duplicates logic and creates bypasses.
+2. **Use human approval only.** Does not cover quotas, session limits, or revocation.
+3. **Allow when no policy exists.** Violates the fail-closed principle.
 
-## Migração
+## Migration
 
-Entidades existentes recebem policies default durante `ensure_ready`. Nenhuma capability externa é executada se a policy correspondente não existir.
+Existing entities receive default policies during `ensure_ready`. No external capability is executed if the corresponding policy does not exist.

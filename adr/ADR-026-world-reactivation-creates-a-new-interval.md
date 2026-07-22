@@ -1,20 +1,20 @@
-# ADR-026 - Reativacao cria um novo intervalo temporal
+# ADR-026 - Reactivation creates a new time interval
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Decisao
+## Decision
 
-Uma reativacao cria uma nova `WorldAssertion(CURRENT)` com novo inicio de
-validade. A assertion `HISTORICAL` anterior permanece imutavel.
+A reactivation creates a new `WorldAssertion(CURRENT)` with a new start of
+validity. The previous `HISTORICAL` assertion remains immutable.
 
-## Justificacao
+## Justification
 
-Uma relacao que termina e volta a existir representa dois intervalos factuais.
-Reutilizar o mesmo objeto apagaria a descontinuidade e falsificaria consultas
-sobre o estado do mundo em cada periodo.
+A relationship that ends and comes back into existence represents two factual intervals.
+Reusing the same object would erase the discontinuity and falsify queries
+about the state of the world in each period.
 
-## Alternativa rejeitada
+## Alternative rejected
 
-- **Reabrir a assertion historica:** perde o intervalo em que a relacao nao
-  esteve ativa e impede uma cronologia correta.
+- **Reopen the historical assertion:** loses the interval in which the relationship does not
+  was active and prevents a correct chronology.

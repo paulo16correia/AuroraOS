@@ -1,46 +1,46 @@
-# VS-030 - World Model: relacoes em disputa
+# VS-030 - World Model: relations in dispute
 
-## Objetivo
+## Objective
 
-Permitir que uma afirmacao explicita do utilizador conteste uma relacao atual
-sem apagar o seu historico. A relacao passa a `DISPUTED` e deixa de ser usada
-como facto em queries atuais ou temporais.
+Allow an explicit user statement to challenge a current relationship
+without deleting your history. The relationship changes to `DISPUTED` and is no longer used
+as fact in current or temporal queries.
 
-## Cenario vertical
+## Vertical scene
 
 ```text
 WorldAssertion(CURRENT, Paulo -> Aurora)
        |
-       +-- "A informacao de que o Paulo trabalha no projeto Aurora esta errada."
++-- "The information that Paulo works on the Aurora project is wrong."
                          |
                          v
 WorldAssertion(DISPUTED, evidencia original + correcao)
                          |
                          v
-World.query -> nao devolve a assertion como facto confirmado
+World.query -> does not return the assertion as a confirmed fact
 ```
 
-## Regras obrigatorias
+## Mandatory rules
 
-1. Uma disputa so nasce de uma declaracao explicita do utilizador.
-2. A `WorldAssertion` e preservada, com a mensagem de contestacao adicionada a
-   `evidence_refs`; nao e apagada nem transformada numa negacao global.
-3. Assertions `DISPUTED` nao entram em queries atuais, historicas ou `as_of`.
-4. Repetir a mesma contestacao e idempotente: estado, evidencia e versao nao
-   mudam novamente.
-5. O sistema responde por desconhecimento enquanto nao existir uma nova
-   assertion confirmada; nao escolhe uma versao dos factos por popularidade.
+1. A dispute only arises from an explicit declaration by the user.
+2. `WorldAssertion` is preserved, with the dispute message added to
+   `evidence_refs`; It is not erased or transformed into a global negation.
+3. `DISPUTED` Assertions do not enter current, historical or `as_of` queries.
+4. Repeating the same objection is idempotent: state, evidence and version not
+   change again.
+5. The system responds by ignorance as long as there is no new
+   assertion confirmed; does not choose a version of facts based on popularity.
 
-## Casos limite
+## Limit cases
 
-- Contestacao sem relation atual correspondente: nao criar estado negativo.
-- Duas relations independentes: disputar uma nao afeta a outra.
-- Resolucao de disputa e criacao de assertion substituta ficam fora deste
-  slice; exigem evidencia e ciclo proprio.
+- Contestation without corresponding current relation: do not create negative state.
+- Two independent relations: disputing one does not affect the other.
+- Dispute resolution and creation of replacement assertion are outside this
+  slice; require evidence and their own cycle.
 
-## Criterios de aceitacao
+## Acceptance criteria
 
-1. A contestacao cria a transicao `CURRENT -> DISPUTED` auditavel.
-2. O Event Bus emite `WorldAssertionDisputed`.
-3. Queries atuais e `as_of` deixam de devolver o facto contestado.
-4. Repetir a contestacao nao cria novas entidades nem muda a versao.
+1. The challenge creates the auditable transition `CURRENT -> DISPUTED`.
+2. The Event Bus issues `WorldAssertionDisputed`.
+3. Current queries and `as_of` no longer return the disputed fact.
+4. Repeating the challenge does not create new entities or change the version.

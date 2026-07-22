@@ -1,15 +1,15 @@
 # VS-022 — Entity resolution
 
-## Objetivo
+## Objective
 
-Permitir que uma entidade Aurora resolva referências persistentes do utilizador, sem pedir um endereço de email em cada instrução.
+Allow an Aurora entity to resolve persistent user references, without asking for an email address in each statement.
 
 ```text
-Afirmação explícita do utilizador
+Explicit user assertion
         ↓
 Contact / ContactGroup persistido
         ↓
-Pedido: “envia um email ao João”
+Request: “send an email to João”
         ↓
 RecipientResolution
         ↓
@@ -18,19 +18,19 @@ EmailDraft(validado)
 Policy → Approval → Executor
 ```
 
-## Objetos
+## Objects
 
-`Contact` contém nome apresentado, aliases normalizados, endereços de email, proveniência, estado e versão. `ContactGroup` contém aliases e a lista explícita de membros. `RecipientResolution` regista a referência original, endereços resolvidos, objetos de origem, estado e razão.
+`Contact` contains displayed name, standard aliases, email addresses, origin, status and version. `ContactGroup` contains aliases and the explicit list of members. `RecipientResolution` records the original reference, resolved addresses, source objects, status and reason.
 
-## Regras obrigatórias
+## Mandatory rules
 
-- Apenas uma afirmação explícita do utilizador cria ou atualiza contactos.
-- O LLM nunca cria, corrige ou escolhe contactos.
-- “O João é joao@example.com” e “O Pedro tem o email pedro@example.com” são afirmações aceites.
-- “A minha equipa inclui ana@example.com, bruno@example.com” cria ou atualiza o grupo persistente.
-- Referências sem correspondência ficam `UNRESOLVED`; correspondências múltiplas ficam `AMBIGUOUS`. Ambas bloqueiam o `EmailDraft` antes de aprovação.
-- Contactos, grupos e resoluções pertencem à Entity, sobrevivem a reinícios e entram no snapshot da Mind.
+- Only an explicit statement from the user creates or updates contacts.
+- LLM never creates, corrects or chooses contacts.
+- “João is joao@example.com” and “Pedro has the email pedro@example.com” are accepted statements.
+- “My team includes ana@example.com, bruno@example.com” creates or updates the persistent group.
+- Unmatched references are `UNRESOLVED`; multiple matches get `AMBIGUOUS`. Both block `EmailDraft` before approval.
+- Contacts, groups and resolutions belong to the Entity, survive restarts and are included in the Mind snapshot.
 
-## Limites
+## Limits
 
-Não há importação automática de contactos externos, pesquisa na internet ou inferência de identidades. A integração com Google Contacts, sincronização, permissões por contacto e desambiguação conversacional são expansões futuras.
+There is no automatic import of external contacts, internet searching or identity inference. Integration with Google Contacts, synchronization, per-contact permissions, and conversational disambiguation are future expansions.

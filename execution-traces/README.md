@@ -1,47 +1,46 @@
-# Catálogo canónico de Vertical Slices
+# Canonical catalog of Vertical Slices
 
-Este ficheiro é a fonte de verdade para a numeração dos Vertical Slices (VS).
-Uma feature só pode usar um número após ser registada aqui. Um VS é composto por
-um execution trace, código no `aurora-kernel`, testes automatizados e, quando
-altera uma decisão arquitetural, um ADR.
+This file is the source of truth for the numbering of Vertical Slices (VS).
+A feature can only use a number after being registered here. A VS is made up of
+an execution trace, code in `aurora-kernel`, automated tests and, when
+changes an architectural decision, an ADR.
 
-## Regra de numeração
+## Numbering rule
 
-- Um número identifica um único comportamento de ponta a ponta e nunca é reutilizado.
-- Um ajuste corretivo usa o sufixo `.1` (por exemplo, `VS-007.1`).
-- Se uma proposta for abandonada, o número fica `RESERVADO` ou `SUBSTITUÍDO`; não é renumerado.
-- Este catálogo prevalece sobre mensagens de planeamento, notas e nomes de branches.
+- A number identifies a single end-to-end behavior and is never reused.
+- A corrective adjustment uses the suffix `.1` (for example, `VS-007.1`).
+- If a proposal is abandoned, the number becomes `RESERVED` or `REPLACED`; is not renumbered.
+- This catalog takes precedence over planning messages, notes and branch names.
 
-## Linha de implementação
+## Implementation line
 
-| VS | Comportamento canónico | Estado | Evidência documental |
+| VS | Canonical behavior | Status | Documentary evidence |
 | --- | --- | --- | --- |
-| 000–017 | Núcleo, Entity, Mind, Tasks, capabilities, approval, Event Engine | Implementado | `VS-000` a `VS-017` |
-| 018 | Scheduler idempotente de `WAIT_FOR_TIME` | Implementado | `VS-018-persistent-scheduler.md` |
-| 019 | Provider Google Calendar e OAuth local | Implementado | `VS-019-google-calendar.md` |
-| 019.1 | Calendar no pipeline de capability | Implementado | `VS-019.1-calendar-capability-integration.md` |
-| 020 | Consulta Google Calendar Free/Busy | Implementado | `VS-020-calendar-freebusy.md` |
-| 021 | Orquestração Calendar + Email com aprovações independentes | Implementado | `VS-021-multi-capability-orchestration.md` |
-| 022 | Resolução explícita de entidades para destinatários | Implementado | `VS-022-entity-resolution.md` |
-| 023 | Compensação conservadora de ramos falhados | Implementado | `VS-023-workflow-compensation.md` |
-| 024 | Workflows recorrentes | Implementado | `VS-024-recurring-workflows.md` |
-| 025 | Ciclo de vida de eventos Google Calendar | Implementado | `VS-025-calendar-event-lifecycle.md` |
-| 026 | World Model: relações explícitas com proveniência | Implementado | `VS-026-world-model-foundation.md` |
-| 027 | World Model temporal: transições para histórico | Implementado | `VS-027-temporal-world-assertions.md` |
-| 028 | World Model temporal: reativação de relações | Implementado | `VS-028-world-relationship-reactivation.md` |
-| 029 | World Model temporal: consultas as-of | Implementado | `VS-029-temporal-as-of-queries.md` |
-| 030 | World Model: relações em disputa | Implementado | `VS-030-world-assertion-disputes.md` |
-| 031 | World Model: correção explícita de relação disputada | Implementado | `VS-031-world-assertion-corrections.md` |
+| 000–017 | Core, Entity, Mind, Tasks, capabilities, approval, Event Engine | Implemented | `VS-000` to `VS-017` |
+| 018 | `WAIT_FOR_TIME` Idempotent Scheduler | Implemented | `VS-018-persistent-scheduler.md` |
+| 019 | Provider Google Calendar and local OAuth | Implemented | `VS-019-google-calendar.md` |
+| 019.1 | Calendar in the capability pipeline | Implemented | `VS-019.1-calendar-capability-integration.md` |
+| 020 | Query Google Calendar Free/Busy | Implemented | `VS-020-calendar-freebusy.md` |
+| 021 | Calendar Orchestration + Email with independent approvals | Implemented | `VS-021-multi-capability-orchestration.md` |
+| 022 | Explicit entity resolution for recipients | Implemented | `VS-022-entity-resolution.md` |
+| 023 | Conservative compensation of failed branches | Implemented | `VS-023-workflow-compensation.md` |
+| 024 | Recurring workflows | Implemented | `VS-024-recurring-workflows.md` |
+| 025 | Event lifecycle Google Calendar | Implemented | `VS-025-calendar-event-lifecycle.md` |
+| 026 | World Model: explicit relationships with provenance | Implemented | `VS-026-world-model-foundation.md` |
+| 027 | Temporal World Model: transitions to history | Implemented | `VS-027-temporal-world-assertions.md` |
+| 028 | Temporal World Model: reactivation of relationships | Implemented | `VS-028-world-relationship-reactivation.md` |
+| 029 | Temporal World Model: as-of queries | Implemented | `VS-029-temporal-as-of-queries.md` |
+| 030 | World Model: relations in dispute | Implemented | `VS-030-world-assertion-disputes.md` |
+| 031 | World Model: explicit correction of disputed relationship | Implemented | `VS-031-world-assertion-corrections.md` |
 
-## Histórico de colisões resolvidas
+## History of resolved collisions
 
-Durante o planeamento, `VS-021` foi temporariamente usado para Calendar
-Update/Delete e depois para orquestração multi-capability. O significado
-canónico é **orquestração multi-capability**. A alteração e remoção de eventos
-de Calendar são uma expansão futura e receberão outro número.
+During planning, `VS-021` was temporarily used for Calendar
+Update/Delete and then for multi-capability orchestration. The meaning
+canonical is **multi-capability orchestration**. Changing and removing eventsof Calendar are a future expansion and will receive another number.
 
-## Próximo slice
+## Next slice
 
-O VS-031 fecha a criação explícita de uma relação substituta após uma disputa.
-O catálogo aguarda a priorização do próximo comportamento. Qualquer novo VS
-tem de ser registado aqui antes de receber implementação no Kernel.
+VS-031 closes the explicit creation of a surrogate relationship after a dispute.
+The catalog waits for the next behavior to be prioritized. Any new VS
+it must be registered here before receiving implementation in the Kernel.

@@ -1,36 +1,36 @@
-# Aurora OS — RFC 10: API, eventos e contratos de integração
+# Aurora OS — RFC 10: API, events, MCP, and integration contracts
 
-**Estado:** Normativo · **Depende de:** RFC 02–09
+**Status:** Normative · **Depends on:** RFC 02–09, RFC 045
 
-## Objetivo
+## Objective
 
-Definir uma superfície de integração estável para UI, canais e operadores. A API expõe recursos e comandos; não expõe diretamente o motor de raciocínio nem segredos.
+Define stable integration surfaces for UI, channels, operators, and LLM clients. MCP is the LLM-facing capability surface. The API exposes resources, commands, and events; neither surface exposes secrets or bypasses cognition, policy, approval, or execution controls.
 
-## Arquitetura
-
-```text
-Cliente/UI/Conector → API Gateway → autenticação + versão + limites
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-           comandos        consultas       stream de eventos
-              │               │               │
-              └────→ núcleo e serviços ←─────┘
-```
-
-## Recursos e interfaces
+## Architecture
 
 ```text
-POST /v1/events                 aceita evento normalizado
-POST /v1/goals                  cria objetivo em DRAFT
-GET  /v1/goals/{id}             lê estado e plano autorizado
-POST /v1/approvals/{id}/decide  aprova/rejeita âmbito exato
-GET  /v1/memories               pesquisa com ACL
-PATCH /v1/memories/{id}         corrige memória
-DELETE /v1/memories/{id}        solicita esquecimento
-GET  /v1/audit                  consulta auditável paginada
-GET  /v1/stream                 WebSocket/SSE de eventos autorizados
+LLM client → MCP server → Aurora Kernel
+UI/channel/operator → API gateway → Aurora Kernel
+                                      ├─ commands
+                                      ├─ queries
+                                      └─ authorized event stream
 ```
+
+## Interfaces
+
+```text
+POST /v1/events                 accepts a normalized event
+POST /v1/goals                  creates a DRAFT goal
+GET  /v1/goals/{id}             reads state and authorized plan
+POST /v1/approvals/{id}/decide  approves or rejects the exact scope
+GET  /v1/memories               searches with ACL
+PATCH /v1/memories/{id}         corrects memory
+DELETE /v1/memories/{id}        requests forgetting
+GET  /v1/audit                  paginated auditable query
+GET  /v1/stream                 authorized WebSocket/SSE event stream
+```
+
+MCP tool discovery and schemas are published by the Kernel. They expose governed capability families such as memory, world, planning, scheduling, tasks, missions, communication, approvals, capabilities, identity, and relationships, without this RFC hardcoding tool names.
 
 ```text
 ApiEnvelope
@@ -42,26 +42,15 @@ DomainEvent
   correlation_id, causation_id, payload_ref|payload_json, sensitivity
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Comandos de escrita DEVEM aceitar `Idempotency-Key`; pedidos repetidos devolvem o mesmo resultado lógico.
-2. A API DEVE versionar alterações incompatíveis e publicar esquemas de eventos.
-3. Consultas DEVEM filtrar autorização no servidor; clientes nunca recebem “tudo” para filtrar localmente.
-4. Erros não DEVEM revelar segredos, detalhes internos ou se um recurso sensível existe para um utilizador não autorizado.
-5. Eventos são factos imutáveis; correções são novos eventos que referenciam os anteriores.
+1. Write commands MUST accept `Idempotency-Key`; repeated requests return the same logical result.
+2. API and MCP contracts MUST version incompatible changes and publish event schemas.
+3. Queries MUST apply authorization on the server; clients never receive everything to filter locally.
+4. MCP calls MUST be validated as untrusted ingress and MUST NOT expose secrets, internal details, or existence of sensitive resources to an unauthorized caller.
+5. Events are immutable facts; corrections are new events referring to previous ones.
+6. MCP results are not natural-language authority: the LLM client may present them conversationally, while Aurora remains authoritative for state and effects.
 
-## Casos limite e erro
+## Failure cases and extensions
 
-- **Cliente desatualizado:** devolver versão suportada e instrução de migração, não interpretar campos desconhecidos de forma permissiva.
-- **Entrega de webhook falha:** reentregar com backoff e assinatura; após limite, encaminhar para fila morta auditável.
-- **Stream perde ligação:** cliente retoma por cursor; servidor limita retenção e informa lacunas.
-- **Paginação muda durante consulta:** usar cursor estável, não índices numéricos.
-
-## Justificação
-
-Eventos imutáveis permitem reconstruir estado e investigar incidentes. Separar comandos de consultas reduz efeitos acidentais e melhora controlo de acesso.
-
-## Expansões futuras
-
-SDKs oficiais, GraphQL apenas para leitura, federação de eventos, API de administração segregada e contratos de parceiros.
-
+Outdated clients receive a supported version and migration instruction. Failed webhook delivery uses signed backoff and an auditable dead queue. Streams resume by cursor with bounded retention. Future extensions include SDKs, read-only GraphQL, event federation, a segregated admin API, and partner contracts.

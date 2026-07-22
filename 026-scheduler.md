@@ -1,26 +1,26 @@
-# Aurora OS — RFC 026: Scheduler e vida contínua
+# Aurora OS — RFC 026: Scheduler and Continuous Life
 
-**Estado:** Normativo · **Depende de:** RFC 01, 021–022, 040
+**State:** Normative · **Depends on:** RFC 01, 021–022, 040
 
-## Objetivo
+## Objective
 
-Criar eventos temporais e recorrentes de forma fiável. O Scheduler dá ritmo à Aurora, mas não recebe acesso direto a ferramentas nem autorização para agir fora do ciclo cognitivo.
+Reliably create temporal and recurring events. The Scheduler provides rhythm to Aurora, but does not receive direct access to tools or authorization to act outside the cognitive cycle.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
-ScheduleRule → cálculo da próxima ocorrência → JobDue Event
+ScheduleRule → next occurrence calculation → JobDue Event
                                             │
                                             ▼
                                   Cognitive Cycle completo
                                             │
-                         decisão: agir | pedir aprovação | esperar | notificar
+decision: act | ask for approval | wait | notify
                                             │
                                             ▼
-                              registo de execução e próxima ocorrência
+execution log and next occurrence
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Schedule
@@ -45,25 +45,24 @@ Scheduler.pause(id, actor) -> Schedule
 Scheduler.reconcile(run_id) -> ScheduleRun
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Fuso horário é obrigatório; horário de verão e mudanças de relógio DEVEM ser tratados por biblioteca de calendário fiável.
-2. Cada ocorrência DEVE ter chave de idempotência e passar pelo ciclo RFC 021.
-3. Rotinas que enviam comunicação, mudam dados ou usam conector exigem política/autorização normal; agendamento não é consentimento perpétuo.
-4. O utilizador pode pausar, editar ou apagar qualquer schedule; apagar impede futuras ocorrências, não apaga auditoria passada.
+1. Time zone is mandatory; DST and clock changes MUST be handled by reliable calendar library.
+2. Each occurrence MUST have an idempotence key and go through the RFC 021 cycle.
+3. Routines that send communication, change data or use a connector require normal policy/authorization; Scheduling is not perpetual consent.
+4. The user can pause, edit or delete any schedule; deleting prevents future occurrences, does not delete past audits.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Servidor desligado às 08:00:** aplicar `missed_run_policy` (`SKIP`, `RUN_ONCE`, `ASK`); nunca executar uma avalanche por defeito.
-- **Hora duplicada no outono:** usar identificador de ocorrência e executar no máximo uma vez salvo regra explícita.
-- **Fuso inválido:** desativar schedule e notificar; não assumir UTC silenciosamente.
-- **Limite de custo excedido:** marcar `SKIPPED` com razão e pedir alteração da regra.
+- **Server shut down at 08:00:** apply `missed_run_policy` (`SKIP`, `RUN_ONCE`, `ASK`); Never run an avalanche by default.
+- **Duplicate time in autumn:** use occurrence identifier and execute at most once unless explicit rule.
+- **Invalid zone:** disable schedule and notify; do not assume UTC silently.
+- **Cost limit exceeded:** mark `SKIPPED` correctly and request a change to the rule.
 
-## Justificação
+## Justification
 
-Separar tempo de execução mantém a Aurora “viva” sem criar um bypass perigoso para ações externas.
+Separating runtime keeps Aurora “alive” without creating a dangerous bypass for external actions.
 
-## Expansões futuras
+## Future expansions
 
-Calendários externos, janelas de disponibilidade, prioridades, dependências entre schedules e recuperação distribuída.
-
+External calendars, availability windows, priorities, dependencies between schedules and distributed recovery.

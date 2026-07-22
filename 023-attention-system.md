@@ -1,27 +1,27 @@
-# Aurora OS — RFC 023: Sistema de atenção
+# Aurora OS — RFC 023: Attention System
 
-**Estado:** Normativo · **Depende de:** RFC 03–04, 020–021
+**State:** Normative · **Depends on:** RFC 03–04, 020–021
 
-## Objetivo
+## Objective
 
-Selecionar um pequeno conjunto de sinais, memórias e objetivos que merece processamento num ciclo. Atenção é gestão de recursos e relevância, não memória e não autorização.
+Select a small set of signals, memories and goals that deserve processing in a cycle. Attention is resource management and relevance, not memory and not authorization.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
-Evento + objetivos ativos + sinais do scheduler + estado da Mind
+Event + active objectives + scheduler signals + Mind state
                            │
                            ▼
-         elegibilidade por ACL/privacidade/recência
+eligibility by ACL/privacy/recency
                            │
                            ▼
-  pontuação: relevância + urgência + novidade + impacto + confiança
+score: relevance + urgency + novelty + impact + trust
                            │
                            ▼
              AttentionSet limitado → Working Memory
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 AttentionItem
@@ -45,25 +45,24 @@ Attention.focus(cycle_id, item_ref) -> AttentionSet
 Attention.release(cycle_id) -> void
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. A atenção DEVE filtrar autorização antes de calcular relevância.
-2. O conjunto é limitado por itens, tempo e orçamento; recuperar todo o arquivo é proibido.
-3. A razão de seleção e exclusão de itens materiais DEVE ficar registada.
-4. Alta saliência não contorna política: um segredo ou instrução hostil não ganha acesso por ser urgente.
+1. Attention MUST filter authorization before calculating relevance.
+2. The set is limited by items, time and budget; Recovering the entire file is prohibited.
+3. The reason for selecting and excluding material items MUST be recorded.
+4. High salience does not circumvent politics: a secret or hostile instruction does not gain access because it is urgent.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **300 mil memórias elegíveis:** usar pesquisa híbrida em fases e corte determinístico; não carregar objetos completos antes da seleção.
-- **Emergência real:** política pode elevar urgência, mas continua a exigir validação de fonte e ação autorizada.
-- **Empate:** preferir evidência mais recente, confirmada e diretamente ligada ao objetivo.
-- **Sem candidatos:** produzir conjunto vazio e levar a `ASK`, `WAIT` ou resposta limitada.
+- **300 thousand eligible memories:** use phased hybrid search and deterministic pruning; do not load complete objects before selection.
+- **Actual emergency:** policy may elevate urgency, but continues to require source validation and authorized action.
+- **Tie:** prefer more recent, confirmed evidence and directly linked to the objective.
+- **No candidates:** produce empty set and lead to `ASK`, `WAIT` or limited answer.
 
-## Justificação
+## Justification
 
-Sem atenção, o sistema mistura contexto irrelevante, aumenta custo e cria associações espúrias. Com atenção explicável, é possível justificar porque 17 memórias foram usadas e as restantes não.
+Without attention, the system mixes irrelevant context, increases cost and creates spurious associations. With explainable attention, it is possible to justify why 17 memories were used and the rest were not.
 
-## Expansões futuras
+## Future expansions
 
-Aprendizagem de pesos com avaliação, saliência multimodal, filas de interrupção e atenção por perfil de utilizador.
-
+Weight learning with evaluation, multimodal saliency, interruption queues and attention by user profile.

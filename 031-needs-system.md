@@ -1,12 +1,12 @@
-# Aurora OS — RFC 031: Sistema de necessidades operacionais
+# Aurora OS — RFC 031: System Operational Needs
 
-**Estado:** Normativo · **Depende de:** RFC 020, 026, 030, 033, 040
+**Status:** Normative · **Depends on:** RFC 020, 026, 030, 033, 040
 
-## Objetivo
+## Objective
 
-Converter condições persistentes da operação em prioridades internas explícitas: cópias de segurança atrasadas, tarefas críticas bloqueadas, fila de email por tratar, consolidação de memória ou manutenção de saúde. Necessidades não são emoções, nem autorizam ações; são candidatos a foco quando a Aurora está disponível.
+Convert persistent operation conditions into explicit internal priorities: delayed backups, blocked critical tasks, untreated email queue, memory consolidation or health maintenance. Needs are not emotions, nor do they authorize actions; are focus candidates when Aurora is available.
 
-## Arquitetura
+## Architecture
 
 ```text
 Self/Health + Goals + Signals + Scheduler + Resource Model
@@ -18,7 +18,7 @@ Self/Health + Goals + Signals + Scheduler + Resource Model
       Attention → Decision Engine → criar/ordenar Goal ou Task autorizada
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Need
@@ -37,24 +37,23 @@ Needs.rank(needs, situation, resources) -> Need[]
 Needs.satisfy(need_id, evidence) -> Need
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada Need requer evidência e condição de satisfação mensurável.
-2. Necessidades internas só podem criar objetivos/tarefas `DRAFT`; execução continua a passar pelo ciclo, políticas e aprovações.
-3. Necessidades do utilizador explícitas prevalecem sobre manutenção de baixo risco, salvo incidentes de segurança/recuperação.
-4. Intensidade diminui ou expira de forma definida; não existem “urgências” eternas.
+1. Each Need requires evidence and a measurable satisfaction condition.
+2. Internal needs can only create goals/tasks `DRAFT`; Execution continues to go through the cycle, policies and approvals.
+3. Explicit user needs prevail over low-risk maintenance, barring security/recovery incidents.
+4. Intensity decreases or expires in a defined way; there are no eternal “urgencies”.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **20 emails pendentes:** cria Need de comunicação, não envia respostas automaticamente.
-- **Backup vencido e recursos baixos:** Need de segurança ganha prioridade, mas o Resource Model pode agendar janela segura.
-- **Conflito entre necessidades:** Decision Engine escolhe por política, impacto, prazo e recursos, registando a razão.
+- **20 pending emails:** creates communication needs, does not automatically send responses.
+- **Backup due and low resources:** Security needs gain priority, but the Resource Model can schedule a safe window.
+- **Conflict between needs:** Decision Engine chooses by policy, impact, deadline and resources, recording the reason.
 
-## Justificação
+## Justification
 
-Necessidades dão direção à autonomia limitada sem inventar desejos humanos. Fazem o trabalho de manutenção visível, priorizável e auditável.
+Needs give direction to limited autonomy without inventing human desires. Make maintenance work visible, prioritizeable and auditable.
 
-## Expansões futuras
+## Future expansions
 
-SLOs, prioridades personalizáveis, negociação de atenção e previsão de degradação.
-
+SLOs, customizable priorities, attention negotiation, and degradation prediction.

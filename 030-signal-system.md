@@ -1,21 +1,21 @@
-# Aurora OS — RFC 030: Sistema de sinais
+# Aurora OS — RFC 030: Signal System
 
-**Estado:** Normativo · **Depende de:** RFC 011, 021, 040, LAW-001
+**Status:** Normative · **Depends on:** RFC 011, 021, 040, LAW-001
 
-## Objetivo
+## Objective
 
-Representar estímulos do mundo que podem merecer atenção. Um **Signal** não é um evento: um evento é um facto normalizado e imutável; um sinal é uma avaliação temporária de relevância, urgência e necessidade de interrupção derivada desse evento.
+Represent stimuli from the world that may deserve attention. A **Signal** is not an event: an event is a standardized and immutable fact; a signal is a temporary assessment of relevance, urgency, and need for disruption derived from that event.
 
-## Arquitetura
+## Architecture
 
 ```text
 External World → Event/Observation → Perception → Signal
                                                │
-                         urgência/prioridade ──┼→ Attention → Cognitive Cycle
-                                               └→ fila, supressão ou escalada
+urgency/priority ──┼→ Attention → Cognitive Cycle
+└→ queue, suppression or escalation
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Signal
@@ -35,24 +35,23 @@ Signals.route(signal_id) -> RouteDecision
 Signals.acknowledge(signal_id, resolution_ref) -> Signal
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Todo Signal deve referenciar uma fonte observável; o modelo não cria sinais sem evento, schedule ou estado de saúde verificável.
-2. Urgência não concede permissão nem chama ferramentas; apenas altera atenção e ordem de avaliação.
-3. Interrupção exige limiar de política e deve preservar o ciclo interrompido para retoma.
-4. Signals expiram ou são resolvidos; não se tornam memória permanente sem LAW-001.
+1. Every Signal must reference an observable source; the model does not create signals without a verifiable event, schedule or health state.
+2. Urgency does not grant permission or call for tools; it only changes attention and order of evaluation.
+3. Interruption requires a policy threshold and must preserve the interrupted cycle for recovery.
+4. Signals expire or are resolved; do not become permanent memory without LAW-001.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Servidor em baixo:** signal `CRITICAL/EMERGENCY` interrompe trabalho de baixo risco, mas toda a ação corretiva continua a exigir decisão e permissão.
-- **Mensagem não urgente:** vai para `QUEUE` ou `FOCUS_WHEN_IDLE`; não provoca ação automática.
-- **Tempestade de sinais:** deduplicar por origem/alvo, agrupar e aplicar limites de taxa.
+- **Server down:** signal `CRITICAL/EMERGENCY` stops low-risk work, but all corrective action continues to require decision and permission.
+- **Non-urgent message:** goes to `QUEUE` or `FOCUS_WHEN_IDLE`; does not trigger automatic action.
+- **Signal storm:** deduplicate by source/target, group and apply rate limits.
 
-## Justificação
+## Justification
 
-Signals transformam acontecimentos num sistema nervoso com prioridade explícita, sem confundir ruído externo com obrigação de agir.
+Signals transform events in a nervous system with explicit priority, without confusing external noise with an obligation to act.
 
-## Expansões futuras
+## Future expansions
 
-Correlação de incidentes, sinais multimodais, políticas de interrupção por canal e análises de fadiga de alertas.
-
+Incident correlation, multimodal signals, outage policies by channel, and alert fatigue analysis.

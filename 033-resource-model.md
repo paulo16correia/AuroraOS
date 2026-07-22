@@ -1,27 +1,27 @@
-# Aurora OS — RFC 033: Modelo de recursos e energia operacional
+# Aurora OS — RFC 033: Operational Power and Resource Model
 
-**Estado:** Normativo · **Depende de:** RFC 027, 040
+**State:** Normative · **Depends on:** RFC 027, 040
 
-## Objetivo
+## Objective
 
-Modelar recursos reais e orçamentos de trabalho: CPU, memória, disco, rede, fila, custo de modelo, tempo e limites de fornecedores. “Energia” é uma metáfora de produto para capacidade operacional disponível; não representa estado biológico ou emocional.
+Model actual resources and job budgets: CPU, memory, disk, network, queue, model cost, time, and vendor limits. “Energy” is a product metaphor for available operational capacity; does not represent biological or emotional state.
 
-## Arquitetura
+## Architecture
 
 ```text
-Infraestrutura + Self + limites de custo + carga de tarefas
+Infrastructure + Self + cost limits + task load
                          │
                          ▼
-                ResourceState e orçamento
+ResourceState and budget
                          │
                          ▼
         Scheduler / Attention / Decision Engine
                          │
                          ▼
-       executar, adiar, reduzir qualidade ou pedir intervenção
+execute, postpone, reduce quality or request intervention
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 ResourceState
@@ -43,23 +43,23 @@ Resources.release(reservation_id, outcome) -> ResourceState
 Resources.admit(decision, budget) -> ALLOW|DEFER|DENY
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Trabalho de segurança, recuperação e operações confirmadas tem reserva definida; curiosidade, indexação e manutenção são adiadas primeiro.
-2. Nenhuma estimativa de recursos é tratada como ilimitada; tarefas recebem reserva e prazo.
-3. `CRITICAL` bloqueia tarefas não essenciais e pode degradar consultas, mas não elimina dados nem interrompe ações externas sem reconciliação.
-4. Custo e consumo observados entram em auditoria operacional, sem expor conteúdo sensível.
+1. Security work, recovery and confirmed operations have a defined reserve; curiosity, indexing and maintenance are postponed first.
+2. No resource estimate is treated as unlimited; tasks receive reservation and deadline.
+3. `CRITICAL` blocks non-essential tasks and may degrade queries, but does not eliminate data or stop external actions without reconciliation.
+4. Observed cost and consumption are included in operational audit, without exposing sensitive content.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **CPU 95%:** adiar indexação/consolidação, limitar concorrência e sinalizar Need de manutenção.
-- **Orçamento de modelo esgotado:** usar opção aprovada mais barata, adiar ou pedir decisão; nunca faturar sem limite.
-- **Métrica indisponível:** assumir `UNKNOWN` e adotar admissão conservadora.
+- **CPU 95%:** postpone indexing/consolidation, limit competition and signal maintenance need.
+- **Exhausted model budget:** use cheaper approved option, postpone or request decision; Never bill without a limit.
+- **Metric unavailable:** assume `UNKNOWN` and adopt conservative admission.
 
-## Justificação
+## Justification
 
-Este modelo evita que a Aurora se torne menos fiável precisamente quando há mais trabalho. A prioridade passa a depender de recursos reais, não de uma fila cega.
+This model prevents the Aurora from becoming less reliable precisely when there is more work. Priority now depends on real resources, not a blind queue.
 
-## Expansões futuras
+## Future expansions
 
-Previsão de carga, prioridade preemptiva, múltiplos nós, custo por objetivo e políticas ambientais/horárias.
+Load forecasting, preemptive priority, multiple nodes, cost per objective and environmental/time policies.

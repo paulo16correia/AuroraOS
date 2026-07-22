@@ -1,13 +1,13 @@
 # Aurora OS — Execution Trace Specification: VS-013 Capability SDK
 
-**Estado:** Autorizado por ADR-013  
-**Caso de utilização:** o Kernel resolve uma capability por contrato estável, sem conhecer SMTP, ficheiros ou APIs futuras.
+**Status:** Authorized by ADR-013
+**Use case:** the Kernel resolves a capability by stable contract, without knowing SMTP, files or future APIs.
 
-## Objetivo
+## Objective
 
-Transformar o executor de email numa primeira implementação de uma plataforma extensível. O Kernel coordena persistência, políticas, correlação e auditoria; cada executor implementa apenas o comportamento da sua capability.
+Transform the email runner into a first implementation of an extensible platform. The Kernel coordinates persistence, policies, correlation and auditing; each executor implements only the behavior of its capability.
 
-## Contrato estável
+## Stable contract
 
 ```text
 CapabilityExecutor
@@ -22,11 +22,9 @@ CapabilityExecutor
 
   recover(ExecutionRecord)
       -> RecoveryDecision
-```
+````payload` is a Kernel-validated domain agreement. In VS-013, `EMAIL_SEND` receives `EmailDraft`; Future capabilities can introduce their own payloads without changing the cognitive cycle.
 
-`payload` é um contrato de domínio validado pelo Kernel. Em VS-013, `EMAIL_SEND` recebe `EmailDraft`; capabilities futuras podem introduzir payloads próprios sem alterar o ciclo cognitivo.
-
-## Fluxo
+## Flow
 
 ```text
 CapabilityRequest
@@ -38,42 +36,42 @@ CapabilityRequest
   → ExecutionOutcome
   → CapabilityResult
 
-Após restart:
+After restart:
   ExecutionRecord → executor.recover(...) → RecoveryDecision
 ```
 
 ## Ownership
 
-| Componente | Responsabilidade |
+| Component | Responsibility |
 | --- | --- |
-| Kernel / Dispatcher | persistência, eventos, idempotência, Entity boundary, Approval boundary |
-| Registry | associação capability → executor |
-| Executor | semântica da operação, outcome e decisão de recuperação |
-| Provider externo | I/O específico da integração |
+| Kernel/Dispatcher | persistence, events, idempotence, Entity boundary, Approval boundary |
+| Registry | association capability → executor |
+| Executor | operation semantics, outcome and recovery decision |
+| External provider | Integration-specific I/O |
 
-Executores não recebem repositório, event bus, LLM, Mind ou permissões globais.
+Executors do not receive repository, event bus, LLM, Mind, or global permissions.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O Kernel nunca contém condicionais específicas de fornecedores externos.
-2. Um executor não escreve diretamente no estado da Aurora nem publica eventos.
-3. Um executor só recebe payload validado e a Entity já confirmada pelo Dispatcher.
-4. Cada capability tem no máximo um executor registado por runtime.
-5. `recover` é obrigatório; a ausência de decisão de recuperação segura é erro de implementação.
-6. `ExecutionOutcome` não é persistido pelo executor; o Dispatcher transforma-o em `ExecutionRecord` e `CapabilityResult`.
-7. Capability sem executor resolve para fallback bloqueado, nunca para execução implícita.
+1. The Kernel never contains external vendor-specific conditionals.
+2. An executor does not write directly to Aurora state or publish events.
+3. An executor only receives a validated payload and the Entity already confirmed by the Dispatcher.
+4. Each capability has a maximum of one executor registered per runtime.
+5. `recover` is mandatory; the absence of a safe recovery decision is an implementation error.
+6. `ExecutionOutcome` is not persisted by the executor; the Dispatcher turns it into `ExecutionRecord` and `CapabilityResult`.
+7. Capability without executor resolves to blocked fallback, never to implicit execution.
 
-## Migração EMAIL_SEND
+## EMAIL_SEND migration
 
-`EmailSendExecutor` implementa o SDK completo. `SmtpEmailProvider` fica atrás desse executor. O Dispatcher deixou de conhecer como enviar email; chama apenas `execute` e persiste o outcome devolvido.
+`EmailSendExecutor` implements the complete SDK. `SmtpEmailProvider` stands behind this executor. The Dispatcher no longer knows how to send email; it just calls `execute` and persists the returned outcome.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. O fluxo de email continua a produzir `SUCCESS`, `FAILED` e `UNKNOWN` com idempotência preservada.
-2. Um provider controlado pode substituir SMTP nos testes sem alterar o Kernel.
-3. Não existe acesso direto a provider externo fora de um executor.
-4. Todos os testes VS-000–VS-012 permanecem verdes.
+1. The mail flow continues to produce `SUCCESS`, `FAILED`, and `UNKNOWN` with preserved idempotence.
+2. A controlled provider can replace SMTP in tests without changing the Kernel.
+3. There is no direct access to an external provider outside of an executor.
+4. All VS-000–VS-012 tests remain green.
 
-## Próximos passos
+## Next steps
 
-VS-014 introduzirá políticas transversais antes de `execute`. Novas capabilities, como `FILE_WRITE` ou `CALENDAR_CREATE`, serão novos executores que implementam este contrato, não novos caminhos no Kernel.
+VS-014 will introduce cross-cutting policies before `execute`. New capabilities, like `FILE_WRITE` or `CALENDAR_CREATE`, will be new executors that implement this contract, not new paths in the Kernel.

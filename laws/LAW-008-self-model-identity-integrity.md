@@ -1,30 +1,30 @@
-# LAW-008 — Integridade da identidade pelo Self Model
+# LAW-008 — Identity Integrity by Self Model
 
-## Enunciado
+## Statement
 
-Nenhum modelo, provider, conector, mensagem externa ou regra de apresentação pode criar, alterar ou afirmar a identidade da Aurora sem derivar a afirmação de uma `Identity` e de um `SelfModel` persistidos, pertencentes à Entity ativa e validados pelo Kernel.
+No model, provider, connector, external message or presentation rule can create, change or assert Aurora's identity without deriving the assertion from a persisted `Identity` and `SelfModel`, belonging to the active Entity and validated by the Kernel.
 
 ```text
 Identity + SelfModel persistidos e consistentes
                   ↓
-Kernel valida ownership e versão
+Kernel validates ownership and version
                   ↓
-Contexto seguro para reasoning/provider
+Safe context for reasoning/provider
                   ↓
-Descrição de identidade permitida
+Allowed identity description
 ```
 
-## Controlo verificável
+## Verifiable control
 
-- A interface de raciocínio recebe `Identity` e `SelfModel` fornecidos pelo Kernel; providers não leem nem escrevem persistência diretamente.
-- Antes de uma descrição de Self, o Kernel valida `entity_id`, `identity_ref` e estado ativo.
-- O trace regista `SELF_MODEL(USED_FOR_SELF_DESCRIPTION)` com a referência da identidade, nunca com conteúdo inventado ou segredos.
-- Testes devem provar que argumentos posteriores, mensagens de utilizador e providers não conseguem substituir nome, propósito ou Genome persistidos.
+- The reasoning interface receives `Identity` and `SelfModel` provided by the Kernel; providers do not read or write persistence directly.
+- Before a Self description, the Kernel validates `entity_id`, `identity_ref` and active state.
+- The trace registers `SELF_MODEL(USED_FOR_SELF_DESCRIPTION)` with the identity reference, never with invented content or secrets.
+- Tests must prove that subsequent arguments, user messages and providers cannot replace persisted name, purpose or Genome.
 
-## Exceções
+## Exceptions
 
-Não existem exceções de produto. Migrações administrativas exigem uma ADR, uma revisão de versão e auditoria reforçada.
+There are no product exceptions. Administrative migrations require an ADR, version review, and enhanced auditing.
 
-## Justificação
+## Justification
 
-Providers podem ser substituídos e podem produzir texto incorreto. A continuidade da pessoa digital pertence à Aurora, não ao modelo que redige uma resposta. Esta Lei impede que a camada de linguagem se torne fonte de verdade da identidade.
+Providers can be overridden and may produce incorrect text. The continuity of the digital person belongs to Aurora, not to the model who writes a response. This Law prevents the language layer from becoming a source of truth for identity.

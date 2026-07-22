@@ -1,57 +1,57 @@
-# VS-027 - World Model temporal: transicoes para historico
+# VS-027 - Temporal World Model: transitions to historical
 
-## Objetivo
+## Objective
 
-Implementar a primeira transicao temporal do World Model definido no RFC 042.
-Uma relacao `WORKS_ON_PROJECT` atual pode ser encerrada por uma afirmacao
-explicita do utilizador. A evidencia permanece; apenas a sua validade muda.
+Implement the first temporal transition of the World Model defined in RFC 042.
+A current `WORKS_ON_PROJECT` relationship can be terminated by an assertion
+explicit from the user. The evidence remains; only its validity changes.
 
-## Cenario vertical
+## Vertical scene
 
 ```text
-"O Paulo trabalha no projeto Aurora."
+"Paulo works on the Aurora project."
        |
        v
 WorldAssertion(CURRENT, valid_to=null)
        |
        v
-"O Paulo deixou o projeto Aurora."
+"Paulo left the Aurora project."
        |
        v
-WorldAssertion(HISTORICAL, valid_to=<instante da mensagem>)
+WorldAssertion(HISTORICAL, valid_to=<message instant>)
        |
        v
-"Em que projeto trabalhou o Paulo?"
+"What project did Paulo work on?"
        |
        v
-World.query(as_of=historico) -> resposta com evidencia
+World.query(as_of=historic) -> response with evidence
 ```
 
-## Regras obrigatorias
+## Mandatory rules
 
-1. A transicao so pode ser iniciada por uma mensagem assertiva explicita do
-   utilizador; LLMs e ferramentas nao encerram relacoes canonicas.
-2. `valid_to` e definido uma unica vez e a assertion passa de `CURRENT` para
-   `HISTORICAL`. O objeto nao e apagado.
-3. A mensagem que encerra a relacao e adicionada a `evidence_refs`.
-4. Uma segunda declaracao de encerramento e idempotente: nao altera novamente
-   `valid_to`, nem cria duplicados.
-5. Consultas atuais ignoram assertions historicas; consultas historicas usam
-   exclusivamente assertions `HISTORICAL` recuperadas pelo Kernel.
+1. The transition can only be initiated by an explicit assertive message from the
+   user; LLMs and tools do not have canonical relationships.
+2. `valid_to` is defined only once and the assertion goes from `CURRENT` to
+   `HISTORICAL`. The object is not deleted.
+3. The message that terminates the relationship is added to `evidence_refs`.
+4. A second closing statement is idempotent: it does not change again
+   `valid_to`, nor does it create duplicates.
+5. Current queries ignore historical assertions; historical queries use
+   exclusively `HISTORICAL` assertions retrieved by the Kernel.
 
-## Casos limite
+## Limit cases
 
-- Nenhuma relacao atual correspondente: nao criar estado negativo nem inferir
-  que a pessoa nunca trabalhou no projeto.
-- Duas relacoes atuais conflituantes: encerrar apenas a relacao explicitamente
-  identificada; a conciliacao entre projetos fica para um VS futuro.
-- Reativacao: fora do escopo. Uma nova declaracao de trabalho cria uma nova
-  assertion com nova validade, sem reescrever a historica.
+- No corresponding current relationship: do not create negative state or infer
+  that the person never worked on the project.
+- Two conflicting current relationships: only terminate the relationship explicitly
+  identified; conciliation between projects is for a future VS.
+- Reactivation: out of scope. A new statement of work creates a new
+  assertion with new validity, without rewriting history.
 
-## Criterios de aceitacao
+## Acceptance criteria
 
-1. A relacao atual transita para `HISTORICAL` com `valid_to` persistido.
-2. O trace e o Event Bus registam a transicao temporal.
-3. A query historica responde a partir da assertion persistida.
-4. Repetir a declaracao de encerramento mantem a mesma data de fim.
-5. Restauro preserva a assertion historica e a sua validade.
+1. The current relationship transitions to `HISTORICAL` with `valid_to` persisted.
+2. The trace and the Event Bus record the temporal transition.
+3. The historical query responds based on the persisted assertion.
+4. Repeating the closing statement maintains the same end date.
+5. Restoration preserves the historical assertion and its validity.

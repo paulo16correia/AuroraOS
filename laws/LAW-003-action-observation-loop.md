@@ -1,22 +1,21 @@
-# LAW-003 — Toda a ação gera uma observação
+# LAW-003 — Every action generates an observation
 
-## Enunciado
+## Statement
 
-Toda a `Action` autorizada deve terminar com pelo menos uma `Observation` de resultado: sucesso, falha, cancelamento ou estado desconhecido. O ciclo não é considerado concluído sem reflexão sobre essa observação.
+Every authorized `Action` must end with at least one `Observation` result: success, failure, abort, or unknown state. The cycle is not considered completed without reflection on this observation.
 
-## Aplicação
+## Application
 
 ```text
 Action → ToolCall → resultado externo → Observation → Reflection → proposta de aprendizagem
 ```
 
-## Controlo verificável
+## Verifiable control
 
-- `Action` não pode transitar para `OBSERVED` sem `Observation` ligada.
-- Timeouts criam `Observation(status=UNKNOWN)`, não “sucesso presumido”.
-- O Scheduler e a UI devem expor tarefas sem observação como pendentes de reconciliação.
+- `Action` cannot transition to `OBSERVED` without `Observation` connected.
+- Timeouts create `Observation(status=UNKNOWN)`, not “presumed success”.
+- The Scheduler and UI must expose unobserved tasks as pending reconciliation.
 
-## Justificação
+## Justification
 
-Fecha o ciclo entre intenção e mundo real. Sem observação, a Aurora não sabe se agiu, se falhou ou se deve aprender.
-
+Closes the loop between intention and the real world. Without observation, Aurora doesn't know if she acted, if she failed, or if she should learn.

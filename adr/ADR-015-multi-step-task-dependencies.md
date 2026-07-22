@@ -1,18 +1,18 @@
-# ADR-015 — Dependências explícitas entre tarefas de um plano
+# ADR-015 — Explicit dependencies between tasks in a plan
 
-**Estado:** aceite  
-**Data:** 2026-07-18
+**Status:** accepted
+**Date:** 2026-07-18
 
-## Decisão
+## Decision
 
-Cada `Task` passa a declarar a sua posição (`sequence`) e as tarefas que devem terminar primeiro (`dependency_refs`). O coordenador de tasks é o único componente que interpreta estas dependências; o Planner propõe passos e os executores continuam isolados.
+Each `Task` starts to declare its position (`sequence`) and the tasks that must be completed first (`dependency_refs`). The task coordinator is the only component that interprets these dependencies; the Planner proposes steps and the executors remain isolated.
 
-## Justificação
+## Justification
 
-Um `Plan` com passos sem relações é apenas uma lista. Dependências persistentes permitem retomar trabalho, auditar o porquê de uma task estar bloqueada e, mais tarde, introduzir paralelismo sem alterar o modelo fundamental.
+A `Plan` with steps without relationships is just a list. Persistent dependencies allow you to resume work, audit why a task is blocked, and later introduce parallelism without changing the fundamental model.
 
-## Consequências
+## Consequences
 
-- O primeiro plano operacional passa a ter análise e recomendação como tarefas separadas.
-- A compatibilidade com tarefas já persistidas é mantida por valores default.
-- O VS-016 poderá adicionar scheduling ou estados de espera sem reestruturar o contrato `Task`.
+- The first operational plan now has analysis and recommendation as separate tasks.
+- Compatibility with already persisted tasks is maintained by default values.
+- VS-016 can add scheduling or wait states without restructuring the `Task` contract.

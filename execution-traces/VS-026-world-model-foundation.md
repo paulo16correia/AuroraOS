@@ -1,16 +1,16 @@
-# VS-026 - World Model: relacoes explicitas com proveniencia
+# VS-026 - World Model: explicit relationships with provenance
 
-## Objetivo
+## Objective
 
-Materializar o primeiro comportamento do RFC 041: a Aurora deixa de guardar
-apenas texto sobre uma conversa e passa a guardar uma afirmacao estruturada
-sobre uma relacao do mundo. O slice cobre uma afirmacao explicita de trabalho
-em projeto e uma consulta posterior, mesmo depois de reiniciar a Entity.
+Materialize the first behavior of RFC 041: Aurora stops saving
+just text about a conversation and saves a structured statement
+about a relationship in the world. The slice covers an explicit statement of work
+in project and a later query, even after restarting the Entity.
 
-## Cenario vertical
+## Vertical scene
 
 ```text
-Utilizador: "O Paulo trabalha no projeto Aurora."
+User: "Paulo works on the Aurora project."
         |
         v
 Perception -> WorldAssertion(CURRENT, USER_ASSERTION)
@@ -22,15 +22,15 @@ Persistencia + Event + Trace
 Shutdown / restore
         |
         v
-Utilizador: "Em que projeto trabalha o Paulo?"
+User: "What project does Paulo work on?"
         |
         v
-World.query -> contexto linguistico read-only -> resposta
+World.query -> read-only linguistic context -> response
 ```
 
-## Contrato
+## Contract
 
-`WorldAssertion` representa uma relacao evidenciada, nao uma frase:
+`WorldAssertion` represents an evident relationship, not a sentence:
 
 ```text
 assertion_id, entity_id
@@ -43,36 +43,36 @@ status: CURRENT|HISTORICAL|DISPUTED|RETRACTED
 version
 ```
 
-No VS-026, o unico predicado materializado e `WORKS_ON_PROJECT`.
-`subject_ref` e `object_ref` sao identificadores locais canonicos; os labels
-ficam separados para tornar a resposta legivel sem confundir texto com
-identidade interna.
+In VS-026, the only materialized predicate is `WORKS_ON_PROJECT`.
+`subject_ref` and `object_ref` are canonical local identifiers; the labels
+are separated to make the answer readable without confusing text with
+internal identity.
 
-## Regras obrigatorias
+## Mandatory rules
 
-1. So uma afirmacao explicita do utilizador pode criar uma `WorldAssertion`.
-   O LLM nao cria nem altera World Assertions.
-2. Toda a assertion conserva a mensagem de origem em `evidence_refs` e a
-   proveniencia `USER_ASSERTION`.
-3. Uma query sem assertion correspondente responde como desconhecida; ausencia
-   de dados nao prova ausencia da relacao.
-4. O modelo so recebe factos recuperados pelo Kernel como contexto read-only.
-5. A assertion pertence a uma Entity e sobrevive a shutdown/restauro.
-6. Correcao, fusao de entidades, contradicoes e inferencia ficam fora deste
-   slice; devem receber ciclos e ADRs proprios.
+1. Only an explicit statement from the user can create a `WorldAssertion`.
+   LLM does not create or alter World Assertions.
+2. The entire assertion preserves the original message in `evidence_refs` and the
+   provenance `USER_ASSERTION`.
+3. A query without a corresponding assertion responds as unknown; absence
+   data does not prove the absence of the relationship.
+4. The model only receives facts retrieved by the Kernel as read-only context.
+5. The assertion belongs to an Entity and survives shutdown/restore.
+6. Correction, fusion of entities, contradictions and inference are outside this
+   slice; they must receive their own cycles and ADRs.
 
-## Casos de erro
+## Error cases
 
-- Frase incompleta ou ambigua: nao criar assertion.
-- Repeticao da mesma declaracao: atualizar a assertion existente de forma
-  idempotente, sem criar uma segunda relacao equivalente.
-- Query de pessoa sem correspondencia: responder que nao existe evidencia
-  registada, sem inventar um projeto.
+- Incomplete or ambiguous sentence: do not create an assertion.
+- Repetition of the same statement: update the existing assertion in a
+  idempotent, without creating a second equivalent relationship.
+- Unmatched person query: answer that there is no evidence
+  registered, without inventing a project.
 
-## Criterios de aceitacao
+## Acceptance criteria
 
-1. A afirmacao cria `WorldAssertion(CURRENT)` e emite `WorldAssertionCreated`.
-2. O trace tem estagios `WORLD_MODEL` para escrita e recuperacao.
-3. A resposta posterior usa apenas a assertion recuperada.
-4. Shutdown e restore preservam a referencia no `MindState`.
-5. A suite de regressoes permanece verde.
+1. The assertion creates `WorldAssertion(CURRENT)` and outputs `WorldAssertionCreated`.
+2. The trace has `WORLD_MODEL` stages for writing and recovery.
+3. The later response only uses the retrieved assertion.
+4. Shutdown and restore preserve the reference in `MindState`.
+5. The regression suite remains green.

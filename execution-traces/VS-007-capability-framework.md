@@ -1,30 +1,30 @@
 # Aurora OS — Execution Trace Specification: VS-007 Capability Framework
 
-**Estado:** Autorizado por ADR-006  
-**Caso de utilização:** pedido de email → análise interna → capacidade requerida → indisponibilidade explicitamente conhecida
+**Status:** Authorized by ADR-006
+**Use case:** email request → internal analysis → required capacity → explicitly known unavailability
 
-## Objetivo
+## Objective
 
-Permitir à Entity raciocinar sobre capacidades sem executar ferramentas. VS-007 responde “o que me falta para agir?”, não “executa a ação”.
+Allow Entity to reason about capabilities without running tools. VS-007 answers “what do I need to act?”, not “performs the action”.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 Entity boot
   → CapabilityRegistry(MEMORY, PLANNING, INTERNAL_REASONING = enabled)
   → CapabilityRegistry(EMAIL_SEND, CALENDAR, FILESYSTEM, WEB_SEARCH = disabled)
 
-User: "Envia um email."
+User: "Send an email."
   → Goal → Plan → Task(INTERNAL_ANALYSIS, COMPLETED)
   → CapabilityRequest(EMAIL_SEND, UNAVAILABLE)
   → CAPABILITY_ASSESSMENT(UNAVAILABLE)
   → Thought → Decision(RESPOND)
-  → "Não possuo a capacidade EMAIL_SEND neste momento."
+→ "I do not have the EMAIL_SEND capability at this time."
   → Observation → Reflection → GoalEvaluation
-  → nenhuma Action / ToolCall / provider / rede
+→ no Action / ToolCall / provider / network
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Capability
@@ -42,34 +42,34 @@ CapabilityRequest
   created_at
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. `Capability` descreve disponibilidade; não confere poder de execução.
-2. Só o Kernel pode criar `CapabilityRequest`, a partir de uma Task concluída e da Entity proprietária.
-3. Em VS-007, requests externas só podem terminar `UNAVAILABLE`; `APPROVED` é reservado para slice futuro e ainda não autoriza execução.
-4. `EMAIL_SEND` é definido mas `enabled=false` e `trusted=false`.
-5. Nenhum objeto VS-007 pode criar `Action`, `ToolCall`, `CapabilityProvider`, chamada de rede ou segredo.
-6. O provider recebe apenas requests validadas pelo Kernel e nunca inventa o estado de capacidade.
+1. `Capability` describes availability; does not confer enforcement power.
+2. Only the Kernel can create `CapabilityRequest`, from a completed Task and the owning Entity.
+3. In VS-007, external requests can only terminate `UNAVAILABLE`; `APPROVED` is reserved for future slice and does not yet authorize execution.
+4. `EMAIL_SEND` is defined but `enabled=false` and `trusted=false`.
+5. No VS-007 object can create `Action`, `ToolCall`, `CapabilityProvider`, network call or secret.
+6. The provider only receives requests validated by the Kernel and never invents the capacity state.
 
-## Eventos, trace e erros
+## Events, traces and errors
 
-| Situação | Evento | Trace | Resultado |
+| Situation | Event | Trace | Result |
 | --- | --- | --- | --- |
-| Inicialização | `CapabilityRegistered` | `CAPABILITY_REGISTRY(INITIALIZED)` | Catálogo persistido. |
-| Pedido de email | `CapabilityRequestCreated` | `CAPABILITY_REQUEST(CREATED)` | Request persistida. |
-| Avaliação | `CapabilityAssessed` | `CAPABILITY_ASSESSMENT(UNAVAILABLE)` | Resposta sem efeito externo. |
-| Request duplicada | `CapabilityRequestLoaded` | `CAPABILITY_REQUEST(LOADED)` | Reutilizar; não duplicar. |
-| Capability desconhecida | nenhum efeito | erro controlado | Não inferir nem fabricar provider. |
+| Startup | `CapabilityRegistered` | `CAPABILITY_REGISTRY(INITIALIZED)` | Persisted catalog. |
+| Email Request | `CapabilityRequestCreated` | `CAPABILITY_REQUEST(CREATED)` | Request persisted. |
+| Assessment | `CapabilityAssessed` | `CAPABILITY_ASSESSMENT(UNAVAILABLE)` | Response without external effect. |
+| Duplicate Request | `CapabilityRequestLoaded` | `CAPABILITY_REQUEST(LOADED)` | Reuse; do not duplicate. |
+| Capability unknown | no effect | error controlled | Do not infer or fabricate provider. |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Uma Entity nova possui as três capacidades internas ativas e `EMAIL_SEND` desativada.
-2. “Envia um email por mim” cria Task interna e `CapabilityRequest(EMAIL_SEND, UNAVAILABLE)`.
-3. A resposta identifica `EMAIL_SEND` como indisponível.
-4. Trace e eventos não contêm Action, ToolCall, provider, rede ou execução de capacidade.
-5. Shutdown/restauro preserva o catálogo e a request sem a reavaliar silenciosamente.
-6. VS-000–VS-006 permanecem verdes.
+1. A new Entity has the three internal capabilities active and `EMAIL_SEND` disabled.
+2. “Send an email for me” creates internal Task and `CapabilityRequest(EMAIL_SEND, UNAVAILABLE)`.
+3. The response identifies `EMAIL_SEND` as unavailable.
+4. Trace and events do not contain Action, ToolCall, provider, network or capability execution.
+5. Shutdown/restore preserves the catalog and request without silently reevaluating it.
+6. VS-000–VS-006 remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-Não existem ferramentas, plugins, manifests externos, approval workflow, CapabilityProvider, ToolCall, scheduler, rede ou filesystem. VS-007 é apenas o modelo cognitivo de disponibilidade.
+There are no tools, plugins, external manifests, approval workflow, CapabilityProvider, ToolCall, scheduler, network or filesystem. VS-007 is just the cognitive availability model.

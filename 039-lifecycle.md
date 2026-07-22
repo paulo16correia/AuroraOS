@@ -1,12 +1,12 @@
-# Aurora Platform — RFC 039: Ciclo de vida da instância
+# Aurora Platform — RFC 039: Instance Lifecycle
 
-**Estado:** Normativo · **Depende de:** RFC 011, 026–027, 033, 036, 043
+**State:** Normative · **Depends on:** RFC 011, 026–027, 033, 036, 043
 
-## Objetivo
+## Objective
 
-Especificar os estados macro de existência de uma instância Aurora e as transições permitidas entre boot, disponibilidade, deliberação, execução, manutenção, cópia de segurança e encerramento.
+Specify the macro states of existence of an Aurora instance and the transitions allowed between boot, availability, deliberation, execution, maintenance, backup and termination.
 
-## Máquina de estados
+## State machine
 
 ```text
 CREATED → BOOTSTRAPPING → RECOVERING → READY
@@ -24,7 +24,7 @@ CREATED → BOOTSTRAPPING → RECOVERING → READY
                               SHUTTING_DOWN → STOPPED → RETIRED
 ```
 
-## Estruturas e interfaces
+## Structures and interfaces
 
 ```text
 InstanceLifecycle
@@ -36,13 +36,13 @@ Lifecycle.prepareShutdown(instance_id) -> ShutdownPlan
 Lifecycle.resume(instance_id) -> InstanceLifecycle
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Não pode entrar em `STOPPED` sem snapshot verificado ou razão de emergência auditada.
-2. `UPDATING` e `BACKING_UP` drenam trabalho idempotente e marcam chamadas externas incompletas para reconciliação.
-3. `PAUSED` impede novos efeitos; `WAITING` preserva ciclos dependentes de dados, tempo ou aprovação.
-4. Apenas o Kernel pode executar transições; a Mind pode propor, nunca alterar o ciclo de vida diretamente.
+1. You cannot enter `STOPPED` without verified snapshot or audited emergency reason.
+2. `UPDATING` and `BACKING_UP` drain idempotent work and mark incomplete external calls for reconciliation.
+3. `PAUSED` prevents new effects; `WAITING` preserves cycles dependent on data, time or approval.
+4. Only the Kernel can perform transitions; Mind can propose, never change the life cycle directly.
 
-## Casos limite, justificação e expansões
+## Limit cases, justification and expansions
 
-Falha abrupta é observada como `RECOVERING`, não como `READY`; o Kernel reconcilia antes de reativar. O ciclo de vida torna a existência operacional da Aurora controlável, recuperável e observável. Futuramente suporta hibernação, migração a quente e múltiplas instâncias.
+Abrupt failure is observed as `RECOVERING`, not `READY`; the Kernel reconciles before reactivating. The lifecycle makes Aurora's operational existence controllable, recoverable, and observable. In future it supports hibernation, hot migration and multiple instances.

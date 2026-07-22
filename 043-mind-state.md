@@ -1,31 +1,31 @@
-# Aurora OS — RFC 043: Mind State — serialização, recuperação e continuidade
+# Aurora OS — RFC 043: Mind State — serialization, recovery and continuity
 
-**Estado:** Normativo · **Depende de:** RFC 020, 024, 027–029, 040–042
+**State:** Normative · **Depends on:** RFC 020, 024, 027–029, 040–042
 
-## Objetivo
+## Objective
 
-Definir o estado serializável da Aurora num instante, para que uma interrupção, migração ou reinício retome o trabalho de forma segura e verificável. Um Mind State não é um despejo de base de dados: é um snapshot coerente de agregados e referências, com consistência temporal.
+Set Aurora's serializable state in an instant so that an outage, migration, or restart resumes work in a secure and verifiable way. A Mind State is not a database dump: it is a coherent snapshot of aggregates and references, with temporal consistency.
 
-## Arquitetura
+## Architecture
 
 ```text
-Mind + Self + World Model + ciclos/tarefas + scheduler + ferramentas
+Mind + Self + World Model + cycles/tasks + scheduler + tools
                                 │
                                 ▼
-                      barreira de consistência
+consistency barrier
                                 │
                                 ▼
               MindStateSnapshot cifrado, versionado e assinado
                                 │
              ┌──────────────────┴──────────────────┐
              ▼                                     ▼
-       reinício/migração                     auditoria/exportação autorizada
+restart/migration audit/authorized export
              │                                     │
              ▼                                     ▼
-      RECOVERING → reconciliação → ACTIVE     visão redigida por ACL
+RECOVERING → reconciliation → ACTIVE vision written by ACL
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 MindStateSnapshot
@@ -41,9 +41,7 @@ RecoveryPlan
   id, snapshot_id, target_environment, steps[]
   unresolved_tool_call_refs[], reconciliation_policy, status
   status: PLANNED|RUNNING|WAITING_RECONCILIATION|COMPLETED|FAILED
-```
-
-`tool_state_refs` contêm apenas identificadores e estados, nunca segredos. `working_memory_refs` são incluídas apenas se a política de curta retenção permitir; itens abertos podem ser selados, descartados ou convertidos em pedidos de retoma.
+````tool_state_refs` only contain identifiers and states, never secrets. `working_memory_refs` are only included if the short retention policy allows; Opened items can be sealed, discarded, or converted to trade-in orders.
 
 ## Interfaces
 
@@ -54,26 +52,25 @@ MindState.restore(snapshot_id, environment) -> RecoveryPlan
 MindState.export(snapshot_id, access_context) -> RedactedExport
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Um snapshot DEVE capturar versões consistentes ou declarar componentes não consistentes; nunca fingir atomicidade que não existe.
-2. Restauro DEVE iniciar a Mind em `RECOVERING`, revogar leases temporários e reconciliar `ToolCall`/`Action` `UNKNOWN` antes de novas ações.
-3. Snapshots DEVEM ser cifrados, autenticados, sujeitos a retenção e testados com restauro isolado.
-4. A exportação do utilizador aplica ACL, redação e políticas de terceiros; dados de cofre nunca são exportáveis.
-5. O estado emocional/interacional é representado como contexto operacional temporário, não como alegação de sentimento real.
+1. A snapshot MUST capture consistent versions or declare non-consistent components; never pretend atomicity that doesn't exist.
+2. Restore MUST start Mind on `RECOVERING`, revoke temporary leases, and reconcile `ToolCall`/`Action` `UNKNOWN` before further actions.
+3. Snapshots MUST be encrypted, authenticated, subject to retention, and tested with isolated restore.
+4. User export applies third-party ACL, wording, and policies; Vault data is never exportable.
+5. Emotional/interactional state is represented as temporary operational context, not as actual feeling claim.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Snapshot corrompido:** marcar `CORRUPT`, não restaurar parcialmente sem plano explícito; usar último `VERIFIED`.
-- **Ação estava a enviar email no reinício:** manter `UNKNOWN`, consultar o provedor e só depois decidir se há nova ação.
-- **Esquema mudou:** executar migração versionada ou restauro de compatibilidade; não desserializar campos desconhecidos como permissivos.
-- **Uma semana desligada:** reavaliar prazos, credenciais, schedules e crenças expiradas antes de declarar `READY`.
+- **Corrupt snapshot:** mark `CORRUPT`, do not partially restore without explicit plan; use last `VERIFIED`.
+- **Action was sending email on restart:** keep `UNKNOWN`, consult the provider and only then decide if there is a new action.
+- **Scheme changed:** perform versioned migration or compatibility restoration; do not deserialize unknown fields as permissive.
+- **One week offline:** reevaluate expired deadlines, credentials, schedules and beliefs before declaring `READY`.
 
-## Justificação
+## Justification
 
-Persistir apenas “memórias” não restaura uma entidade operacional. O Mind State preserva a continuidade de identidade, intenção, foco, mundo conhecido e trabalho pendente, sem converter segredos ou raciocínio efémero em dados duradouros.
+Persisting only “memories” does not restore an operational entity. Mind State preserves the continuity of identity, intention, focus, known world and pending work, without converting secrets or ephemeral reasoning into lasting data.
 
-## Expansões futuras
+## Future expansions
 
-Snapshots incrementais, recuperação entre regiões, ramificações para simulação, migração para outro fornecedor e atestação criptográfica de estado.
-
+Incremental snapshots, cross-region recovery, branching for simulation, cross-vendor migration, and cryptographic state attestation.

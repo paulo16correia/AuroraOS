@@ -1,20 +1,20 @@
-# Aurora OS — RFC 13: Roadmap, marcos e aceitação
+# Aurora OS — RFC 13: Roadmap, Milestones, and Acceptance
 
-**Estado:** Normativo · **Depende de:** RFC 00–12
+**State:** Normative · **Depends on:** RFC 00–12
 
-## Objetivo
+## Objective
 
-Transformar a visão em entregas verificáveis. Este roadmap estabelece portas de qualidade; não autoriza saltar controlos para demonstrar funcionalidades.
+Transform vision into verifiable deliverables. This roadmap establishes quality doors; does not allow skipping controls to demonstrate features.
 
-## Arquitetura de entrega
+## Delivery architecture
 
 ```text
-Especificar → implementar → testar → avaliar segurança → piloto limitado
+Specify → implement → test → evaluate safety → limited pilot
       ▲                                                    │
-      └────────── falha/regressão ← medir ← operar ────────┘
+└────────── failure/regression ← measure ← operate ────────┘
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Milestone
@@ -38,38 +38,37 @@ Architecture.accept(milestone_id) -> Decision
 Risk.review() -> RiskRegisterEntry[]
 ```
 
-## Marcos e critérios de saída
+## Milestones and exit criteria
 
-| Marco | Resultado | Critérios de aceitação mínimos |
+| Milestone | Result | Minimum acceptance criteria |
 | --- | --- | --- |
-| M0 — Fundação | RFCs, ADRs e ambiente de teste | todas as RFCs revistos; modelo de ameaças e dados aprovados |
-| M1 — Núcleo | conversa, WorkItem, Thought, auditoria | eventos idempotentes; falhas recuperáveis; modelo substituível |
-| M2 — Memória | memória corrigível e grafo inicial | proveniência/ACL; eliminação propagada; conflitos visíveis |
-| M3 — Planeamento | objetivos e tarefas persistentes | dependências, aprovação, cancelamento e critérios de aceitação |
-| M4 — Ferramenta piloto | conector de baixo risco | política, cofre, reconciliação e registo end-to-end |
-| M5 — Operação | VPS e UI de controlo | backup restaurado; alertas; permissões e auditoria navegáveis |
-| M6 — Expansão | canais externos graduais | testes de segurança por conector; automatização revogável |
+| M0 — Foundation | RFCs, ADRs and Test Environment | all RFCs reviewed; threat model and approved data |
+| M1 — Core | conversation, WorkItem, Thought, audit | idempotent events; recoverable failures; replaceable model |
+| M2 — Memory | fixable memory and initial graph | provenance/ACL; propagated elimination; visible conflicts |
+| M3 — Planning | persistent goals and tasks | dependencies, approval, cancellation and acceptance criteria |
+| M4 — Pilot tool | low risk connector | end-to-end policy, vault, reconciliation and logging |
+| M5 — Operation | VPS and Control UI | backup restored; alerts; navigable permissions and audit |
+| M6 — Expansion | gradual external channels | security tests per connector; revocable automation |
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Nenhum marco é aceite sem evidência reproduzível, revisão de segurança e documentação atualizada.
-2. Funcionalidades de escrita externa só avançam depois de uma ferramenta piloto demonstrar política, aprovação, idempotência e reconciliação.
-3. Exceções DEVEM ter dono, data de expiração e plano de mitigação; não se tornam comportamento permanente por omissão.
-4. Métricas de sucesso DEVEM incluir taxa de ações corretas, incidentes, custo, latência, recuperação e satisfação do utilizador.
-5. A arquitetura DEVE ser revista antes de cada marco para confirmar que decisões anteriores ainda são válidas.
+1. No milestone is accepted without reproducible evidence, safety review and updated documentation.
+2. External writing capabilities only advance after a pilot tool demonstrates policy, approval, idempotence, and reconciliation.
+3. Exceptions MUST have an owner, expiration date and mitigation plan; they do not become permanent behavior by default.
+4. Success metrics MUST include correct action rate, incidents, cost, latency, recovery and user satisfaction.
+5. The architecture MUST be reviewed before each milestone to confirm that previous decisions are still valid.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Critério de marco falha:** estado `REJECTED` ou `AT_RISK`; replaneamento é obrigatório antes de nova tentativa.
-- **Evidência incompleta:** não equivale a aprovação; manter marco aberto.
-- **Incidente durante piloto:** pausar expansão, investigar, corrigir e repetir a evidência afetada.
-- **Mudança de fornecedor/modelo:** executar avaliação de compatibilidade, privacidade e regressão antes de promover.
+- **Failure milestone criteria:** state `REJECTED` or `AT_RISK`; Replanning is mandatory before trying again.
+- **Incomplete evidence:** does not equate to approval; keep landmark open.
+- **Incident during pilot:** pause expansion, investigate, correct and replay affected evidence.
+- **Vendor/model change:** perform compatibility, privacy and regression assessment before promoting.
 
-## Justificação
+## Justification
 
-Marcos definidos por evidência combatem o “feature rush” e permitem entregar valor sem normalizar risco técnico. O projeto cresce por confiança demonstrada, não por uma promessa de autonomia.
+Milestones defined by evidence combat “feature rush” and allow us to deliver value without normalizing technical risk. The project grows through demonstrated trust, not through a promise of autonomy.
 
-## Expansões futuras
+## Future expansions
 
-Certificação de conectores, testes independentes, métricas públicas de fiabilidade, versões empresariais e um processo formal de RFC/ADR para contribuidores.
-
+Connector certification, independent testing, public reliability metrics, enterprise releases, and a formal RFC/ADR process for contributors.

@@ -1,32 +1,32 @@
-# ADR-010 — Fronteira de executores específicos por operação
+# ADR-010 — Boundary of specific executors per operation
 
-**Estado:** Aceite  
-**Data:** 2026-07-18  
-**Decisão:** VS-010 — Real Executor Boundary
+**Status:** Accepted
+**Date:** 2026-07-18
+**Decision:** VS-010 — Real Boundary Executor
 
-## Contexto
+## Context
 
-VS-008 demonstrou a passagem de `CapabilityRequest` para `CapabilityResult` através de um `NOOP_EXECUTOR`. Essa prova era segura, mas não exprimia que cada capacidade externa exigirá lógica própria, validação específica e uma fronteira auditável antes de ser executada.
+VS-008 demonstrated the transition from `CapabilityRequest` to `CapabilityResult` via a `NOOP_EXECUTOR`. This proof was secure, but it did not express that each external capability will require its own logic, specific validation and an auditable boundary before being executed.
 
-## Decisão
+## Decision
 
-Substituir `NOOP_EXECUTOR` por `ExecutorRegistry` e `CapabilityExecutor.prepare`. O primeiro executor registado é `EmailSendExecutor`; nesta versão só prepara `EMAIL_SEND` e devolve `ExecutionPreparation`. Não possui nem pode aceder a transporte SMTP, HTTP, credenciais ou ferramentas do sistema.
+Replace `NOOP_EXECUTOR` with `ExecutorRegistry` and `CapabilityExecutor.prepare`. The first registered executor is `EmailSendExecutor`; in this version it only prepares `EMAIL_SEND` and returns `ExecutionPreparation`. You do not have or can access SMTP, HTTP transport, credentials, or system tools.
 
-O `ExecutorDispatcher` persiste a preparação e produz um `CapabilityResult` que declara `BLOCKED` ou `AWAITING_APPROVAL`. A execução externa não faz parte do contrato VS-010.
+`ExecutorDispatcher` persists the preparation and produces a `CapabilityResult` that declares `BLOCKED` or `AWAITING_APPROVAL`. External execution is not part of the VS-010 contract.
 
-## Consequências
+## Consequences
 
-- Cada capability poderá ter uma implementação isolada e testável.
-- O Kernel continua a ser dono de persistência, eventos, correlação e idempotência.
-- A prova de bloqueio torna-se mais precisa do que `NOT_IMPLEMENTED`.
-- VS-011 tem uma preparação concreta à qual pode anexar aprovação.
+- Each capability may have an isolated and testable implementation.
+- The Kernel continues to own persistence, events, correlation and idempotence.
+- Blocking proof becomes more accurate than `NOT_IMPLEMENTED`.
+- VS-011 has a concrete preparation to which you can attach approval.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-1. **Ativar SMTP já em VS-010** — introduziria efeito externo antes do limite de aprovação.
-2. **Manter um executor genérico com condicionais** — espalharia detalhes de operações e dificultaria isolamento.
-3. **Permitir que a LLM escolha o executor** — violaria o controlo do Kernel e do registry.
+1. **Activate SMTP already in VS-010** — would introduce an external effect before the approval limit.
+2. **Maintain a generic executor with conditionals** — would scatter operation details and make isolation difficult.
+3. **Allow LLM to choose the executor** — would violate Kernel and registry control.
 
-## Migração
+## Migration
 
-`NOOP_EXECUTOR` e `NOT_IMPLEMENTED` deixam de ser o resultado normal de EMAIL_SEND. Pedidos indisponíveis passam a gerar `ExecutionPreparation(BLOCKED)` e `CapabilityResult(BLOCKED)`. A migração não ativa capabilities nem exige dados novos.
+`NOOP_EXECUTOR` and `NOT_IMPLEMENTED` are no longer the normal result of EMAIL_SEND. Unavailable orders now generate `ExecutionPreparation(BLOCKED)` and `CapabilityResult(BLOCKED)`. Migration does not activate capabilities or require new data.

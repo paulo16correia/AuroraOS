@@ -1,28 +1,28 @@
-# ADR-007 — Alinhamento do pipeline de CapabilityRequest
+# ADR-007 — CapabilityRequest pipeline alignment
 
-**Estado:** ACEITE  
-**Data:** 2026-07-18  
-**RFCs afetadas:** RFC 021, RFC 022, RFC 040, RFC 051, ADR-006
+**Status:** ACCEPT
+**Date:** 2026-07-18
+**RFCs affected:** RFC 021, RFC 022, RFC 040, RFC 051, ADR-006
 
-## Contexto
+## Context
 
-VS-007 introduziu `CapabilityRequest`, mas uma Entity que já tivesse uma Task `COMPLETED` podia carregar essa Task apenas para auditoria. Nessa situação, o pedido de email deixava de chegar ao Capability Registry e o trace registava incorretamente `CAPABILITY(NOT_REQUIRED)`.
+VS-007 introduced `CapabilityRequest`, but an Entity that already had a Task `COMPLETED` could load that Task for auditing only. In this situation, the email request stopped reaching the Capability Registry and the trace incorrectly registered `CAPABILITY(NOT_REQUIRED)`.
 
-## Decisão
+## Decision
 
-VS-007.1 separa duas coleções de Tasks no Kernel:
+VS-007.1 separates two collections of Tasks in the Kernel:
 
-- `completed_tasks_this_cycle`: só alimenta `GoalEvaluation`, impedindo progresso duplicado;
-- `capability_source_tasks`: pode incluir uma Task concluída e persistida, para fundamentar uma `CapabilityRequest` do pedido atual.
+- `completed_tasks_this_cycle`: only feeds `GoalEvaluation`, preventing duplicate progress;
+- `capability_source_tasks`: can include a completed and persisted Task, to support a `CapabilityRequest` of the current request.
 
-Para qualquer intenção de email, o Kernel DEVE avaliar o catálogo e criar ou carregar a request correspondente antes de criar Thought e Decision. `NOT_REQUIRED` só é permitido quando a intenção não requer capability.
+For any email intent, the Kernel MUST evaluate the catalog and create or load the corresponding request before creating Thought and Decision. `NOT_REQUIRED` is only allowed when the intent does not require capability.
 
-## Consequências
+## Consequences
 
-- `EMAIL_SEND` passa sempre por `CAPABILITY_REQUEST` e `CAPABILITY_ASSESSMENT(UNAVAILABLE)` quando o utilizador o pede.
-- Uma Task histórica não volta a incrementar Goal progress.
-- A resposta e Decision recebem sempre uma request validada pelo Kernel para pedidos de email.
+- `EMAIL_SEND` always goes by `CAPABILITY_REQUEST` and `CAPABILITY_ASSESSMENT(UNAVAILABLE)` when the user requests it.
+- A historical Task does not increase Goal progress again.
+- The response and Decision always receive a request validated by the Kernel for email requests.
 
-## Migração e reversão
+## Migration and rollback
 
-Sem migração de dados. Requests existentes são carregadas pela mesma chave idempotente; requests ausentes podem ser criadas a partir da Task persistida. A reversão preserva auditoria e apenas remove esta recuperação de fonte.
+No data migration. Existing requests are loaded by the same idempotent key; Missing requests can be created from the persisted Task. Rollback preserves auditing and only removes this source recovery.

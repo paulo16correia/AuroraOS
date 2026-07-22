@@ -1,30 +1,30 @@
-# ADR-005 — Tasks e ciclo de execução interna controlada
+# ADR-005 — Tasks and controlled internal execution cycle
 
-**Estado:** ACEITE  
-**Data:** 2026-07-17  
-**RFCs afetadas:** RFC 05, RFC 021, RFC 022, RFC 040, LAW-003, LAW-006
+**Status:** ACCEPT
+**Date:** 2026-07-17
+**RFCs affected:** RFC 05, RFC 021, RFC 022, RFC 040, LAW-003, LAW-006
 
-## Contexto
+## Context
 
-VS-005 permite à Entity propor um Plan, mas não demonstra que o plano produz progresso verificável. Ligar diretamente um Plan a uma Action externa eliminaria a fronteira de autorização definida pela Constituição e pela LAW-006.
+VS-005 allows the Entity to propose a Plan, but does not demonstrate that the plan produces verifiable progress. Directly linking a Plan to an external Action would eliminate the authorization boundary defined by the Constitution and LAW-006.
 
-## Decisão
+## Decision
 
-VS-006 introduz `Task` persistente entre `Plan` e `Observation`. A única Task inicial é `INTERNAL_ANALYSIS`: é criada pelo Kernel a partir de um Plan explícito, executa localmente e produz um resultado textual controlado. Não tem cliente de rede, sistema de ficheiros, ferramenta, scheduler ou provider de capacidade.
+VS-006 introduces persistent `Task` between `Plan` and `Observation`. The only initial Task is `INTERNAL_ANALYSIS`: it is created by the Kernel from an explicit Plan, runs locally and produces a controlled textual result. It has no network client, file system, tool, scheduler or capacity provider.
 
 ```text
 Goal → Plan(PROPOSED) → Task(READY → RUNNING → COMPLETED) → Observation → Reflection → GoalEvaluation
 ```
 
-Ao completar a Task, o Kernel cria `GoalEvaluation(PROGRESS_DETECTED, progress_delta=1)` com referências à Task, Observation e Reflection. A Task é incluída no `MindState` de shutdown, mesmo quando concluída, para preservar continuidade e auditoria.
+Upon completing the Task, the Kernel creates `GoalEvaluation(PROGRESS_DETECTED, progress_delta=1)` with references to Task, Observation and Reflection. The Task is included in the shutdown `MindState`, even when completed, to preserve continuity and auditability.
 
-## Consequências
+## Consequences
 
-- A execução existe apenas no domínio interno e é determinística.
-- `TaskCreated`, `TaskStarted` e `TaskCompleted` tornam o ciclo auditável.
-- Pedidos externos, incluindo enviar email, podem gerar análise interna; nunca geram `Action`, `ToolCall` ou `CapabilityRequest` neste slice.
-- Uma Task já persistida é carregada, não recriada nem reexecutada durante restauro.
+- Execution exists only in the internal domain and is deterministic.
+- `TaskCreated`, `TaskStarted` and `TaskCompleted` make the cycle auditable.
+- External requests, including sending emails, may generate internal analysis; never generate `Action`, `ToolCall` or `CapabilityRequest` in this slice.
+- An already persisted Task is loaded, not recreated or reexecuted during restoration.
 
-## Migração e reversão
+## Migration and rollback
 
-Não há criação retroativa de Tasks. Desativar VS-006 impede novas execuções internas, mas preserva Tasks, snapshots e eventos existentes para replay e auditoria.
+There is no retroactive creation of Tasks. Disabling VS-006 prevents new internal executions, but preserves existing Tasks, snapshots, and events for replay and auditing.

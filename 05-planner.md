@@ -1,28 +1,28 @@
-# Aurora OS — RFC 05: Objetivos, planeamento e execução de tarefas
+# Aurora OS — RFC 05: Objectives, planning and execution of tasks
 
-**Estado:** Normativo · **Depende de:** RFC 02–03
+**State:** Normative · **Depends on:** RFC 02–03
 
-## Objetivo
+## Objective
 
-Converter resultados desejados em trabalho observável. O planeador propõe uma sequência; o gestor de ferramentas e a política autorizam cada efeito real.
+Convert desired results into observable work. The planner proposes a sequence; the tool manager and policy authorize each real effect.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
-Pedido/objetivo → clarificar resultado e restrições → plano candidato
+Request/goal → clarify outcome and constraints → candidate plan
                                                 │
                                                 ▼
-                  dependências ← tarefas ← critérios de aceitação
+dependencies ← tasks ← acceptance criteria
                                                 │
-                           aprovação do plano? ─┤
+approval of the plan? ─┤
                                                 ▼
                        agendar tarefa pronta → executar/observar
                                                 │
                                                 ▼
-                                   atualizar estado + reflexão
+update state + reflection
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Goal
@@ -53,26 +53,25 @@ Scheduler.next_runnable() -> Task[]
 TaskService.transition(task_id, target_state, evidence) -> Task
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Um objetivo DEVE declarar resultado e critério de sucesso; “trata disto” exige clarificação ou plano de descoberta.
-2. Toda a transição de tarefa DEVE respeitar uma máquina de estados e anexar evidência.
-3. `RUNNING` nunca pode coexistir com dependência não `SUCCEEDED` salvo regra explícita.
-4. Repetições automáticas são permitidas apenas para tarefas idempotentes e dentro de orçamento.
-5. O planeador NÃO DEVE esconder pressupostos; deve apresentá-los quando influenciam custo, risco ou direção.
+1. An objective MUST state outcome and success criteria; “deal with it” requires clarification or discovery plan.
+2. Every task transition MUST respect a state machine and attach evidence.
+3. `RUNNING` can never coexist with non-`SUCCEEDED` dependency unless explicitly ruled.
+4. Automatic repetitions are only allowed for idempotent and on-budget tasks.
+5. The planner MUST NOT hide assumptions; should present them when they influence cost, risk or direction.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Dependência falhada:** bloquear descendentes e oferecer replaneamento; não “marcar concluído” por inferência.
-- **Objetivo incompatível com política:** manter `BLOCKED` com razão, sem decompor em contornos da regra.
-- **Prazo ultrapassado:** notificar, pausar ou continuar conforme política, nunca alterar secretamente o prazo.
-- **Saída inválida de tarefa:** falhar validação, guardar diagnóstico e não desbloquear dependências.
+- **Failed dependency:** block descendants and offer replanning; do not “mark complete” by inference.
+- **Objective incompatible with policy:** maintain `BLOCKED` with reason, without decomposing into rule contours.
+- **Deadline passed:** notify, pause or continue according to policy, never secretly change the deadline.
+- **Invalid task output:** fails validation, saves diagnosis and does not unlock dependencies.
 
-## Justificação
+## Justification
 
-Objetivos e tarefas separados evitam confundir intenção duradoura com uma tentativa concreta de execução. Critérios de aceitação tornam progresso mensurável e auditável.
+Separate objectives and tasks avoid confusing lasting intention with a concrete attempt at execution. Acceptance criteria make progress measurable and auditable.
 
-## Expansões futuras
+## Future expansions
 
-Estimativa probabilística, calendários, negociação de prioridades, equipas multiagente aprovadas e otimização de recursos.
-
+Probabilistic estimation, calendars, priority negotiation, approved multi-agent teams and resource optimization.

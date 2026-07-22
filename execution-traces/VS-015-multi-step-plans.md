@@ -1,10 +1,10 @@
-# VS-015 — Planos Multi-passo Controlados
+# VS-015 — Controlled Multi-Step Planes
 
-## Objetivo
+## Objective
 
-Evoluir o plano persistente de uma única tarefa interna para uma cadeia de tarefas ordenadas, com dependências explícitas e recuperação após reinício.
+Evolve the persistent plan from a single internal task to a chain of ordered tasks, with explicit dependencies and recovery after restart.
 
-## Fluxo
+## Flow
 
 ```text
 Goal(ASSIST_USER)
@@ -21,42 +21,42 @@ Plan(ASSISTANCE_PLAN)
                               Capability / Policy / Approval
 ```
 
-## Alterações ao modelo
+## Changes to the model
 
-`Task` passa a transportar `sequence` e `dependency_refs`. Ambos são persistidos, imutáveis em cada versão da task e incluídos no snapshot da Mind.
+`Task` now carries `sequence` and `dependency_refs`. Both are persisted, immutable in each version of the task and included in the Mind snapshot.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Uma task só pode entrar em `RUNNING` se todas as dependências estiverem `COMPLETED`.
-2. A criação de uma task é idempotente pelo seu identificador determinístico.
-3. Restaurar uma entidade não recria nem repete tasks já concluídas.
-4. A capability de email continua ancorada na task de análise original, preservando o identificador e a idempotência dos pedidos existentes.
-5. Este slice não cria ações externas adicionais; mantém a fronteira Policy → Approval → Executor.
+1. A task can only enter `RUNNING` if all dependencies are `COMPLETED`.
+2. The creation of a task is idempotent due to its deterministic identifier.
+3. Restoring an entity does not recreate or repeat already completed tasks.
+4. The email capability continues to be anchored to the original analysis task, preserving the identifier and idempotence of existing requests.
+5. This slice does not create additional external actions; maintains the Policy → Approval → Executor boundary.
 
-## Estados
+## States
 
 ```text
 READY -> RUNNING -> COMPLETED
   |        |
-  +--------+--> FAILED  (reservado para executor futuro)
++--------+--> FAILED (reserved for future executor)
 ```
 
-## Casos limite
+## Limit cases
 
-- Uma segunda mensagem para o mesmo plano apenas carrega as tasks existentes.
-- Se a primeira task ainda não tiver terminado, a segunda não é criada.
-- Uma base de dados anterior sem `sequence` ou `dependency_refs` mantém compatibilidade através dos defaults do contrato.
+- A second message for the same plan only loads existing tasks.
+- If the first task has not yet finished, the second is not created.
+- A previous database without `sequence` or `dependency_refs` maintains compatibility through contract defaults.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-- A entidade persiste as duas tasks e a dependência `Task #2 -> Task #1`.
-- Shutdown/restore preserva a cadeia.
-- O fluxo de email e a política de capabilities continuam idempotentes.
-- Todos os testes de regressão permanecem verdes.
+- The entity persists both tasks and the `Task #2 -> Task #1` dependency.
+- Shutdown/restore preserves the chain.
+- The email flow and capabilities policy remain idempotent.
+- All regression tests remain green.
 
-## Expansões futuras
+## Future expansions
 
-- ramos condicionais, tasks paralelas e junções;
-- estado `WAITING_FOR_APPROVAL` ligado a uma capability;
-- recuperação de tarefas interrompidas;
-- planos gerados pelo provider linguístico como proposta validada pelo Kernel.
+- conditional branches, parallel tasks and junctions;
+- `WAITING_FOR_APPROVAL` status connected to a capability;
+- recovery of interrupted tasks;
+- plans created and validated by the Kernel through the governed MCP path.

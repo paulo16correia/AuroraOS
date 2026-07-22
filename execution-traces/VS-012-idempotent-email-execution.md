@@ -1,16 +1,16 @@
 # Aurora OS — Execution Trace Specification: VS-012 Idempotent Email Execution
 
-**Estado:** Autorizado por ADR-012  
-**Caso de utilização:** rascunho de email válido → aprovação → SMTP → resultado persistente e não repetível
+**Status:** Authorized by ADR-012
+**Use case:** valid email draft → approval → SMTP → persistent, non-repeatable result
 
-## Objetivo
+## Objective
 
-Executar uma única capability real de ponta a ponta: `EMAIL_SEND`. A execução exige rascunho estruturado, preparação válida e `Approval(APPROVED)`. O resultado é persistido como `SUCCESS`, `FAILED` ou `UNKNOWN`; a recuperação nunca reenvia automaticamente uma operação cuja entrega possa ser ambígua.
+Run a single real end-to-end capability: `EMAIL_SEND`. Execution requires structured drafting, valid preparation, and `Approval(APPROVED)`. The result is persisted as `SUCCESS`, `FAILED`, or `UNKNOWN`; recovery never automatically resubmits an operation whose delivery may be ambiguous.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
-User: "Envia um email para pessoa@dominio | Assunto: ... | Corpo: ..."
+User: "Send an email to person@domain | Subject: ... | Body: ..."
   → EmailDraft(VALID)
   → ExecutionPreparation(PENDING_APPROVAL, payload_ref=EmailDraft)
   → ApprovalRequest(PENDING)
@@ -22,10 +22,10 @@ User: "Envia um email para pessoa@dominio | Assunto: ... | Corpo: ..."
 
 Se o processo terminar enquanto `EXECUTING`:
   → restauro → CapabilityResult(UNKNOWN)
-  → nenhuma repetição automática; requer reconciliação explícita.
+→ no automatic repetition; requires explicit reconciliation.
 ```
 
-## Objetos novos
+## New objects
 
 ```text
 EmailDraft
@@ -43,9 +43,9 @@ ExecutionRecord
   started_at, completed_at
 ```
 
-## Provider SMTP
+## SMTP Provider
 
-O provider é opt-in. Só pode abrir uma ligação SMTP se as cinco variáveis estiverem presentes no processo:
+The provider is opt-in. You can only open an SMTP connection if the five variables are present in the process:
 
 ```text
 AURORA_SMTP_HOST
@@ -55,38 +55,38 @@ AURORA_SMTP_PASSWORD
 AURORA_SMTP_FROM
 ```
 
-O segredo nunca é persistido nem incluído em eventos ou traces. Sem configuração, o resultado é `FAILED(EMAIL_PROVIDER_NOT_CONFIGURED)` sem ligação de rede.
+The secret is never persisted or included in events or traces. Without configuration, the result is `FAILED(EMAIL_PROVIDER_NOT_CONFIGURED)` without network connection.
 
-## Regras de idempotência e recuperação
+## Idempotence and recovery rules
 
-1. `ExecutionRecord(EXECUTING)` é persistido **antes** da chamada ao provider.
-2. Cada execução tem uma chave determinística derivada da preparação e é enviada no header `X-Aurora-Idempotency-Key`; o `Message-ID` usa a mesma chave.
-3. `COMPLETED` devolve o resultado existente e nunca reenvia.
-4. `FAILED` não é repetido automaticamente.
-5. `EXECUTING` recuperado transforma-se em resultado `UNKNOWN`; é proibido reenviar sem reconciliação humana ou de provider.
-6. Só `Approval(APPROVED)` ligada à mesma preparação pode iniciar execução.
-7. Email sem destinatário, assunto ou corpo é `EmailDraft(INVALID)` e bloqueia antes de aprovação.
+1. `ExecutionRecord(EXECUTING)` is persisted **before** the call to the provider.
+2. Each execution has a deterministic key derived from the preparation and is sent in the `X-Aurora-Idempotency-Key` header; `Message-ID` uses the same key.
+3. `COMPLETED` returns the existing result and never resends it.
+4. `FAILED` is not automatically repeated.
+5. `EXECUTING` recovered becomes result `UNKNOWN`; Resending without human or provider reconciliation is prohibited.
+6. Only `Approval(APPROVED)` connected to the same preparation can start execution.
+7. Email without recipient, subject or body is `EmailDraft(INVALID)` and blocks before approval.
 
-## Eventos e trace
+## Events and trace
 
-| Estado | Evento | Trace |
+| Status | Event | Trace |
 | --- | --- | --- |
-| Rascunho | `EmailDraftCreated` | `EMAIL_DRAFT(VALID|INVALID)` |
-| Antes da rede | `ExecutionStarted` | `EXECUTION(EXECUTING)` |
-| Entrega confirmada | `ExecutionCompleted` | `EXECUTION(COMPLETED)` |
-| Falha confirmada | `ExecutionFailed` | `EXECUTION(FAILED)` |
-| Recuperação ambígua | `ExecutionUnknown` | `EXECUTION(UNKNOWN)` |
+| Draft | `EmailDraftCreated` | `EMAIL_DRAFT(VALID|INVALID)` |
+| Before the network | `ExecutionStarted` | `EXECUTION(EXECUTING)` |
+| Delivery confirmed | `ExecutionCompleted` | `EXECUTION(COMPLETED)` |
+| Failure confirmed | `ExecutionFailed` | `EXECUTION(FAILED)` |
+| Ambiguous recovery | `ExecutionUnknown` | `EXECUTION(UNKNOWN)` |
 
-`MindState` passa a conter `execution_record_refs`.
+`MindState` now contains `execution_record_refs`.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Um provider controlado recebe um rascunho aprovado e devolve `CapabilityResult(SUCCESS)`.
-2. A mesma confirmação não pode invocar o provider uma segunda vez.
-3. Sem configuração SMTP, não há rede e o resultado é `FAILED(EMAIL_PROVIDER_NOT_CONFIGURED)`.
-4. Falha ou crash em `EXECUTING` nunca desencadeia reenvio automático.
-5. Os testes VS-000–VS-011 continuam verdes.
+1. A controlled provider receives an approved draft and returns `CapabilityResult(SUCCESS)`.
+2. The same confirmation cannot invoke the provider a second time.
+3. Without SMTP configuration, there is no network and the result is `FAILED(EMAIL_PROVIDER_NOT_CONFIGURED)`.
+4. Failure or crash in `EXECUTING` never triggers automatic resending.
+5. Tests VS-000–VS-011 remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-VS-012 implementa apenas SMTP com TLS de início e apenas uma mensagem simples de texto. Não há anexos, HTML, threads, caixas de entrada, retry automático, OAuth, múltiplos providers ou reconciliação assistida. Esses elementos exigem ADRs posteriores.
+VS-012 implements only SMTP with initiating TLS and only a plain text message. There are no attachments, HTML, threads, input boxes, automatic retry, OAuth, multiple providers or assisted reconciliation. These elements require subsequent ADRs.

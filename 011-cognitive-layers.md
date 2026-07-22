@@ -1,14 +1,12 @@
-# Aurora OS — RFC 011: Camadas cognitivas e fronteiras de responsabilidade
+# Aurora OS — RFC 011: Cognitive layers and boundaries of responsibility
 
-**Estado:** Normativo · **Depende de:** RFC 000, 010
+**Status:** Normative · **Depends on:** RFC 000, 010
 
-## Objetivo
+## Objective
 
-Organizar a Aurora OS por camadas cognitivas e operacionais, em vez de uma lista plana de componentes. As camadas descrevem a direção do fluxo de informação e proíbem dependências que destruam isolamento, explicabilidade ou segurança.
+Organize Aurora OS by cognitive and operational layers rather than a flat list of components. Layers describe the direction of information flow and prohibit dependencies that destroy isolation, explainability, or security.
 
-## Arquitetura de referência
-
-```mermaid
+## Reference architecture```mermaid
 flowchart TB
   subgraph EW[External World]
     D[Discord] & E[Email] & B[Browser] & GH[GitHub] & S[SSH] & C[Calendar] & F[Filesystem] & V[Voice] & X[APIs]
@@ -44,18 +42,18 @@ flowchart TB
   PL <--> IF
 ```
 
-## Responsabilidades
+## Responsibilities
 
-| Camada | Faz | Não faz |
+| Layer | Do | Doesn't |
 | --- | --- | --- |
-| Mundo externo | produz sinais e recebe efeitos | altera políticas ou a Mind diretamente |
-| Perceção | normaliza, autentica e classifica observações | decide objetivos ou executa ações |
-| Cognição | seleciona contexto, delibera, planeia e decide; avalia sinais, necessidades, situação e recursos | guarda segredos ou contorna permissões |
-| Mind | mantém estado canónico, temporal e governado | chama conectores diretamente |
-| Execução | autoriza, agenda e materializa decisões | inventa intenção ou factos |
-| Infraestrutura | persiste, isola, mede e recupera | define semântica de produto |
+| External world | produces signals and receives effects | changes policies or Mind directly |
+| Perception | normalizes, authenticates and classifies observations | decides objectives or takes actions |
+| Cognition | selects context, deliberates, plans and decides; evaluates signs, needs, situation and resources | keeps secrets or bypasses permissions |
+| Mind | maintains canonical, temporal and governed state | calls connectors directly |
+| Execution | authorizes, schedules and materializes decisions | invents intention or facts |
+| Infrastructure | persists, isolates, measures and recovers | defines product semantics |
 
-## Estruturas e interfaces
+## Structures and interfaces
 
 ```text
 LayerEnvelope
@@ -70,23 +68,23 @@ LayerRouter.dispatch(envelope) -> DeliveryResult
 Architecture.validateDependency(source, target) -> ValidationResult
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. A comunicação entre camadas DEVE usar contratos versionados e eventos/referências; acesso lateral a armazenamento é proibido salvo interface publicada.
-2. A execução não pode escrever factos na Mind: só cria `Observation` e resultados, que voltam pela perceção/ciclo cognitivo.
-3. A Mind não pode guardar valores de segredos nem depender da disponibilidade de um conector para preservar estado.
-4. O Scheduler pertence à execução, mas desencadeia um `Event` na perceção; nunca chama uma ferramenta diretamente.
+1. Communication between layers MUST use versioned contracts and events/references; Side access to storage is prohibited except for a published interface.
+2. Execution cannot write facts to Mind: it only creates `Observation` and results, which come back through the perception/cognitive cycle.
+3. Mind cannot store secret values ​​or depend on the availability of a connector to preserve state.
+4. The Scheduler belongs to execution, but triggers a `Event` in perception; never calls a tool directly.
 
-## Casos limite e erro
+## Limit and error cases
 
-- Falha do mundo externo deixa observações/tarefas pendentes, sem corromper a Mind.
-- Falha de perceção põe eventos em quarentena; dados não normalizados nunca entram na cognição.
-- Falha de infraestrutura bloqueia alterações e efeitos, preservando leitura degradada quando seguro.
+- Failure of the external world leaves observations/tasks pending, without corrupting the Mind.
+- Failure of perception puts events in quarantine; Unnormalized data never enters cognition.
+- Infrastructure failure blocks changes and effects, preserving degraded reading when safe.
 
-## Justificação
+## Justification
 
-As camadas tornam a Aurora um organismo arquitetural: entradas são percebidas, estado é mantido, decisões são tomadas e ações são executadas por fronteiras claras. Isto previne que um novo conector se torne, acidentalmente, uma nova mente.
+The layers make Aurora an architectural organism: inputs are sensed, state is maintained, decisions are made, and actions are executed across clear boundaries. This prevents a new connector from accidentally becoming a new mind.
 
-## Expansões futuras
+## Future expansions
 
-Perceção multimodal em tempo real, subcamadas de segurança, execução remota isolada e Minds federadas.
+Real-time multimodal perception, security sublayers, isolated remote execution and federated Minds.

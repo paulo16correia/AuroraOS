@@ -1,33 +1,33 @@
-# Aurora OS — RFC 09: Segurança, privacidade e auditoria
+# Aurora OS — RFC 09: Security, Privacy and Auditing
 
-**Estado:** Normativo · **Depende de:** RFC 01–08
+**State:** Normative · **Depends on:** RFC 01–08
 
-## Objetivo
+## Objective
 
-Definir controlos para proteger identidade, dados, segredos, integrações e decisões. Segurança é uma propriedade de todo o ciclo, não um módulo final.
+Set controls to protect identity, data, secrets, integrations and decisions. Security is a property of the entire cycle, not a final module.
 
-## Arquitetura
+## Architecture
 
 ```text
-Canal → autenticação → autorização → validação/isolamento
+Channel → authentication → authorization → validation/isolation
                                       │
-Dados → classificação → cifragem → acesso mínimo → auditoria imutável
+Data → classification → encryption → minimal access → immutable auditing
                                       │
-Ferramenta → política → cofre de segredos → executor isolado → reconciliação
+Tool → policy → vault of secrets → isolated executor → reconciliation
 ```
 
-## Modelo de ameaças mínimo
+## Minimal threat model
 
-| Ameaça | Controlo principal |
+| Threat | Main control |
 | --- | --- |
-| Injeção em web/email/documentos | conteúdo não confiável, isolamento e política fora do modelo |
-| Conta ou token comprometido | OAuth com âmbito mínimo, rotação, revogação e deteção de anomalia |
-| Exfiltração por prompt/log | classificação, redação, cofre e filtragem de saída |
-| Ação duplicada | idempotência, estado `UNKNOWN` e reconciliação |
-| Escalada via SSH/browser | capacidades limitadas, sandbox e aprovação por ação |
-| Corrupção de memória | proveniência, revisões, ACL e backups testados |
+| Injection into web/email/documents | Untrusted Content, Isolation, and Off-Model Policy |
+| Account or token compromised | OAuth with minimum scope, rotation, revocation and anomaly detection |
+| Prompt/log exfiltration | sorting, redaction, vaulting and output filtering |
+| Duplicate action | idempotence, state `UNKNOWN` and reconciliation |
+| Climbing via SSH/browser | limited capabilities, sandbox and approval by action |
+| Memory corruption | provenance, revisions, ACL and tested backups |
 
-## Estruturas de dados
+## Data structures
 
 ```text
 SecurityEvent
@@ -44,7 +44,7 @@ AuditRecord
   correlation_id, input_hash, policy_ids[], previous_hash, record_hash
 ```
 
-O diário de auditoria é encadeado por hash e tem controlo de escrita separado da aplicação. Não contém segredos nem conteúdo integral desnecessário.
+The audit journal is hash-chained and has write control separate from the application. Contains no secrets or unnecessary full content.
 
 ## Interfaces
 
@@ -56,26 +56,25 @@ Audit.append(record) -> AuditRecord
 Incident.open(security_event) -> Incident
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Autenticação forte DEVE proteger administração, alteração de políticas e exportação de dados.
-2. Segredos DEVEM ser cifrados em repouso, transmitidos apenas por canais protegidos e redigidos antes de qualquer registo.
-3. Todos os serviços DEVEM usar identidades próprias e comunicação autenticada; não há conta partilhada de superutilizador.
-4. Registos de auditoria DEVEM ser retidos e protegidos segundo política; o utilizador pode ver ações que lhe dizem respeito.
-5. Incidentes de alto risco DEVEM revogar capacidade afetada, preservar evidência e notificar o proprietário.
+1. Strong authentication MUST protect administration, policy change, and data export.
+2. Secrets MUST be encrypted at rest, transmitted only over protected channels and redacted before any recording.
+3. All services MUST use their own identities and authenticated communication; There is no shared superuser account.
+4. Audit records MUST be retained and protected according to policy; the user can see actions that concern him.
+5. High risk incidents MUST revoke affected capacity, preserve evidence, and notify owner.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Suspeita de segredo exposto:** revogar/rodar, bloquear chamadas dependentes e abrir incidente; nunca reenviar o valor ao chat.
-- **Verificação de integridade falha:** colocar auditoria em modo de incidente, impedir ações de escrita e preservar cópia forense.
-- **Fornecedor de modelo sem garantias de dados:** não enviar dados classificados acima do permitido.
-- **Cópia de segurança ilegível:** incidente de fiabilidade; não assumir recuperação até restauro de teste passar.
+- **Suspected secret exposed:** revoke/rotate, block dependent calls and open incident; never resend the amount to chat.
+- **Integrity check fails:** put auditing in incident mode, prevent write actions and preserve forensic copy.
+- **Model provider without data guarantees:** do not send data classified above what is allowed.
+- **Unreadable backup copy:** reliability incident; Do not assume recovery until test restore passes.
 
-## Justificação
+## Justification
 
-O sistema tem superfícies de ataque invulgarmente amplas — linguagem, dados e ações externas. Defesa em profundidade reduz dependência de o modelo “portar-se bem”.
+The system has unusually broad attack surfaces — language, data, and external actions. Defense in depth reduces dependence on the model “behaving well”.
 
-## Expansões futuras
+## Future expansions
 
-HSM, gestão centralizada de chaves, SIEM, deteção comportamental, testes de intrusão regulares e isolamentos por cliente.
-
+HSM, centralized key management, SIEM, behavioral detection, regular intrusion testing and isolations per client.

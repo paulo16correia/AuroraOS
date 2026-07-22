@@ -1,24 +1,23 @@
-# ADR-000 — Freeze v1.0 e controlo de alterações
+# ADR-000 — Freeze v1.0 and change control
 
-**Estado:** ACEITE  
-**Data:** 2026-07-17  
-**RFCs afetadas:** todas as RFCs v1.0
+**Status:** ACCEPT
+**Date:** 2026-07-17
+**RFCs affected:** all RFCs v1.0
 
-## Contexto
+## Context
 
-A arquitetura já contém Kernel, Mind, Applications, Constituição, Leis, ciclo cognitivo, estado persistente, Event Bus e governança. Continuar a adicionar conceitos aumentaria risco de sobreposição e adiaria validação empírica.
+The architecture already contains Kernel, Mind, Applications, Constitution, Laws, cognitive cycle, persistent state, Event Bus and governance. Continuing to add concepts would increase the risk of overlap and postpone empirical validation.
 
-## Decisão
+## Decision
 
-Adotar o Architecture Freeze v1.0. A baseline é implementada e testada por ordem definida; alterações estruturais passam por ADR. As RFCs 021–025 são a fonte normativa do ciclo cognitivo; a RFC 02 permanece como referência de orquestração de implementação, sem introduzir semântica concorrente.
+Adopt Architecture Freeze v1.0. The baseline is implemented and tested in a defined order; structural changes undergo ADR. RFCs 021–025 are the normative source of the cognitive cycle; RFC 02 remains the implementation orchestration reference, without introducing competing semantics.
 
-## Consequências
+## Consequences
 
-- A implementação começa por contratos e infraestrutura do Kernel, não por conectores ou UX.
-- Descobertas passam por review/ADR; não há alterações informais de arquitectura.
-- A documentação de implementação, testes e standards torna-se a prioridade.
+- Implementation starts with contracts and Kernel infrastructure, not connectors or UX.
+- Discoveries undergo review/ADR; there are no informal architectural changes.
+- Documentation of implementation, tests and standards becomes the priority.
 
-## Migração e reversão
+## Migration and rollback
 
-Não há migração de dados. Revogar este ADR requer ADR posterior aceite e nova revisão completa da baseline.
-
+There is no data migration. Revoking this ADR requires subsequent ADR acceptance and a new full baseline review.

@@ -1,27 +1,27 @@
-# Aurora OS — RFC 022: Motor de decisão
+# Aurora OS — RFC 022: Decision Engine
 
-**Estado:** Normativo · **Depende de:** RFC 01, 021, 040
+**Status:** Normative · **Depends on:** RFC 01, 021, 040
 
-## Objetivo
+## Objective
 
-Separar a decisão de agir da geração de uma resposta. O Motor de Decisão escolhe um modo de ação a partir de intenção, evidência, risco, estado da Mind, políticas e contexto ativo.
+Separate the decision to act from the generation of a response. The Decision Engine chooses a mode of action based on intention, evidence, risk, state of mind, policies and active context.
 
-## Arquitetura
+## Architecture
 
 ```text
-Thought + Context + Attention + políticas + estado de objetivos
+Thought + Context + Attention + policies + goal state
                            │
                            ▼
-                   avaliação de opções
+option evaluation
       ┌───────┬─────────┬──────────┬─────────┬──────────┐
       ▼       ▼         ▼          ▼         ▼          ▼
- responder perguntar planear esperar ferramenta recusar/silêncio
+answer ask plan wait tool refuse/silence
                            │
                            ▼
                    DecisionRecord → ciclo cognitivo
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Decision
@@ -44,25 +44,24 @@ DecisionEngine.commit(decision_id, policy_results) -> Decision
 DecisionEngine.invalidate(decision_id, reason) -> Decision
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O motor DEVE avaliar pelo menos: relevância, evidência, risco, custo, permissões e reversibilidade.
-2. `TOOL_CALL` sem política `ALLOW` ou aprovação válida não pode ser `COMMITTED`.
-3. `SILENT` só é permitido por regra explícita de canal, privacidade, limite de ruído ou ausência de destinatário; nunca para ocultar falha.
-4. Decisões expiram quando contexto, aprovação, dados ou prazo deixam de ser válidos.
+1. The engine MUST evaluate at least: relevance, evidence, risk, cost, permissions and reversibility.
+2. `TOOL_CALL` without `ALLOW` policy or valid approval cannot be `COMMITTED`.
+3. `SILENT` is only allowed by explicit channel rule, privacy, noise limit or absence of recipient; never to hide fault.
+4. Decisions expire when context, approval, data or deadline are no longer valid.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Confiança elevada sem fonte:** reduzir para `ASK` ou `RESPOND` com incerteza; nunca aumentar privilégio.
-- **Duas opções equivalentes:** preferir menor efeito externo e menor custo, ou pedir preferência.
-- **Nova informação invalida decisão:** marcar `SUPERSEDED` antes de iniciar efeito.
-- **Motor indisponível:** bloquear ferramentas; só permitir respostas estáticas aprovadas.
+- **High confidence without source:** reduce to `ASK` or `RESPOND` with uncertainty; never increase privilege.
+- **Two equivalent options:** prefer lower external effect and lower cost, or ask for preference.
+- **New information invalidates decision:** mark `SUPERSEDED` before taking effect.
+- **Motor unavailable:** block tools; Only allow approved static responses.
 
-## Justificação
+## Justification
 
-Responder é uma escolha com efeitos sociais e operacionais. Um módulo explícito permite testar decisões e evita que a linguagem do modelo determine a política de ação.
+Responding is a choice with social and operational effects. An explicit module allows you to test decisions and prevents the model language from determining the action policy.
 
-## Expansões futuras
+## Future expansions
 
-Utilidade configurável, simulação de impacto, decisões colegiais e políticas de atenção por objetivo.
-
+Configurable utility, impact simulation, collegial decisions and goal-based attention policies.

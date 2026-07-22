@@ -1,16 +1,16 @@
 # Aurora OS — Execution Trace Specification: VS-005 Persistent Planning Layer
 
-**Estado:** Autorizado por ADR-004  
-**Caso de utilização:** recuperar contexto do utilizador → avaliar Goal/Need → propor plano persistente → restaurar → descrever trabalho pendente
+**Status:** Authorized by ADR-004
+**Use case:** retrieve user context → evaluate Goal/Need → propose persistent plan → restore → describe pending work
 
-## Objetivo
+## Objective
 
-Demonstrar deliberação controlada sem ação. A Entity deve conseguir imaginar uma sequência de ajuda, persistir essa proposta e recuperá-la depois de reiniciar, mantendo a fronteira `Desire → Goal → Need → Plan → Action`: VS-005 termina em `Plan`.
+Demonstrate controlled deliberation without action. The Entity must be able to imagine a help sequence, persist that proposal, and retrieve it after restart, maintaining the boundary `Desire → Goal → Need → Plan → Action`: VS-005 ends at `Plan`.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
-User assertion: "O meu nome é Paulo e gosto de programar Python."
+User assertion: "My name is Paulo and I like programming Python."
   → Memory(LIKES_PROGRAMMING_LANGUAGE, USER_ASSERTION)
   → Need(UNDERSTAND_USER) avaliada
 
@@ -21,15 +21,15 @@ User: "Como poderias ajudar-me melhor?"
   → PlanCreated(ASSISTANCE_PLAN, PROPOSED, SIMULATION_ONLY)
   → Thought/Decision(RESPOND) → Response
   → Observation → Reflection → Memory
-  → nenhuma Action / Task / ToolCall
+→ no Action/Task/ToolCall
 
 shutdown → MindState(plan_refs[]) → restore
 
-User: "Que objetivo tinhas pendente?"
-  → PlanLoaded → Goal + Plan usados para responder
+User: "What goal did you have pending?"
+→ PlanLoaded → Goal + Plan used to respond
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Plan
@@ -51,33 +51,33 @@ PlanStep
   status: PENDING
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Um Plan só pode nascer de um pedido explícito neste slice; startup, scheduler e Need isolada nunca o criam.
-2. `goal_ref`, `created_from_need` e `basis_memory_refs` devem pertencer à Entity ativa.
-3. A primeira proposta usa sempre `PROPOSED` e `SIMULATION_ONLY`; qualquer transição posterior é proibida no VS-005.
-4. A resposta sobre a proposta ou sobre trabalho pendente é derivada do Plan persistido pelo Kernel.
-5. `PlanCreated` não pode coexistir, no mesmo trace, com `ActionCreated`, `TaskCreated`, `CapabilityRequested` ou `CapabilityExecuted`.
-6. O snapshot de shutdown inclui `plan_refs`; restauro não gera uma nova proposta nem duplica o objeto.
+1. A Plan can only be born from an explicit request in this slice; startup, scheduler and isolated Need never create it.
+2. `goal_ref`, `created_from_need` and `basis_memory_refs` must belong to the active Entity.
+3. The first proposal always uses `PROPOSED` and `SIMULATION_ONLY`; any further transition is prohibited in VS-005.
+4. The response about the proposal or pending work is derived from the Plan persisted by the Kernel.
+5. `PlanCreated` cannot coexist, in the same trace, with `ActionCreated`, `TaskCreated`, `CapabilityRequested` or `CapabilityExecuted`.
+6. Shutdown snapshot includes `plan_refs`; restoration does not generate a new proposal or duplicate the object.
 
-## Eventos, trace e erros
+## Events, traces and errors
 
-| Situação | Evento | Trace | Erro/comportamento |
+| Situation | Event | Trace | Error/behavior |
 | --- | --- | --- | --- |
-| Pedido explícito elegível | `PlanCreated` | `PLANNING(PROPOSED)`, `PLAN_CREATED` | Persistir uma proposta única por Entity/Goal. |
-| Plan já existente | `PlanLoaded` | `PLANNING(LOADED)` | Reutilizar, não duplicar. |
-| Consulta posterior | `PlanLoaded` | `PLAN(LOADED)` | Expor somente estado persistido. |
-| Goal/Need ausente | nenhum Plan | erro controlado do Kernel | Nunca fabricar referências. |
-| Pedido sem capacidade | nenhum efeito | `CAPABILITY(NOT_REQUIRED)` | Nenhuma ferramenta é consultada. |
+| Explicit request eligible | `PlanCreated` | `PLANNING(PROPOSED)`, `PLAN_CREATED` | Persist a single proposal per Entity/Goal. |
+| Already existing plan | `PlanLoaded` | `PLANNING(LOADED)` | Reuse, don't duplicate. |
+| Later consultation | `PlanLoaded` | `PLAN(LOADED)` | Expose only persisted state. |
+| Goal/Need missing | none Plan | Kernel controlled error | Never fabricate references. |
+| Order without capacity | no effect | `CAPABILITY(NOT_REQUIRED)` | No tools are consulted. |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Criar Roberto, guardar preferência de Paulo e pedir “Como poderias ajudar-me melhor?” cria um único Plan `PROPOSED`.
-2. O Plan tem os dois PlanSteps definidos, em `PENDING` e `SIMULATION_ONLY`.
-3. O trace contém Goal, Need, `PLANNING` e `PLAN_CREATED`; não contém execução externa.
-4. Depois de shutdown/restauro, “Que objetivo tinhas pendente?” descreve o Goal ativo e o Plan proposto persistido.
-5. VS-000 a VS-004 continuam verdes.
+1. Create Roberto, remember Paulo's preference and ask “How could you help me better?” creates a single Plan `PROPOSED`.
+2. The Plan has two PlanSteps defined, in `PENDING` and `SIMULATION_ONLY`.
+3. The trace contains Goal, Need, `PLANNING` and `PLAN_CREATED`; does not contain external execution.
+4. After shutdown/restore, “What goal did you have?” describes the active Goal and the persisted proposed Plan.
+5. VS-000 to VS-004 remain green.
 
-## Limites deliberados
+## Deliberate limits
 
-Não existem Desire persistente, aprovação humana, revisão de plano, Tasks, Scheduler, Capability Registry, ferramentas, ações simuladas ou aprendizagem a partir do plano. VS-005 representa futuro possível; não altera o mundo.
+There are no persistent Desire, human approval, plan review, Tasks, Scheduler, Capability Registry, tools, simulated actions or learning from the plan. VS-005 represents possible future; does not change the world.

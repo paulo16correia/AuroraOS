@@ -1,28 +1,25 @@
 # Aurora Platform — RFC 045: Aurora Kernel
 
-**Estado:** Normativo · **Depende de:** RFC 011, 035, 039–040, 043
+**Status:** Normative · **Depends on:** RFC 011, 035, 039–040, 043, 050, 051
 
-## Objetivo
+## Objective
 
-Definir o **Aurora Kernel**: o plano de controlo que gere processos cognitivos, estado, permissões, eventos, recursos e execução. O Kernel não pensa nem detém personalidade; gere a Mind e Applications tal como um sistema operativo gere processos e dispositivos.
+Define the Aurora Kernel, the persistent control and cognition plane of Aurora OS. The Kernel is not an LLM and does not depend on one for identity or continuity. It exposes governed capabilities through the Model Context Protocol (MCP) to compatible LLM clients.
 
-## Arquitetura
+## Architecture
 
 ```text
-Aurora Platform
-├─ Aurora Kernel
-│  ├─ Lifecycle Manager        ├─ State/Mind Manager
-│  ├─ Event Bus                ├─ Signal Router
-│  ├─ Scheduler                ├─ Memory Manager
-│  ├─ Permission/Policy Engine ├─ Tool/Capability Manager
-│  └─ Resource and Audit Manager
-├─ Aurora Mind
-│  └─ identidade, memória, conhecimento, crenças, objetivos e cognição
-└─ Aurora Applications
-   └─ conectores e capacidades autorizadas
+User → LLM Client → MCP → Aurora Kernel
+                           ├─ World Model and Memory
+                           ├─ Mind State, Planner, Decision Engine, Scheduler
+                           ├─ Event Bus, Policies, Approvals, Audit
+                           ├─ Capability Registry and Executor
+                           └─ Persistence and Lifecycle
 ```
 
-## Estruturas e interfaces
+The LLM client owns language understanding, conversation, clarification, tool selection, and response writing. The Kernel owns persistent identity, cognition, state, effects, and continuity.
+
+## Structures and interfaces
 
 ```text
 KernelService
@@ -34,16 +31,19 @@ KernelCommand
 
 Kernel.start(instance) -> InstanceLifecycle
 Kernel.dispatch(command) -> KernelCommand
+Kernel.handle_mcp(tool_call) -> McpToolResult
 Kernel.health() -> KernelHealth
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Kernel, Mind e Applications são planos separados com identidades de serviço e permissões próprias.
-2. O Kernel é o único proprietário de ciclo de vida, despachos, recursos de execução e barramento.
-3. O Kernel não altera semântica da Mind; aplica validação, versionamento, isolamento e entrega de eventos.
-4. Falha de uma Application não pode comprometer Kernel ou Mind.
+1. The Kernel, Mind, Applications, and MCP transport are separate planes with their own service identities and permissions.
+2. The Kernel is the sole owner of lifecycle, persistent state, dispatch, execution resources, and the Event Bus.
+3. The Kernel validates MCP ingress and applies Mind semantics, policies, versioning, isolation, and event delivery before returning a result.
+4. The LLM client has no direct repository, event-bus, executor, secret, approval, or policy access.
+5. An Application failure cannot compromise Kernel state or Mind integrity.
+6. MCP is a capability interface; it neither bypasses approval nor grants arbitrary execution.
 
-## Casos limite, justificação e expansões
+## Failure, rationale, and extensions
 
-Se o Kernel estiver indisponível, a Mind entra em estado seguro sem novas ações; se a Mind falhar, o Kernel preserva estado/auditoria e recupera-a. Esta separação permite trocar modelo, conector ou interface sem reescrever a plataforma. Expansões: Kernel distribuído, planos de controlo de alta disponibilidade e isolamento por organização.
+If the Kernel is unavailable, Mind enters a safe state with no further effects. If an LLM client disconnects or changes, the Kernel preserves state and audit history. This boundary permits model, connector, and interface replacement without rewriting Aurora. Future extensions include distributed Kernel control planes, high availability, and organization isolation.

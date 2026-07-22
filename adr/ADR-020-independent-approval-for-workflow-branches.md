@@ -1,13 +1,13 @@
-# ADR-020 — Aprovação independente para branches de workflow
+# ADR-020 — Independent approval for workflow branches
 
-## Decisão
+## Decision
 
-Um workflow com várias capabilities de escrita mantém uma `ApprovalRequest` por preparação, em vez de uma aprovação implícita para todo o workflow.
+A workflow with multiple write capabilities maintains a `ApprovalRequest` per staging, rather than an implicit pass for the entire workflow.
 
-## Justificação
+## Justification
 
-Calendar e Email têm efeitos e riscos diferentes. A aprovação deve identificar a capability a autorizar e sobreviver a reinícios sem perder essa associação.
+Calendar and Email have different effects and risks. The approval must identify the capability to authorize and survive restarts without losing this association.
 
-## Consequências
+## Consequences
 
-O utilizador pode aprovar uma branch de cada vez ou usar uma confirmação explícita para todas. A UI futura poderá oferecer controlos individuais sem alterar o contrato do Kernel.
+The user can approve one branch at a time or use an explicit commit for all. Future UI may offer individual controls without changing the Kernel contract.

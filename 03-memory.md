@@ -1,25 +1,25 @@
-# Aurora OS — RFC 03: Memória persistente
+# Aurora OS — RFC 03: Persistent Memory
 
-**Estado:** Normativo · **Depende de:** RFC 01–02
+**State:** Normative · **Depends on:** RFC 01–02
 
-## Objetivo
+## Objective
 
-Especificar memória útil, corrigível e com proveniência. Memória é um conjunto de registos de domínio, não um arquivo ilimitado de conversas.
+Specify useful, correctable memory with provenance. Memory is a set of domain records, not an unlimited archive of conversations.
 
-## Arquitetura
+## Architecture
 
 ```text
-Eventos/documentos → extração candidata → validação de política
+Events/documents → candidate extraction → policy validation
                                               │
                       ┌───────────────────────┼──────────────┐
                       ▼                       ▼              ▼
-                 episódica               semântica      procedimental
-                      └─────────→ índice + proveniência ←─────┘
+episodic procedural semantics
+└─────────→ index + provenance ←─────┘
                                              │
-Consulta → filtro ACL/classificação → pesquisa híbrida → contexto
+Query → ACL/sort filter → hybrid search → context
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Memory
@@ -34,9 +34,9 @@ Memory
 MemoryRevision
   id, memory_id, operation: CREATE|CONFIRM|CORRECT|MERGE|RETRACT|EXPIRE
   actor, reason, prior_hash, new_hash, at
-```
+````
 
-`WORKING` é efémera e não entra na pesquisa duradoura. Factos inferidos sem confirmação iniciam em `CANDIDATE`; só podem orientar perguntas ou sugestões, não ações de alto impacto.
+WORKING` is ephemeral and does not enter into lasting research. Facts inferred without confirmation start at `CANDIDATE`; they can only guide questions or suggestions, not high-impact actions.
 
 ## Interfaces
 
@@ -47,26 +47,25 @@ MemoryService.revise(memory_id, operation, actor) -> MemoryRevision
 MemoryService.forget(memory_id, actor) -> tombstone
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Uma memória DEVE ter origem e política de acesso; sem ambas, não é persistida.
-2. Pesquisa DEVE aplicar ACL e classificação antes de cálculo semântico.
-3. Correção pelo proprietário DEVE prevalecer sobre inferência automática.
-4. `RETRACTED` não é apagada imediatamente do registo de auditoria, mas deixa de ser recuperável para raciocínio normal.
-5. O sistema NÃO DEVE consolidar segredos, credenciais ou dados sensíveis de terceiros sem regra específica.
+1. A memory MUST have an origin and access policy; without both, it is not persisted.
+2. Search MUST apply ACL and classification before semantic calculation.
+3. Correction by owner MUST prevail over automatic inference.
+4. `RETRACTED` is not immediately deleted from the audit log, but is no longer recoverable for normal reasoning.
+5. The system MUST NOT consolidate secrets, credentials or sensitive data from third parties without a specific rule.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Memórias contraditórias:** manter ambas, marcar conflito e pedir confirmação quando material.
-- **Eliminação solicitada:** remover de índices ativos, propagar a caches e marcar retenção legal aplicável; informar âmbito real.
-- **Pesquisa sem evidência:** responder que não encontrou confirmação, nunca preencher lacunas com uma memória semelhante.
-- **Falha de índice:** recorrer a consulta estruturada limitada; não declarar ausência de memória com certeza.
+- **Contradictory memories:** keep both, mark conflict and ask for confirmation when material.
+- **Deletion requested:** remove from active indexes, propagate to caches and mark applicable legal hold; inform real scope.
+- **Research without evidence:** answer that you did not find confirmation, never fill in gaps with a similar memory.
+- **Index failure:** resort to limited structured query; do not declare absence of memory with certainty.
 
-## Justificação
+## Justification
 
-Separar candidatos de factos ativos reduz alucinações persistentes. Proveniência e revisões permitem corrigir uma memória sem apagar a história de como o sistema chegou a uma conclusão.
+Separating candidates from active facts reduces persistent hallucinations. Provenance and revisions allow you to correct a memory without erasing the history of how the system reached a conclusion.
 
-## Expansões futuras
+## Future expansions
 
-Consolidação agendada, importação documental com consentimento, retenção por jurisdição, memórias partilhadas por equipa e avaliação automática de obsolescência.
-
+Scheduled consolidation, document import with consent, retention by jurisdiction, memories shared by team and automatic obsolescence assessment.

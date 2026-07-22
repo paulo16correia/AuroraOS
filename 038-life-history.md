@@ -1,27 +1,27 @@
-# Aurora Platform — RFC 038: História de vida e narrativa operacional
+# Aurora Platform — RFC 038: Life Story and Operational Narrative
 
-**Estado:** Normativo · **Depende de:** RFC 020, 036–037, 040, 043
+**State:** Normative · **Depends on:** RFC 020, 036–037, 040, 043
 
-## Objetivo
+## Objective
 
-Manter uma narrativa verificável da história da instância: nascimento, marcos, primeiras capacidades, incidentes, transições de desenvolvimento e aprendizagens relevantes. Não substitui o diário de auditoria nem transforma inferências em autobiografia.
+Maintain a verifiable narrative of the instance's history: birth, milestones, early capabilities, incidents, developmental transitions, and relevant learnings. It does not replace the audit diary or transform inferences into autobiography.
 
-## Arquitetura
+## Architecture
 
 ```text
 eventos auditados + marcos aprovados + DevelopmentState
                               │
                               ▼
-                       LifeEpisode candidato
+                       LifeEpisode candidate
                               │
                               ▼
-                 revisão/proveniência → Life History
+review/provenance → Life History
                               │
                               ▼
-            narrativa citada para “quem sou eu / o que mudou”
+narrative cited for “who am I / what has changed”
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 LifeEpisode
@@ -41,23 +41,22 @@ LifeHistory.verify(episode_id) -> LifeEpisode
 LifeHistory.narrate(mind_id, audience) -> CitedNarrative
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada episódio DEVE referenciar provas auditáveis e data/intervalo.
-2. A narrativa distingue acontecimentos confirmados de resumos interpretativos.
-3. O utilizador pode corrigir texto narrativo, sem alterar o diário de auditoria subjacente.
-4. Dados sensíveis não entram numa narrativa sem política de divulgação aplicável.
+1. Each episode MUST reference auditable evidence and date/range.
+2. Narrative distinguishes confirmed events from interpretative summaries.
+3. The user can correct narrative text without changing the underlying audit journal.
+4. Sensitive data does not enter a narrative without an applicable disclosure policy.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **“Primeiro erro” não identificável:** responder que não existe evidência suficiente, não escolher um episódio arbitrário.
-- **Episódio retractado:** removê-lo da narrativa atual, preservando rasto de revisão protegido.
+- **Unidentifiable “First error”:** responding that there is not enough evidence, not choosing an arbitrary episode.
+- **Retracted episode:** remove it from the current narrative, preserving protected revision trail.
 
-## Justificação
+## Justification
 
-História de vida fornece continuidade compreensível sem tratar uma coleção de memórias como identidade narrativa automática.
+Life story provides understandable continuity without treating a collection of memories as automatic narrative identity.
 
-## Expansões futuras
+## Future expansions
 
-Linha temporal visual, narrativas por projeto, marcos partilhados e resumos de manutenção anuais.
-
+Visual timeline, project narratives, shared milestones, and annual maintenance summaries.

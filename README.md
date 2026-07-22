@@ -1,115 +1,124 @@
-# Aurora OS — Especificação de Arquitetura
+# Aurora OS — Architecture Specification
 
-Este diretório é a fonte normativa para a construção da Aurora OS. As RFCs usam as palavras **DEVE**, **NÃO DEVE**, **DEVERIA**, **NÃO DEVERIA** e **PODE** no sentido obrigatório, proibido, recomendado, desaconselhado e opcional.
+This directory is the normative source for building Aurora OS. The RFCs use the words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT** and **MAY** in the mandatory, prohibited, recommended, advised against and optional sense.
 
-## Ordem de leitura e dependências
+## MCP-first architecture
+
+Aurora OS is a Cognitive Operating System, not an LLM wrapper. A compatible LLM client uses the Aurora Kernel through the Model Context Protocol (MCP). The LLM handles natural-language understanding, conversation, clarification, tool selection, and response writing. Aurora remains the persistent digital entity and owns identity, memory, world model, planning, decisions, policy, approvals, execution, scheduling, audit, and persistence.
 
 ```text
-Fundação normativa
-000 Filosofia → 00 Visão → 01 Princípios → 035 Constituição → laws/
+User → LLM Client → MCP → Aurora Kernel → MCP result → LLM Client → User
+```
+
+RFC 021 defines the governed cognitive cycle, RFC 045 defines the Kernel boundary, RFC 10 defines MCP and API integration contracts, and VS-009 preserves the migration trace identifier.
+
+## Reading order and dependencies
+
+```text
+Normative foundation
+000 Philosophy → 00 Vision → 01 Principles → 035 Constitution → laws/
                                   │
                                   ▼
-                 036 Genome → 037 Desenvolvimento → 038 História → 039 Ciclo de vida
+036 Genome → 037 Development → 038 History → 039 Life cycle
                                   │
                                   ▼
 Aurora Platform
 ├─ Aurora Kernel: 045 Kernel → 050 Event Bus → 051 Capabilities
-├─ Aurora Mind: 010 Mapa → 011 Camadas → 020 Mind → 040 Domínio
-│  ├─ 021 Ciclo → 022 Decisão → 023 Atenção → 024 Trabalho → 025 Deliberação
-│  ├─ 027 Self → 028 Crenças → 029 Relações/Preferências
-│  ├─ 030 Sinais → 031 Necessidades → 032 Curiosidade → 033 Recursos → 034 Situação
-│  └─ 03 Memória → 04 Grafo → 041 Mundo → 042 Tempo → 043 Mind State
+├─ Aurora Mind: 010 Map → 011 Layers → 020 Mind → 040 Domain
+│ ├─ 021 Cycle → 022 Decision → 023 Attention → 024 Work → 025 Deliberation
+│ ├─ 027 Self → 028 Beliefs → 029 Relationships/Preferences
+│ ├─ 030 Signs → 031 Needs → 032 Curiosity → 033 Resources → 034 Situation
+│ └─ 03 Memory → 04 Graph → 041 World → 042 Time → 043 Mind State
 └─ Aurora Applications: 06 Ferramentas → 060 SDK e providers de capacidades
 
-Estratégia e operação
-052 Missões → 05 Objetivos/Planos/Tarefas → 07 Personalidade → 08 Aprendizagem
+Strategy and operation
+052 Missions → 05 Objectives/Plans/Tasks → 07 Personality → 08 Learning
                          │
                          ▼
-                  09 Segurança → 10 API → 11 UI → 12 Operação → 13 Roadmap → 090 Review Gate
+09 Security → 10 API → 11 UI → 12 Operation → 13 Roadmap → 090 Review Gate
                                                                     │
                                                                     ▼
-                   Freeze v1.0 → 100 Ordem de implementação → 105 Testes → 110 Standards → 120 Done
+Freeze v1.0 → 100 Implementation order → 105 Tests → 110 Standards → 120 Done
                                                                     │
                                                                     ▼
-                                                   Execution Trace VS-000 → primeiro código Kernel
+Execution Trace VS-000 → first Kernel code
 ```
 
-Uma RFC posterior não pode contrariar uma anterior sem criar uma decisão de arquitetura (ADR) que explique a alteração, o impacto na migração e a versão a partir da qual entra em vigor.
+A later RFC cannot contradict a previous one without creating an architectural decision (ADR) that explains the change, the impact on migration, and the version from which it takes effect.
 
-## Convenções comuns
+## Common conventions
 
-- Identificadores são UUIDv7; tempos são UTC em ISO-8601; montantes são inteiros na menor unidade monetária.
-- Todos os dados persistidos incluem `id`, `created_at`, `updated_at`, `version` e `tenant_id` quando aplicável.
-- Todos os comandos com efeito externo incluem `correlation_id`, `idempotency_key`, autor, política aplicada e resultado.
-- `CONFIDENTIAL` e `SECRET` nunca são enviados a um modelo ou conector sem autorização expressa da política.
-- A primeira versão é de utilizador único, mas o modelo de dados preserva fronteiras de inquilino para futura evolução.
+- Identifiers are UUIDv7; times are UTC in ISO-8601; amounts are integers in the smallest monetary unit.
+- All persisted data includes `id`, `created_at`, `updated_at`, `version`, and `tenant_id` when applicable.
+- All commands with external effect include `correlation_id`, `idempotency_key`, author, applied policy and result.
+- `CONFIDENTIAL` and `SECRET` are never shipped to a model or connector without express policy authorization.
+- The first version is single-user, but the data model preserves tenant boundaries for future evolution.
 
-## Índice
+## Index
 
-| RFC | Tema | Dependências diretas |
+| RFC | Theme | Direct dependencies |
 | --- | --- | --- |
-| 000 | Filosofia de arquitetura | — |
-| 00 | Visão | 000 |
-| 01 | Princípios e governação | 00 |
-| 035 | Constituição da Aurora | 000–01, Leis |
-| Leis | Invariantes de arquitetura | Constituição |
-| LAW-007 | Comunicação mediada por eventos | Constituição |
-| LAW-008 | Integridade da identidade pelo Self Model | RFC 027, RFC 040 |
+| 000 | Architectural philosophy | — |
+| 00 | Vision | 000 |
+| 01 | Principles and governance | 00 |
+| 035 | Constitution of Aurora | 000–01, Laws |
+| Laws | Architectural invariants | Constitution |
+| LAW-007 | Event-mediated communication | Constitution |
+| LAW-008 | Identity integrity through the Self Model | RFC 027, RFC 040 |
 | 036 | Genome | 035, 040 |
-| 037 | Modelo de desenvolvimento | 07, 027–028, 036, 040 |
-| 038 | História de vida | 020, 036–037, 040, 043 |
-| 039 | Ciclo de vida da instância | 011, 026–027, 033, 036, 043 |
-| 010 | Mapa-mestre da Mind | 000–01 |
-| 011 | Camadas cognitivas e fronteiras | 000, 010 |
-| 020 | Mind — modelo de estado cognitivo | 000, 01, 010 |
-| 021 | Ciclo cognitivo | 020, 040 |
-| 022 | Motor de decisão | 01, 021, 040 |
-| 023 | Sistema de atenção | 03–04, 020–021 |
-| 024 | Memória de trabalho | 03, 021, 023, 040 |
-| 025 | Deliberação interna | 021–024 |
+| 037 | Development model | 07, 027–028, 036, 040 |
+| 038 | Life story | 020, 036–037, 040, 043 |
+| 039 | Instance lifecycle | 011, 026–027, 033, 036, 043 |
+| 010 | Mind Master Map | 000–01 |
+| 011 | Cognitive layers and boundaries | 000, 010 |
+| 020 | Mind — cognitive state model | 000, 01, 010 |
+| 021 | Cognitive cycle | 020, 040 |
+| 022 | Decision engine | 01, 021, 040 |
+| 023 | Attention system | 03–04, 020–021 |
+| 024 | Working memory | 03, 021, 023, 040 |
+| 025 | Internal deliberation | 021–024 |
 | 026 | Scheduler | 01, 021–022, 040 |
-| 027 | Self — autoconsciência operacional | 011, 020, 040 |
-| 028 | Sistema de crenças e incerteza | 03, 040–041 |
-| 029 | Relações e preferências | 04, 028, 040–042 |
-| 030 | Sistema de sinais | 011, 021, 040, LAW-001 |
-| 031 | Necessidades operacionais | 020, 026, 030, 033, 040 |
-| 032 | Curiosidade governada | 028, 030–031, 033–034, LAW-006 |
-| 033 | Recursos e energia operacional | 027, 040 |
-| 034 | Consciência situacional operacional | 027, 030–033, 042–043 |
-| 040 | Modelo de domínio | 020 |
+| 027 | Self — operational self-awareness | 011, 020, 040 |
+| 028 | Belief system and uncertainty | 03, 040–041 |
+| 029 | Relationships and preferences | 04, 028, 040–042 |
+| 030 | Signal system | 011, 021, 040, LAW-001 |
+| 031 | Operational needs | 020, 026, 030, 033, 040 |
+| 032 | Curiosity ruled | 028, 030–031, 033–034, LAW-006 |
+| 033 | Resources and operational energy | 027, 040 |
+| 034 | Operational situational awareness | 027, 030–033, 042–043 |
+| 040 | Domain Model | 020 |
 | 041 | World Model | 04, 040 |
-| 042 | Modelo temporal e validade | 040–041 |
-| 043 | Mind State e continuidade | 020, 024, 027–029, 040–042 |
+| 042 | Temporal model and validity | 040–041 |
+| 043 | Mind State and continuity | 020, 024, 027–029, 040–042 |
 | 045 | Aurora Kernel | 011, 035, 039–040, 043 |
 | 050 | Event Bus | LAW-007, 040, 045 |
-| 051 | Sistema de capacidades | 06, 045, 050 |
-| 052 | Missões, objetivos e tarefas | 05, 035, 040, 051 |
-| 02 | Núcleo cognitivo (orquestrador de implementação) | 00–01; refinado por 021–025 |
-| 03 | Memória | 01–02 |
-| 04 | Grafo de conhecimento | 03 |
-| 05 | Objetivos e planeamento | 02–03 |
-| 06 | Sistema de ferramentas | 01–02, 05 |
-| 07 | Personalidade e identidade | 01–03 |
-| 08 | Aprendizagem e reflexão | 02–07 |
-| 09 | Segurança | 01–08 |
-| 10 | API e eventos | 02–09 |
-| 11 | Interface de utilizador | 10 |
-| 12 | Implementação e operação | 09–11 |
-| 13 | Roadmap e aceitação | 00–12 |
-| 060 | SDK de plugins e extensões | 06, 09, 040 |
+| 051 | Capacity system | 06, 045, 050 |
+| 052 | Missions, objectives and tasks | 05, 035, 040, 051 |
+| 02 | Cognitive core (implementation orchestrator) | 00–01; refined by 021–025 |
+| 03 | Memory | 01–02 |
+| 04 | Knowledge graph | 03 || 05 | Objectives and planning | 02–03 |
+| 06 | Tool system | 01–02, 05 |
+| 07 | Personality and identity | 01–03 |
+| 08 | Learning and reflection | 02–07 |
+| 09 | Security | 01–08 |
+| 10 | API and events | 02–09 |
+| 11 | User interface | 10 |
+| 12 | Implementation and operation | 09–11 |
+| 13 | Roadmap and acceptance | 00–12 |
+| 060 | Plugins and Extensions SDK | 06, 09, 040 |
 | 090 | Architecture Review Gate | 000–060 |
-| 100 | Ordem de implementação | Architecture Freeze v1.0 |
-| 105 | Estratégia de testes | Leis, 090, 100 |
+| 100 | Implementation order | Architecture Freeze v1.0 |
+| 105 | Testing strategy | Laws, 090, 100 |
 | 110 | Coding Standard | 040, 050, 090, 100 |
 | 120 | Definition of Done | 100, 105, 110 |
 
-## Governação pós-freeze
+## Post-freeze governance
 
 - [Architecture Freeze v1.0](governance/architecture-freeze-v1.0.md)
 - [Architecture Review v1.0](reviews/architecture-review-v1.0.md)
-- [Matriz de dependências](reviews/dependency-matrix-v1.0.md)
+- [Dependency matrix](reviews/dependency-matrix-v1.0.md)
 - [ADRs](adr/README.md)
-- [Topologia de repositórios](governance/repository-topology.md)
+- [Repository topology](governance/repository-topology.md)
 - [Execution Trace VS-000](execution-traces/VS-000-message-response.md)
 - [Execution Trace VS-001 — Resurrection](execution-traces/VS-001-resurrection.md)
 - [Execution Trace VS-002 — Entity Birth + Self Model](execution-traces/VS-002-entity-birth-self-model.md)

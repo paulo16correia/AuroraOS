@@ -1,23 +1,23 @@
 # Aurora Platform — RFC 050: Event Bus
 
-**Estado:** Normativo · **Depende de:** LAW-007, RFC 040, 045
+**Status:** Normative · **Depends on:** LAW-007, RFC 040, 045
 
-## Objetivo
+## Objective
 
-Definir o Event Bus como a espinha dorsal de comunicação entre Kernel, Mind e Applications. O Bus transporta factos de domínio e sinais de controlo; não transporta segredos nem substitui armazenamento canónico.
+Define the Event Bus as the communication backbone between Kernel, Mind and Applications. The Bus carries domain facts and control signals; does not carry secrets or replace canonical storage.
 
-## Arquitetura
+## Architecture
 
 ```text
-Produtor → Outbox transacional → Event Bus → subscrição idempotente → consumidor
+Producer → Transactional Outbox → Event Bus → idempotent subscription → consumer
                  │                   │                 │
                  ▼                   ▼                 ▼
-              auditoria          retenção         Dead-letter queue
+retention audit Dead-letter queue
 
 MemoryCreated → Knowledge / Planner / Reflection / UI / Logs
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 DomainEvent
@@ -43,25 +43,24 @@ Bus.ack(delivery_id) -> Delivery
 Bus.replay(subscription_id, cursor) -> Delivery[]
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Produtores escrevem estado e outbox na mesma transação; publicação posterior é reexecutável.
-2. Consumidores são idempotentes, verificam esquema e não assumem ordem global entre agregados.
-3. Dados grandes/sensíveis usam referências autorizadas, não payloads abertos.
-4. Falhas repetidas vão para fila morta auditável, nunca são descartadas silenciosamente.
-5. O Bus não permite que subscritores obtenham permissões do produtor.
+1. Producers write state and outbox in the same transaction; subsequent publication is re-executable.
+2. Consumers are idempotent, schema check and do not assume global order between aggregates.
+3. Big/sensitive data uses authoritative references, not open payloads.
+4. Repeated failures go to auditable dead queue, never silently discarded.
+5. Bus does not allow subscribers to obtain permissions from the producer.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Evento duplicado:** consumidor ignora pelo `event_id`/chave de idempotência.
-- **Esquema novo:** consumidor incompatível pausa com diagnóstico; não interpreta campos desconhecidos permissivamente.
-- **Bus indisponível:** serviços aceitam apenas operações cuja outbox possa ser persistida; efeitos externos dependentes são adiados.
+- **Duplicate event:** consumer ignores by `event_id`/idempotence key.
+- **New scheme:** incompatible consumer pauses with diagnosis; does not interpret unknown fields permissively.
+- **Bus unavailable:** services only accept operations whose outbox can be persisted; dependent external effects are postponed.
 
-## Justificação
+## Justification
 
-Eventos permitem que `MemoryCreated` atualize índice, UI e auditoria sem acoplamento direto. O Bus cria uma história de causalidade que suporta recuperação e depuração.
+Events allow `MemoryCreated` to update index, UI and audit without direct coupling. Bus creates a causality story that supports recovery and debugging.
 
-## Expansões futuras
+## Future expansions
 
-Partições, retenção por classe de dados, federação entre instalações e fluxos de eventos analíticos isolados.
-
+Partitions, data class retention, cross-facility federation, and isolated analytic event streams.

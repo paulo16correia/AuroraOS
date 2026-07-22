@@ -1,14 +1,14 @@
-# ADR-016 — Esperas persistentes no Workflow Engine
+# ADR-016 — Persistent waits in the Workflow Engine
 
-**Estado:** aceite  
-**Data:** 2026-07-18
+**Status:** accepted
+**Date:** 2026-07-18
 
-## Decisão
+## Decision
 
-Representar esperas como estado persistente de `Task`, e não como processos bloqueados na memória. Uma aprovação reabre o ciclo e transita a task correspondente para `COMPLETED`.
+Represent waits as persistent state of `Task`, not as processes blocked in memory. An approval reopens the cycle and transitions the corresponding task to `COMPLETED`.
 
-## Consequências
+## Consequences
 
-- O Kernel pode reiniciar sem perder onde o workflow parou.
-- O Executor não tem responsabilidade sobre esperas nem dependências.
-- O VS-018 poderá acordar `WAIT_FOR_TIME` sem alterar o contrato de task.
+- The Kernel can restart without losing where the workflow left off.
+- The Executor has no responsibility for waits or dependencies.
+- VS-018 will be able to wake up `WAIT_FOR_TIME` without changing the task contract.

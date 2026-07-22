@@ -1,25 +1,25 @@
 # Aurora Platform — Execution Trace Specification: VS-001 Resurrection Test
 
-**Estado:** Autorizado por ADR-001  
-**Caso de utilização:** criar entidade → executar ciclo → shutdown → reiniciar → restaurar → continuar
+**Status:** Authorized by ADR-001
+**Use case:** create entity → cycle → shutdown → restart → restore → continue
 
-## Objetivo
+## Objective
 
-Provar que a Aurora é dona de estado além de uma execução ou sessão. VS-001 não introduz ferramentas, LLM externo ou conhecimento vetorial. Implementa apenas Entity Runtime Context, lifecycle persistente, Mind State mínimo e recuperação idempotente.
+Prove that Aurora owns state beyond an execution or session. VS-001 does not introduce tools, external LLM, or vector knowledge. It only implements Entity Runtime Context, persistent lifecycle, minimal Mind State and idempotent recovery.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 CreateEntity(entity_001, assistant-v1)
   → EntityCreated → EntityRuntimeContextLoaded
-  → VS-000("Olá") → Mind State persistido
+→ VS-000("Hello") → Mind State persisted
   → ShutdownEntity → SnapshotVerified → EntityStateChanged(STOPPED)
   → processo termina
   → StartEntity(entity_001) → SnapshotLoaded → EntityStateChanged(READY)
-  → VS-000("Quem sou eu?") → resposta baseada no contexto da entidade
+→ VS-000("Who am I?") → response based on entity context
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Entity
@@ -30,31 +30,30 @@ EntityRuntimeContext
   restored_at?, trace_id
 ```
 
-Todos os objetos criados pelo ciclo transportam `entity_id`. A relação obrigatória é `Entity → Session → Trace`; uma session pode expirar sem alterar a Entity.
+All objects created by the cycle carry `entity_id`. The required relationship is `Entity → Session → Trace`; a session can expire without changing the Entity.
 
-## Passos e eventos
+## Steps and events
 
-| Passo | Persistência | Evento |
+| Step | Persistence | Event |
 | --- | --- | --- |
-| Criar | `Entity(CREATED)` e Mind State inicial | `EntityCreated` |
-| Arrancar | lifecycle `RECOVERING → READY` | `EntityRuntimeLoaded`, `EntityStateChanged` |
-| Executar mensagem | VS-000 com `entity_id` | eventos VS-000 enriquecidos |
-| Encerrar | snapshot/Mind State + lifecycle `STOPPED` | `EntityShutdown`, `EntityStateChanged` |
-| Restaurar | carregar Entity/Mind State e reconciliar | `EntityRestored`, `EntityStateChanged` |
-| Continuar | novo Signal numa nova Session | `SignalReceived` com mesmo `entity_id` |
+| Create | `Entity(CREATED)` and initial Mind State | `EntityCreated` |
+| Start | lifecycle `RECOVERING → READY` | `EntityRuntimeLoaded`, `EntityStateChanged` |
+| Execute message | VS-000 with `entity_id` | enriched VS-000 events |
+| Close | snapshot/Mind State + lifecycle `STOPPED` | `EntityShutdown`, `EntityStateChanged` |
+| Restore | load Entity/Mind State and reconcile | `EntityRestored`, `EntityStateChanged` |
+| Continue | new Signal in a new Session | `SignalReceived` with same `entity_id` |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. A primeira execução cria Entity e Memory ancorada na Entity, Session, Signal e Observation.
-2. Shutdown persiste um Mind State verificável; nenhum ciclo aberto fica silenciosamente perdido.
-3. Um novo processo recupera a mesma `entity_id`, `genome_id`, memória e historial sem depender da Session anterior.
-4. Todos os eventos/traces dos dois processos mostram a mesma `entity_id` e sessões distintas.
-5. “Quem sou eu?” devolve uma resposta determinística que identifica a Entity, não inventa consciência ou biografia.
-6. Repetir start/shutdown é idempotente e auditável.
+1. The first run creates Entity and Memory anchored to Entity, Session, Signal and Observation.
+2. Shutdown persists a verifiable Mind State; no open cycle is silently lost.
+3. A new process recovers the same `entity_id`, `genome_id`, memory and history without depending on the previous Session.
+4. All events/traces from both processes show the same `entity_id` and different sessions.
+5. “Who am I?” returns a deterministic response that identifies the Entity, does not invent consciousness or biography.
+6. Repeating start/shutdown is idempotent and auditable.
 
-## Falhas
+## Failures
 
-- Snapshot em falta/corrompido: lifecycle fica `RECOVERING`/`FAILED`; não entra em `READY`.
-- `entity_id` desconhecida em modo restore: erro seguro sem criar entidade implicitamente.
-- Mind State incompatível: aplicar migração aprovada ou abortar com diagnóstico.
-
+- Missing/corrupted snapshot: lifecycle becomes `RECOVERING`/`FAILED`; does not enter `READY`.
+- `entity_id` unknown in restore mode: safe error without creating entity implicitly.
+- Incompatible Mind State: apply approved migration or abort with diagnosis.

@@ -1,13 +1,13 @@
 # Aurora OS — Execution Trace Specification: VS-006 Controlled Internal Execution Loop
 
-**Estado:** Autorizado por ADR-005  
-**Caso de utilização:** pedido explícito → Plan → Task interna → Observation → progresso do Goal, sem efeitos externos
+**Status:** Authorized by ADR-005
+**Use case:** explicit request → Plan → internal Task → Observation → Goal progress, without external effects
 
-## Objetivo
+## Objective
 
-Demonstrar progresso cognitivo verificável sem conceder poder externo. VS-006 acrescenta a camada `Task` e termina depois de uma execução interna controlada.
+Demonstrate verifiable cognitive progress without granting external power. VS-006 adds the `Task` layer and ends after a controlled internal execution.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 User: "Como podes ajudar-me?"
@@ -23,7 +23,7 @@ User: "Como podes ajudar-me?"
 shutdown → MindState(task_refs[]) → restore → TaskLoaded
 ```
 
-## Contrato mínimo
+## Minimum contract
 
 ```text
 Task
@@ -37,34 +37,34 @@ Task
   version, created_at, updated_at
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. A Task DEVE referenciar um Plan e Goal pertencentes à mesma Entity.
-2. VS-006 só pode criar `INTERNAL_ANALYSIS`; qualquer outro tipo falha de forma explícita.
-3. A transição é estrita: `READY → RUNNING → COMPLETED|FAILED`. Uma Task concluída não pode ser reexecutada.
-4. A Task não pode criar `Action`, `ToolCall`, `CapabilityRequest`, chamada de rede, escrita de ficheiro ou agendamento.
-5. Cada Task concluída DEVE gerar evidência para `GoalEvaluation` depois de Observation e Reflection.
-6. Pedido externo sem capability, como “Envia um email por mim”, é analisado internamente e termina sem efeito externo.
-7. Snapshot e restauro preservam as referências das Tasks, incluindo Tasks `COMPLETED`.
+1. The Task MUST reference a Plan and Goal belonging to the same Entity.
+2. VS-006 can only create `INTERNAL_ANALYSIS`; any other type fails explicitly.
+3. The transition is strict: `READY → RUNNING → COMPLETED|FAILED`. A completed Task cannot be re-executed.
+4. Task cannot create `Action`, `ToolCall`, `CapabilityRequest`, network call, file write or schedule.
+5. Each completed Task MUST generate evidence for `GoalEvaluation` after Observation and Reflection.
+6. External request without capability, such as “Send an email for me”, is analyzed internally and ends without external effect.
+7. Snapshot and restore preserve Task references, including Tasks `COMPLETED`.
 
-## Eventos, trace e erros
+## Events, traces and errors
 
-| Situação | Evento | Trace | Resultado |
+| Situation | Event | Trace | Result |
 | --- | --- | --- | --- |
-| Plan novo | `TaskCreated` | `TASK(CREATED)` | Task `READY` persistida. |
-| Execução interna | `TaskStarted` | `TASK(RUNNING)` | Sem saída para o mundo exterior. |
-| Conclusão | `TaskCompleted` | `TASK_COMPLETED` | Resultado e versão persistidos. |
-| Restauro | `TaskLoaded` | `TASK(LOADED)` | Não recria nem reexecuta. |
-| Tipo inválido/transição inválida | nenhum efeito | erro controlado | Task preservada para auditoria. |
+| New plan | `TaskCreated` | `TASK(CREATED)` | Task `READY` persisted. |
+| Internal execution | `TaskStarted` | `TASK(RUNNING)` | No exit to the outside world. |
+| Conclusion | `TaskCompleted` | `TASK_COMPLETED` | Result and version persisted. |
+| Restoration | `TaskLoaded` | `TASK(LOADED)` | Does not recreate or rerun. |
+| Invalid type/invalid transition | no effect | error controlled | Task preserved for audit. |
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Nascimento de Entity continua a criar Goal `ASSIST_USER`.
-2. “Como podes ajudar-me?” cria Plan e Task, e completa a Task interna.
-3. Shutdown/restauro preserva a Task com o mesmo identificador, estado e resultado.
-4. “Envia um email por mim” pode criar Task interna, mas não cria Action, ToolCall nem CapabilityRequest; o trace mantém `CAPABILITY(NOT_REQUIRED)`.
-5. A suite VS-000–VS-005 permanece verde.
+1. Entity Birth continues to create Goal `ASSIST_USER`.
+2. “How can you help me?” creates Plan and Task, and completes the internal Task.
+3. Shutdown/restore preserves the Task with the same identifier, state and result.
+4. “Send an email for me” can create internal Task, but does not create Action, ToolCall or CapabilityRequest; the trace maintains `CAPABILITY(NOT_REQUIRED)`.
+5. Suite VS-000–VS-005 remains green.
 
-## Limites deliberados
+## Deliberate limits
 
-Não existem executor externo, ferramentas, capability registry, scheduler, actions simuladas, retry, paralelismo ou aprovação de Task. VS-006 mede progresso interno, não autorização para mudar o mundo.
+There are no external executor, tools, capability registry, scheduler, simulated actions, retry, parallelism or Task approval. VS-006 measures internal progress, not authorization to change the world.

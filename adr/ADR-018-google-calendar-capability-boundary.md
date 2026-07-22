@@ -1,13 +1,13 @@
-# ADR-018 — Calendar Create Event como capability aprovada
+# ADR-018 — Calendar Create Event as approved capability
 
-## Contexto
+## Context
 
-O provider Google Calendar já autentica através de OAuth local, mas um provider não deve ser invocado diretamente pelo Kernel nem por uma proposta de LLM.
+The Google Calendar provider already authenticates through local OAuth, but a provider should not be invoked directly by the Kernel or by an MCP tool call.
 
-## Decisão
+## Decision
 
-Introduzir `CALENDAR_CREATE_EVENT` como capability externa própria. A criação exige uma policy ativa, um `CalendarEventDraft` válido e uma `ApprovalRequest` persistida. O `CalendarCreateEventExecutor` é o único adaptador que pode chamar `GoogleCalendarProvider.create_event`.
+Enter `CALENDAR_CREATE_EVENT` as your own external capability. Creation requires an active policy, a valid `CalendarEventDraft` and a persisted `ApprovalRequest`. `CalendarCreateEventExecutor` is the only adapter that can call `GoogleCalendarProvider.create_event`.
 
-## Consequências
+## Consequences
 
-O fluxo é auditável, recuperável e idempotente. A primeira interface de linguagem exige valores ISO 8601 explícitos, preservando a fronteira entre interpretação de linguagem natural e efeitos no calendário. A consulta `freeBusy` será uma capability de leitura futura, com policy própria.
+The stream is auditable, recoverable, and idempotent. The first language interface requires explicit ISO 8601 values, preserving the boundary between natural language interpretation and calendar effects. The `freeBusy` query will be a future reading capability, with its own policy.

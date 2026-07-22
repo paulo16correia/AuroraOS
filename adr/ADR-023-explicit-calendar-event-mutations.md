@@ -1,35 +1,35 @@
-# ADR-023 - Mutações Calendar requerem identificador explícito
+#ADR-023 - Calendar mutations require explicit identifier
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Contexto
+## Context
 
-Alterar ou eliminar um evento por correspondência textual é perigoso: podem
-existir várias reuniões com o mesmo título, hora semelhante ou participantes
-iguais. A interpretação de linguagem natural não é uma autoridade suficiente
-para escolher um objeto remoto destrutivo.
+Changing or deleting an event by textual correspondence is dangerous: it can
+there are several meetings with the same title, similar time or participants
+equal. Natural language interpretation is not a sufficient authority
+to choose a destructive remote object.
 
-## Decisão
+## Decision
 
-O VS-025 exige `Evento: <provider_event_id>` em todas as mutações Calendar.
-Para update, a primeira versão também exige título, início e fim completos.
-O Kernel persiste esta intenção como `CalendarEventMutation`, prepara-a,
-obtém Approval e delega apenas a chamada aprovada ao provider.
+VS-025 requires `Evento: <provider_event_id>` on all Calendar mutations.
+For update, the first version also requires a full title, beginning and end.
+The Kernel persists this intent as `CalendarEventMutation`, prepares it,
+gets Approval and delegates only the approved call to the provider.
 
-## Consequências
+## Consequences
 
-- Aumenta a segurança e a auditabilidade de operações destrutivas.
-- Evita pesquisas aproximadas e alterações acidentais.
-- Obriga a UI futura a listar eventos e apresentar os seus identificadores.
-- Mantém aberta uma evolução futura para `EVENT_RESOLUTION`, desde que essa
-  capability produza uma escolha explícita confirmada pelo utilizador.
+- Increases security and auditability of destructive operations.
+- Prevents approximate searches and accidental changes.
+- Forces the future UI to list events and display their identifiers.
+- Keeps open a future evolution for `EVENT_RESOLUTION`, as long as this
+  capability produces an explicit choice confirmed by the user.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-- **Escolher o primeiro evento com título semelhante:** não determinístico e
-  inseguro.
-- **Delegar a escolha ao LLM:** o modelo não é fonte de verdade do estado
-  remoto.
-- **Permitir update parcial silencioso:** torna difícil explicar o estado
-  final e aumenta o risco de remover dados de evento.
+- **Choose the first event with a similar title:** non-deterministic and
+  insecure.
+- **Delegate the choice to the LLM:** the model is not a source of truth for the state
+  remote.
+- **Allow silent partial update:** makes it difficult to explain the status
+  final and increases the risk of removing event data.

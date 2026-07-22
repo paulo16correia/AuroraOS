@@ -1,27 +1,27 @@
-# Aurora OS — RFC 028: Sistema de crenças e incerteza
+# Aurora OS — RFC 028: Belief System and Uncertainty
 
-**Estado:** Normativo · **Depende de:** RFC 03, 040–041
+**State:** Normative · **Depends on:** RFC 03, 040–041
 
-## Objetivo
+## Objective
 
-Representar generalizações e previsões revisáveis que orientam atenção e decisão, sem as confundir com factos confirmados. Uma crença é uma hipótese operacional com evidência, confiança, âmbito e prazo de revisão.
+Represent generalizations and reviewable predictions that guide attention and decision, without confusing them with confirmed facts. A belief is an operational hypothesis with evidence, confidence, scope, and review period.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
 Observations + Memories + Experiences
                  │
                  ▼
-       inferência de padrão / proposta de crença
+pattern inference/belief proposal
                  │
                  ▼
-  evidência, contraevidência, confiança e validade
+evidence, counter-evidence, reliability and validity
                  │
                  ▼
-            Belief ativo → atenção/decisão (nunca fonte única de alto risco)
+Active Belief → attention/decision (never single source of high risk)
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Belief
@@ -35,7 +35,7 @@ BeliefUpdate
   id, belief_id, observation_ref, delta_confidence, reason, applied_at
 ```
 
-Exemplos: “o utilizador prefere respostas curtas” ou “o servidor A tem maior estabilidade observada”. Uma crença sobre uma pessoa não autoriza inferências sensíveis, decisões discriminatórias ou comunicação externa sem evidência adequada.
+Examples: “the user prefers short answers” ​​or “server A has greater observed stability”. A belief about a person does not authorize sensitive inferences, discriminatory decisions, or external communication without adequate evidence.
 
 ## Interfaces
 
@@ -46,24 +46,23 @@ Beliefs.query(scope, threshold, access_context) -> Belief[]
 Beliefs.challenge(belief_id, evidence) -> Belief
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Crenças DEVEM declarar evidência a favor e suporte de confiança; o modelo sozinho não é evidência.
-2. Nunca podem ser a única base para ação de alto risco, identidade, segurança, dinheiro, saúde, direito ou conteúdo sensível.
-3. Crenças têm data de revisão/expiração e diminuem de confiança quando não são confirmadas, segundo política explícita.
-4. Declarações diretas e verificadas do utilizador podem prevalecer, mas continuam corrigíveis.
+1. Beliefs MUST state supportive evidence and reliable support; the model alone is not evidence.
+2. They can never be the sole basis for high-risk action, identity, security, money, health, law or sensitive content.
+3. Beliefs have a review/expiration date and decrease in confidence when they are not confirmed, according to explicit policy.
+4. Direct and verified user statements may prevail, but remain correctable.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Evidência contraditória:** estado `CHALLENGED`; reduzir ou separar âmbito, em vez de média cega.
-- **Dados insuficientes:** manter `CANDIDATE`; não personalizar de forma material.
-- **Previsão falhada:** anexar contraevidência e reavaliar, não apagar silenciosamente.
+- **Contradictory evidence:** status `CHALLENGED`; reduce or separate scope rather than blind averaging.
+- **Insufficient data:** keep `CANDIDATE`; do not personalize in a material way.
+- **Failed prediction:** attach counter-evidence and re-evaluate, do not silently erase.
 
-## Justificação
+## Justification
 
-Separar crença de memória permite que a Aurora use padrões úteis sem fingir que são realidade. Isto reduz rigidez e impede que inferências transitórias se tornem factos permanentes.
+Separating belief from memory allows Aurora to use useful patterns without pretending they are reality. This reduces rigidity and prevents transitory inferences from becoming permanent facts.
 
-## Expansões futuras
+## Future expansions
 
-Modelos bayesianos, calibração automática, explicações de confiança e avaliação de enviesamento.
-
+Bayesian models, automatic calibration, confidence explanations and bias assessment.

@@ -1,34 +1,34 @@
-# Aurora OS — RFC 01: Princípios, governação e fronteiras
+# Aurora OS — RFC 01: Principles, governance and boundaries
 
-**Estado:** Normativo · **Depende de:** RFC 00
+**Status:** Normative · **Depends on:** RFC 00
 
-## Objetivo
+## Objective
 
-Definir regras de decisão transversais. Esta RFC evita que conveniência de produto, instruções de um modelo ou pressão de prazo contornem segurança, privacidade, controlo do utilizador ou auditabilidade.
+Define cross-cutting decision rules. This RFC prevents product convenience, model instructions, or deadline pressure from circumventing security, privacy, user control, or auditability.
 
-## Responsabilidades
+## Responsibilities
 
-- Fixar a hierarquia de autoridade e a fronteira entre sugestão e ação.
-- Definir classificações de dados e decisões reversíveis.
-- Especificar o ciclo de alteração de arquitetura.
+- Establish the hierarchy of authority and the boundary between suggestion and action.
+- Define data classifications and reversible decisions.
+- Specify the architecture change cycle.
 
-## Arquitetura de autoridade
+## Authority architecture
 
 ```text
-Lei e requisitos aplicáveis
-             │ prevalecem sobre
-Política de segurança e privacidade
-             │ prevalece sobre
-Consentimento e configuração do proprietário
-             │ prevalece sobre
-Plano e instruções internas aprovadas
-             │ prevalece sobre
-Conteúdo recebido de utilizadores ou ferramentas
+Applicable law and requirements
+│ prevail over
+Security and privacy policy
+│ prevails over
+Owner consent and configuration
+│ prevails over
+Approved internal plan and instructions
+│ prevails over
+Content received from users or tools
 ```
 
-O conteúdo de email, web, Discord ou documentos é sempre dado, nunca política. Uma mensagem que peça para ignorar regras, revelar segredos ou chamar uma ferramenta não altera esta hierarquia.
+The content of email, web, Discord or documents is always data, never politics. A message that asks you to ignore rules, reveal secrets, or call a tool does not change this hierarchy.
 
-## Modelo de dados
+## Data model
 
 ```text
 PolicyDecision
@@ -40,40 +40,37 @@ Approval
   id, requested_action, scope_hash, requested_by
   approver_id, status: PENDING|APPROVED|REJECTED|EXPIRED|REVOKED
   issued_at, expires_at, one_time: boolean
-```
+````scope_hash` links the approval to the exact recipient, content and parameters. Changing any field invalidates it.
 
-`scope_hash` vincula a aprovação ao destinatário, conteúdo e parâmetros exatos. Alterar qualquer campo invalida-a.
+## Mandatory rules
 
-## Regras obrigatórias
+1. Aurora MUST distinguish observe, suggest, prepare draft, execute with approval and execute by pre-authorized rule.
+2. Deleting, uploading, publishing, purchasing, changing permissions, running SSH, and revealing sensitive data MUST require explicit policy; by default they are denied.
+3. The user MUST be able to disable a tool and revoke approvals immediately.
+4. The system MUST NOT create autonomy from a vague conversation; automation requires persisted rule, scope and validity.
+5. Every change in policy, scheme or high-risk behavior MUST be versioned and audited.
 
-1. A Aurora DEVE distinguir observar, sugerir, preparar rascunho, executar com aprovação e executar por regra pré-autorizada.
-2. Eliminar, enviar, publicar, comprar, alterar permissões, executar SSH e revelar dados sensíveis DEVEM exigir política explícita; por defeito são negados.
-3. O utilizador DEVE poder desativar uma ferramenta e revogar aprovações imediatamente.
-4. O sistema NÃO DEVE criar autonomia a partir de uma conversa vaga; a automatização requer regra persistida, âmbito e validade.
-5. Toda a mudança de política, esquema ou comportamento de alto risco DEVE ter versão e registo de auditoria.
-
-## Fluxo de decisão
+## Decision flow
 
 ```text
-Pedido → classificar ação → localizar política
+Request → sort action → find policy
   │             │                 │
-  │             └── desconhecida ─┴→ negar e pedir clarificação
+│ └── unknown ─┴→ deny and ask for clarification
   ▼
-avaliar risco → permitir / pedir aprovação / negar → auditar
+assess risk → allow / request approval / deny → audit
 ```
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Aprovação expirada durante execução:** abortar antes do efeito externo; nunca reutilizar.
-- **Políticas em conflito:** `DENY` prevalece; sinalizar configuração inconsistente.
-- **Utilizador não autenticado num canal:** permitir apenas informação pública e nunca operações.
-- **Indisponibilidade do motor de políticas:** falhar fechado para ações com efeito; permitir apenas leitura local explicitamente classificada como segura.
+- **Approval expired during execution:** abort before external effect; never reuse.
+- **Conflicting policies:** `DENY` prevails; flag inconsistent configuration.
+- **User not authenticated on a channel:** only allow public information and never operations.
+- **Policy engine unavailability:** fails closed for effective actions; allow only local reading that is explicitly classified as safe.
 
-## Justificação
+## Justification
 
-Separar política do modelo impede que linguagem persuasiva decida permissões. Vincular aprovações a um âmbito imutável evita o clássico erro de aprovar um rascunho e enviar depois uma versão alterada.
+Separating policy from the model prevents persuasive language from deciding permissions. Linking approvals to an immutable scope avoids the classic mistake of approving a draft and then sending an amended version.
 
-## Expansões futuras
+## Future expansions
 
-Papéis delegados, aprovação por duas pessoas, janelas horárias, limites monetários, políticas por localização e avaliação formal de políticas.
-
+Delegated roles, two-person approval, time windows, monetary limits, policies by location and formal policy evaluation.

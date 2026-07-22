@@ -1,26 +1,26 @@
-# Aurora OS — RFC 06: Sistema de ferramentas e conectores
+# Aurora OS — RFC 06: System Tools and Connectors
 
-**Estado:** Normativo · **Depende de:** RFC 01–02, 05
+**State:** Normative · **Depends on:** RFC 01–02, 05
 
-## Objetivo
+## Objective
 
-Oferecer capacidades externas por contratos uniformes, isolados e revogáveis. Uma ferramenta é uma capacidade específica, não acesso genérico a um sistema.
+Offer external capabilities through uniform, isolated and revocable contracts. A tool is a specific capability, not generic access to a system.
 
-## Arquitetura
+## Architecture
 
 ```text
-Thought/Task → catálogo de capacidades → validação de esquema
+Thought/Task → capabilities catalog → schema validation
                          │                       │
                          ▼                       ▼
-                 decisão de política ← pedido de aprovação
+policy decision ← approval request
                          │
                          ▼
-                executor isolado → conector → serviço externo
+isolated executor → connector → external service
                          │              │
                          └→ auditoria ← resultado normalizado
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 ToolManifest
@@ -42,7 +42,7 @@ ToolResult
   retryable: boolean, user_safe_summary
 ```
 
-## Interface obrigatória
+## Mandatory interface
 
 ```text
 describe() -> ToolManifest
@@ -52,28 +52,27 @@ cancel(call_id) -> CancelResult
 reconcile(call_id) -> ToolResult
 ```
 
-O conector recebe `secret_handle`, não valor do segredo. O executor resolve-o num ambiente mínimo e não o serializa para logs.
+The connector receives `secret_handle`, not the secret value. The executor resolves it in a minimal environment and does not serialize it to logs.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada capacidade DEVE ser explicitamente declarada; não existe `shell.execute_anything` nem acesso implícito.
-2. Ferramentas de escrita DEVEM ter chave de idempotência e reconciliação após falha.
-3. O resultado externo DEVE ser tratado como não confiável até validação de esquema.
-4. Entrada, saída, tempo e custo DEVEM respeitar limites configurados.
-5. Um conector NÃO DEVE reutilizar credenciais ou permissões de outro conector.
+1. Each capability MUST be explicitly stated; there is no `shell.execute_anything` nor implicit access.
+2. Writing tools MUST have idempotency and failover key.
+3. The external result MUST be treated as untrusted until schema validation.
+4. Entry, exit, time and cost MUST respect configured limits.
+5. A connector MUST NOT reuse credentials or permissions from another connector.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Timeout após envio remoto:** marcar `UNKNOWN`, reconciliar pelo identificador externo; nunca reenviar automaticamente.
-- **Esquema de serviço alterado:** desativar capacidade afetada e alertar operador.
-- **Limite de taxa:** adiar em fila com `retry_after`; não fazer repetição apertada.
-- **Browser com conteúdo hostil:** tratar texto de página como dado e bloquear pedidos de permissões não planeadas.
+- **Timeout after remote sending:** mark `UNKNOWN`, reconcile by external identifier; never resend automatically.
+- **Change service scheme:** disable affected capacity and alert operator.
+- **Rate limit:** defer in queue with `retry_after`; Don't do tight repetitions.
+- **Browser with hostile content:** treat page text as data and block unplanned permission requests.
 
-## Justificação
+## Justification
 
-Contratos reduzidos limitam raio de explosão e tornam auditoria possível. Estado `UNKNOWN` é essencial: em sistemas distribuídos, “não recebemos resposta” não significa “não aconteceu”.
+Reduced contracts limit blast radius and make auditing possible. `UNKNOWN` state is essential: in distributed systems, “we did not receive a response” does not mean “it did not happen”.
 
-## Expansões futuras
+## Future expansions
 
-Sandbox de browser, capacidades compostas, marketplace assinado, testes de conformidade de conectores e delegação por OAuth de curta duração.
-
+Browser sandbox, composite capabilities, signed marketplace, connector compliance testing, and short-lived OAuth delegation.

@@ -1,44 +1,34 @@
-# Aurora OS — RFC 041: World Model — representação da realidade operacional
+# Aurora OS — RFC 041: World Model — representation of operational reality
 
-**Estado:** Normativo · **Depende de:** RFC 04, 040
+**State:** Normative · **Depends on:** RFC 04, 040
 
-## Objetivo
+## Objective
 
-Manter uma representação temporal, evidenciada e consultável da realidade relevante para a Aurora. O World Model não guarda frases isoladas: modela entidades, atributos, estado, histórico, relações, eventos e capacidades observadas.
+Maintain a temporal, evidenced and consultable representation of the reality relevant to Aurora. The World Model does not store isolated sentences: it models entities, attributes, state, history, relationships, events and observed capabilities.
 
-## Arquitetura
-
-```text
-Observação / memória confirmada / importação autorizada
+## Architecture```text
+Observation / memory confirmed / import authorized
                           │
                           ▼
-                normalização e resolução de entidade
+normalization and entity resolution
                           │
                           ▼
-            nó + aresta + validade + proveniência
+node + edge + validity + provenance
                           │
                           ▼
                 World Model versionado
                           │
                           ▼
-   atenção, planeamento, decisão e explicação baseada em evidência
-```
+attention, planning, decision and evidence-based explanation
+```## Reality Model```text
+Person ─has→ Email account ─receives→ Message
+Person ─participates_in→ Discord Server ─contains→ Channel
+Person ─works_in→ Project ─uses→ VPS ─runs→ Service
+Service ─is_deploy_de→ Repository ─has→ Credential (vault reference)
+Project ─has→ Objective ─decomposed_into→ Task
+```A relationship asserts only what its evidence allows. “The person has Discord” does not imply that Aurora can read that Discord; Access is a distinct relationship from permission.
 
-## Modelo de realidade
-
-```text
-Pessoa ─tem→ Conta de email ─recebe→ Mensagem
-Pessoa ─participa_em→ Servidor Discord ─contém→ Canal
-Pessoa ─trabalha_em→ Projeto ─usa→ VPS ─corre→ Serviço
-Serviço ─é_deploy_de→ Repositório ─tem→ Credencial (referência de cofre)
-Projeto ─tem→ Objetivo ─decomposto_em→ Tarefa
-```
-
-Uma relação afirma apenas o que a sua evidência permite. “A pessoa tem Discord” não implica que a Aurora possa ler esse Discord; acesso é uma relação distinta de permissão.
-
-## Estruturas de dados
-
-```text
+## Data structures```text
 WorldAssertion
   id, subject_ref, predicate, object_ref|literal
   evidence_refs[], confidence, valid_from, valid_to
@@ -50,36 +40,30 @@ EntityResolution
 
 WorldModelVersion
   id, mind_id, parent_version, change_set_refs[], status: DRAFT|ACTIVE|ROLLED_BACK
-```
-
-## Interfaces
-
-```text
+```## Interfaces```text
 World.observe(observation_id) -> WorldAssertion[]
 World.resolve(entity_candidate) -> EntityResolution
 World.query(pattern, as_of, access_context) -> Subgraph
 World.reconcile(version_id, evidence) -> WorldModelVersion
-```
+```## Mandatory rules
 
-## Regras obrigatórias
+1. Every statement MUST separate `observed_at` from `asserted_at` and be queryable “as of”.
+2. Identity of person, account and resource is only merged after resolution rule and sufficient evidence.
+3. Permissions, secrets and effective access are distinct objects of property and social relationship.
+4. The World Model MUST support ignorance: absence of an edge does not prove absence in the world.
+5. A tool can create `Observation`, but never a `CURRENT` assertion without validation.
 
-1. Toda a afirmação DEVE separar `observed_at` de `asserted_at` e ser consultável “à data de”.
-2. Identidade de pessoa, conta e recurso só é fundida após regra de resolução e evidência suficiente.
-3. Permissões, segredos e acesso efetivo são objetos distintos de propriedade e relação social.
-4. O World Model DEVE suportar desconhecimento: ausência de aresta não prova ausência no mundo.
-5. Uma ferramenta pode criar `Observation`, mas nunca uma asserção `CURRENT` sem validação.
+## Limit and error cases
 
-## Casos limite e erro
+- **Email or Discord reassociated:** ends the validity of the previous relationship; Don't rewrite history.
+- **Contradictory resource:** keep parallel statements `DISPUTED`, do not choose based on text popularity.
+- **External entity deleted:** mark observation/state as inaccessible, without deleting permitted historical evidence.
+- **Partial import:** create version `DRAFT`; do not make it a source for decisions until validation is complete.
 
-- **Email ou Discord reassociado:** encerrar validade da relação anterior; não reescrever história.
-- **Recurso contraditório:** manter afirmações paralelas `DISPUTED`, não escolher por popularidade do texto.
-- **Entidade externa apagada:** marcar observação/estado como inacessível, sem apagar provas históricas permitidas.
-- **Importação parcial:** criar versão `DRAFT`; não a tornar fonte para decisões até validação completar.
+## Justification
 
-## Justificação
+The world model makes it possible to plan on operational reality (“which VPS runs this service?”) instead of searching for similar phrases. Temporality and provenance prevent the representation from appearing more certain than it is.
 
-O modelo do mundo torna possível planear sobre realidade operacional (“qual VPS corre este serviço?”) em vez de procurar frases parecidas. Temporalidade e proveniência impedem que a representação pareça mais certa do que é.
+## Future expansions
 
-## Expansões futuras
-
-Estado de inventário, gémeos digitais de infraestrutura, simulação de impacto, fontes verificadas e regras declarativas de consistência.
+Inventory status, infrastructure digital twins, impact simulation, verified sources and declarative consistency rules.

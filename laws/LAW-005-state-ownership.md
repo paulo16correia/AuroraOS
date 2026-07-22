@@ -1,16 +1,15 @@
-# LAW-005 — Todo o estado tem dono, ciclo de vida e fronteira
+# LAW-005 — Every state has an owner, life cycle and border
 
-## Enunciado
+## Statement
 
-Cada objeto persistente ou temporário deve declarar quem o possui, onde vive, como nasce, como evolui, como termina e quem o pode ler/escrever.
+Each persistent or temporary object must declare who owns it, where it lives, how it is born, how it evolves, how it ends and who can read/write it.
 
-## Controlo verificável
+## Verifiable control
 
-- O modelo de domínio exige `tenant_id`, origem, estado, versão, retenção/TTL e política de acesso.
-- Não são permitidas tabelas, caches ou filas sem proprietário e contrato de retenção.
-- Objetos temporários expiram; objetos persistentes têm estratégia de revisão, arquivo ou eliminação.
+- Domain model requires `tenant_id`, origin, state, version, retention/TTL, and access policy.
+- Tables, caches or queues without an owner and retention agreement are not allowed.
+- Temporary objects expire; Persistent objects have review, archive, or purge strategy.
 
-## Justificação
+## Justification
 
-Esta Lei impede “estado órfão”, o principal mecanismo pelo qual sistemas de agentes se tornam impossíveis de depurar ou apagar corretamente.
-
+This Act prevents “orphan status,” the primary mechanism by which agent systems become impossible to properly debug or erase.

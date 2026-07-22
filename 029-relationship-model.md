@@ -1,25 +1,25 @@
-# Aurora OS — RFC 029: Modelo de relações e preferências
+# Aurora OS — RFC 029: Model of relationships and preferences
 
-**Estado:** Normativo · **Depende de:** RFC 04, 028, 040–042
+**State:** Normative · **Depends on:** RFC 04, 028, 040–042
 
-## Objetivo
+## Objective
 
-Modelar relações entre pessoas, organizações, contas, projetos e recursos; e distinguir essas relações de preferências operacionais do utilizador. O sistema deve saber “quem se relaciona com quem” sem inferir intimidade, autoridade ou acesso não demonstrados.
+Model relationships between people, organizations, accounts, projects and resources; and distinguish these relationships from the user's operational preferences. The system must know “who has a relationship with whom” without inferring undemonstrated intimacy, authority or access.
 
-## Arquitetura
+## Architecture
 
 ```text
-Entidades do World Model + evidência temporal
+World Model entities + temporal evidence
                     │
         ┌───────────┴────────────┐
         ▼                        ▼
  RelationshipAssertion      Preference
         │                        │
         ▼                        ▼
- grafo/World Model       decisão, estilo e recomendação
+graph/World Model decision, style and recommendation
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 RelationshipAssertion
@@ -34,7 +34,7 @@ Preference
   review_at, consent_required
 ```
 
-Relações podem ser familiares, profissionais, contratuais, de pertença, dependência, contacto ou propriedade. `authority_scope` é sempre explícito: “é cliente” não dá autorização para agir em nome da pessoa. Preferências incluem ferramenta, formato, horário, tom ou opção técnica; não definem personalidade da Aurora.
+Relationships can be family, professional, contractual, belonging, dependency, contact or property. `authority_scope` is always explicit: “you are a client” does not give authorization to act on the person’s behalf. Preferences include tool, format, time, tone, or technical choice; They do not define Aurora's personality.
 
 ## Interfaces
 
@@ -46,24 +46,23 @@ Preferences.infer(candidate) -> Preference
 Preferences.resolve(owner, context) -> Preference[]
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Relação, permissão e identidade são objetos separados; nenhum é derivado implicitamente de outro.
-2. Preferências inferidas não podem acionar compras, comunicação externa, dados sensíveis ou alterações persistentes sem confirmação.
-3. Relações de terceiros só são armazenadas se relevantes, autorizadas e sujeitas a retenção proporcional.
-4. Histórico temporal deve preservar início/fim; reatribuir uma relação não reescreve o passado.
+1. Relationship, permission and identity are separate objects; none is implicitly derived from another.
+2. Inferred preferences cannot trigger purchases, external communications, sensitive data, or persistent changes without confirmation.
+3. Third party relationships are only stored if relevant, authorized and subject to proportional retention.
+4. Temporal history must preserve beginning/end; reassigning a relationship does not rewrite the past.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Duas pessoas com o mesmo nome:** não criar relação até resolução de entidade concluir.
-- **Preferência explícita contradiz inferida:** explícita prevalece e a inferida é `REJECTED`.
-- **Relação expira:** remove-se de decisões atuais, mas conserva-se evidência histórica segundo política.
+- **Two people with the same name:** do not create a relationship until entity resolution is completed.
+- **Explicit preference contradicts inferred:** explicit prevails and the inferred is `REJECTED`.
+- **Relation expires:** removes current decisions, but preserves historical evidence according to policy.
 
-## Justificação
+## Justification
 
-Relações tornam o World Model socialmente útil; preferências tornam decisões pessoais sem converter hábitos em traços de personalidade ou direitos de ação.
+Relationships make the World Model socially useful; preferences make decisions personal without converting habits into personality traits or rights of action.
 
-## Expansões futuras
+## Future expansions
 
-Relações de equipa, delegação formal, preferências contextuais, importação consentida de contactos e políticas de privacidade por relação.
-
+Team relationships, formal delegation, contextual preferences, consented import of contacts and privacy policies per relationship.

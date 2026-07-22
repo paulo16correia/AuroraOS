@@ -1,5 +1,5 @@
-# ADR-017 — Eventos persistentes desbloqueiam workflows
+# ADR-017 — Persistent events unblock workflows
 
-**Estado:** aceite
+**Status:** accepted
 
-Eventos são objetos persistidos pelo Kernel. O Event Engine só transforma tasks `WAITING_FOR_EVENT` em `READY`; não executa capabilities nem decide políticas.
+Events are objects persisted by the Kernel. The Event Engine only transforms `WAITING_FOR_EVENT` tasks into `READY`; it does not execute capabilities or decide policies.

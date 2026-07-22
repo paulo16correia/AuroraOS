@@ -1,17 +1,17 @@
-# VS-023 — Compensação de workflow
+# VS-023 — Workflow Compensation
 
-## Objetivo
+## Objective
 
-Impedir que um ramo pendente de um workflow composto execute uma ação externa
-quando um ramo de que depende semanticamente falha. A compensação desta versão
-é exclusivamente preventiva: a Aurora não tenta desfazer ações externas já
-concluídas.
+Prevent a pending branch of a composite workflow from taking an external action
+when a branch it semantically depends on fails. The compensation of this version
+is exclusively preventive: Aurora does not try to undo external actions already
+completed.
 
-## Caso de utilização
+## Use case
 
 ```text
-Pedido composto
-  ├── CALENDAR_CREATE_EVENT ── aprovação ── falha
+Composite order
+├── CALENDAR_CREATE_EVENT ── approval ── failure
   └── EMAIL_SEND ───────────── pendente
 
 Falha Calendar
@@ -21,35 +21,35 @@ WorkflowCompensation(CANCEL_PENDING_BRANCHES)
 ApprovalRequest do email = CANCELLED
 Task WAIT_FOR_APPROVAL do email = CANCELLED
   ↓
-Nenhum email é enviado
+No email is sent
 ```
 
-## Contrato
+## Contract
 
-`WorkflowCompensation` é imutável e persistido pelo Kernel:
+`WorkflowCompensation` is immutable and persisted by the Kernel:
 
-| Campo | Significado |
+| Field | Meaning |
 | --- | --- |
-| `plan_ref` | Plano composto afetado. |
-| `failed_request_ref` | CapabilityRequest que falhou ou ficou desconhecido. |
-| `blocked_request_refs` | Ramos pendentes impedidos de avançar. |
-| `strategy` | `CANCEL_PENDING_BRANCHES` ou `REQUIRES_USER_DECISION`. |
-| `status` | `COMPLETED` ou `PENDING_USER_DECISION`. |
-| `reason` | Justificação auditável, sem raciocínio interno do modelo. |
+| `plan_ref` | Composite plane affected. |
+| `failed_request_ref` | CapabilityRequest that failed or was unknown. |
+| `blocked_request_refs` | Overhanging branches prevented from advancing. |
+| `strategy` | `CANCEL_PENDING_BRANCHES` or `REQUIRES_USER_DECISION`. |
+| `status` | `COMPLETED` or `PENDING_USER_DECISION`. |
+| `reason` | Auditable justification, without internal model reasoning. |
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Só o Kernel cria uma compensação.
-2. Uma aprovação já concedida nunca é revertida silenciosamente.
-3. Não existe rollback externo automático nesta versão.
-4. Um ramo apenas é cancelado se a respetiva `ApprovalRequest` ainda estiver
+1. Only the Kernel creates compensation.
+2. An already granted approval is never silently reversed.
+3. There is no automatic external rollback in this version.
+4. A branch is only canceled if its `ApprovalRequest` is still
    `PENDING`.
-5. A mesma falha produz o mesmo `compensation_id`; repetir o trace apenas
-   carrega a decisão persistida.
-6. A compensação ocorre antes da resposta ao utilizador e fica visível no trace,
-   nos eventos e na persistência.
+5. The same fault produces the same `compensation_id`; just repeat the trace
+   carries the persisted decision.
+6. Compensation occurs before responding to the user and is visible in the trace,
+   in events and persistence.
 
-## Eventos e trace
+## Events and trace
 
 ```text
 ExecutionFailed
@@ -61,15 +61,15 @@ WorkflowCompensationCreated
 trace: COMPENSATION
 ```
 
-## Casos limite
+## Limit cases
 
-- Sem ramos pendentes: `REQUIRES_USER_DECISION`; não há rollback.
-- Estado `UNKNOWN`: é tratado como falha conservadora e não desbloqueia irmãos.
-- Reinício: as aprovações e Tasks canceladas continuam canceladas.
-- Repetição da mesma confirmação: não recria nem reexecuta o ramo cancelado.
+- No hanging branches: `REQUIRES_USER_DECISION`; there is no rollback.
+- `UNKNOWN` status: is treated as a conservative failure and does not unlock siblings.
+- Restart: canceled approvals and Tasks remain cancelled.
+- Repetition of the same commit: does not recreate or reexecute the canceled branch.
 
-## Critério de aceitação
+## Acceptance criteria
 
-Quando Calendar falha e Email está pendente, o trace contém `COMPENSATION`, o
-email fica `CANCELLED`, a Task de espera fica `CANCELLED` e o provider SMTP não
-é chamado.
+When Calendar fails and Email is pending, the trace contains `COMPENSATION`, the
+email is `CANCELLED`, the waiting Task is `CANCELLED` and the SMTP provider is not
+is called.

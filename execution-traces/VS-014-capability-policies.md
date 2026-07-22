@@ -1,16 +1,16 @@
-# VS-014 — Políticas de Capacidades
+# VS-014 — Capabilities Policies
 
-## Objetivo
+## Objective
 
-Introduzir uma fronteira de autorização persistente entre `CapabilityRequest` e o executor. Uma capability disponível não constitui autorização para a usar. O Kernel deve avaliar uma política antes de preparar uma operação e novamente antes de executar uma aprovação persistida.
+Introduce a persistent authorization boundary between `CapabilityRequest` and the executor. An available capability does not constitute authorization to use it. The Kernel must evaluate a policy before preparing an operation and again before performing a persisted pass.
 
-## Escopo
+## Scope
 
-Incluído: políticas por entidade e capability, aprovação obrigatória, autorização por principal e sessão, limite diário, decisão auditável e negação segura.
+Included: policies by entity and capability, mandatory approval, authorization by principal and session, daily limit, auditable decision and secure deny.
 
-Excluído: editor de políticas na interface, delegação entre entidades, quotas por dispositivo, políticas temporais complexas e planos com vários passos.
+Excluded: in-interface policy editor, cross-entity delegation, per-device quotas, complex temporal policies, and multi-step plans.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 CapabilityRequest
@@ -32,56 +32,56 @@ CapabilityPolicyService.evaluate
                                              +-- ALLOWED --> Executor.execute
 ```
 
-## Objetos de domínio
+## Domain objects
 
 ### `CapabilityPolicy`
 
-| Campo | Significado |
+| Field | Meaning |
 |---|---|
-| `policy_id` | Identificador determinístico por entidade e capability. |
-| `capability_ref` | Capability protegida. |
-| `status` | `ACTIVE` ou estado inativo futuro. |
-| `approval_requirement` | `REQUIRED` ou `NOT_REQUIRED`. |
-| `allowed_principal_ids` | Principais autorizados; `*` representa todos. |
-| `allowed_session_ids` | Sessões autorizadas; `*` representa todas. |
-| `daily_limit` | Máximo de execuções concluídas no dia UTC; `null` significa sem limite. |
-| `version` | Incrementado por alterações futuras via API administrativa. |
+| `policy_id` | Deterministic identifier by entity and capability. |
+| `capability_ref` | Capability protected. |
+| `status` | `ACTIVE` or future inactive state. |
+| `approval_requirement` | `REQUIRED` or `NOT_REQUIRED`. |
+| `allowed_principal_ids` | Authorized principals; `*` represents everyone. |
+| `allowed_session_ids` | Authorized sessions; `*` represents them all. |
+| `daily_limit` | Maximum executions completed on UTC day; `null` means no limit. |
+| `version` | Augmented by future changes via administrative API. |
 
 ### `PolicyEvaluation`
 
-É imutável e preserva a evidência de uma decisão: policy usada, pedido analisado, resultado `ALLOWED` ou `DENIED`, motivo, exigência de aprovação e contagem diária no instante da avaliação.
+It is immutable and preserves the evidence of a decision: policy used, request analyzed, `ALLOWED` or `DENIED` result, reason, approval requirement and daily count at the time of evaluation.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Nenhum executor interpreta permissões, sessões ou quotas.
-2. Política inexistente equivale a `DENIED`.
-3. A política é verificada antes de `prepare()` e antes de `execute()`.
-4. Uma negação produz `CapabilityResult(POLICY_DENIED)` e nunca uma preparação, aprovação ou ação externa.
-5. A aprovação humana não sobrepõe uma política entretanto revogada.
-6. Os limites contam apenas execuções `COMPLETED`; falhas e operações incertas não consomem quota.
-7. Cada avaliação publica `CapabilityPolicyEvaluated` e uma entrada de trace `CAPABILITY_POLICY`.
+1. No executor interprets permissions, sessions, or quotas.
+2. Non-existent policy is equivalent to `DENIED`.
+3. The policy is checked before `prepare()` and before `execute()`.
+4. A denial produces `CapabilityResult(POLICY_DENIED)` and never a preparation, approval or external action.
+5. Human approval does not supersede a policy that has been revoked.
+6. Limits only count `COMPLETED` runs; failures and uncertain operations do not consume quota.
+7. Each evaluation publishes `CapabilityPolicyEvaluated` and a `CAPABILITY_POLICY` trace entry.
 
-## Políticas iniciais
+## Initial Policies
 
-No nascimento da entidade, o runtime cria uma política por capability registada. As capabilities externas exigem aprovação; `EMAIL_SEND` recebe limite diário inicial de 10. Estes valores são defaults explícitos, não regras escondidas no executor.
+At the entity's birth, the runtime creates a policy per registered capability. External capabilities require approval; `EMAIL_SEND` receives an initial daily limit of 10. These values ​​are explicit defaults, not rules hidden in the executor.
 
-## Casos limite
+## Limit cases
 
-- **Reinício entre aprovação e envio:** a política é reavaliada; se mudou para `DENIED`, não ocorre envio.
-- **Principal diferente:** uma confirmação vinda de principal não autorizado cria uma negação auditável.
-- **Limite atingido:** o pedido não prepara o executor e não cria aprovação pendente.
-- **Policy inexistente por migração incompleta:** falha fechada com `POLICY_NOT_FOUND`.
+- **Restart between approval and submission:** the policy is reevaluated; if changed to `DENIED`, no sending occurs.
+- **Different principal:** a commit from an unauthorized principal creates an auditable deny.
+- **Limit reached:** the request does not prepare the executor and does not create pending approval.
+- **Policy does not exist due to incomplete migration:** failed closed with `POLICY_NOT_FOUND`.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Um email autorizado segue o fluxo existente sem alteração do executor.
-2. Um principal não listado recebe `POLICY_DENIED` antes de `ExecutionPreparation`.
-3. Uma política e cada avaliação sobrevivem a shutdown/restore.
-4. O teste de regressão de envio idempotente permanece verde.
+1. An authorized email follows the existing flow without changing the executor.
+2. An unlisted principal receives `POLICY_DENIED` before `ExecutionPreparation`.
+3. A policy and each evaluation survive shutdown/restore.
+4. The idempotent send regression test remains green.
 
-## Expansões futuras
+## Future expansions
 
-- políticas por dispositivo, canal, janela temporal e classificação de dados;
-- quotas por custo, fornecedor e destino;
-- API administrativa versionada e assinada;
-- motor declarativo para combinar várias políticas sem alterar o Kernel.
+- policies by device, channel, time window and data classification;
+- quotas by cost, supplier and destination;
+- Versioned and signed administrative API;
+- declarative engine to combine multiple policies without changing the Kernel.

@@ -1,32 +1,32 @@
 # Aurora OS — Execution Trace Specification: VS-002 Entity Birth + Self Model
 
-**Estado:** Autorizado pela baseline congelada (RFC 027 e RFC 040)  
-**Caso de utilização:** nascer com identidade mínima → executar → encerrar → restaurar → descrever-se
+**Status:** Authorized by frozen baseline (RFC 027 and RFC 040)
+**Use case:** born with minimal identity → run → close → restore → describe yourself
 
-## Objetivo
+## Objective
 
-Dar à Entity uma representação persistente e auditável de si própria. VS-002 cria uma `Identity` e um `SelfModel` inicial no nascimento da Entity — ou, para entidades VS-001 existentes, numa migração de inicialização explícita e auditada. A resposta a perguntas de autoidentificação DEVE ser derivada desses objetos persistidos.
+Give the Entity a persistent and auditable representation of itself. VS-002 creates an initial `Identity` and `SelfModel` at Entity birth — or, for existing VS-001 entities, in an explicit, audited initialization migration. The answer to self-identification questions MUST be derived from these persisted objects.
 
-Este slice não implementa personalidade adaptativa, crenças, preferências, relações, objetivos, aprendizagem ou capacidades externas.
+This slice does not implement adaptive personality, beliefs, preferences, relationships, goals, learning or external capabilities.
 
-## Fluxo normativo
+## Normative flow
 
 ```text
 CreateEntity(Roberto, assistant-v1)
   → EntityCreated
-  → CreateIdentity(name=Roberto, purpose=ajudar o utilizador)
+→ CreateIdentity(name=Roberto, purpose=help the user)
   → CreateSelfModel(identity_ref, genome=assistant-v1, state=READY)
   → SelfModelInitialized
-  → VS-000("Olá")
+→ VS-000("Hello")
   → ShutdownEntity → MindState(snapshot + self_ref)
   → processo termina
   → StartEntity(Roberto) → Identity/SelfModel carregados
   → SelfModelLoaded
-  → VS-000("Quem és?")
-  → "Sou Roberto. Fui criado como uma entidade de assistência. O meu propósito inicial é ajudar o utilizador."
+→ VS-000("Who are you?")
+→ "I'm Roberto. I was created as a support entity. My initial purpose is to help the user."
 ```
 
-## Contratos mínimos
+## Minimum contracts
 
 ```text
 Identity
@@ -44,47 +44,46 @@ SelfModel
   resource_snapshot_ref?: null
   current_focus_ref?: null
   created_at, observed_at
-```
+````
 
-`Identity` é a fonte de verdade para nome e propósito. `SelfModel` referencia essa identidade e descreve o estado operacional. A Entity continua a ser dona de ambos; Session e Trace nunca são donas do Self.
+Identity` is the source of truth for name and purpose. `SelfModel` references this identity and describes the operational state. Entity continues to own both; Session and Trace never own the Self.
 
-## Eventos, rastreio e persistência
+## Events, tracing and persistence
 
-| Passo | Persistência | Evento | Trace |
+| Step | Persistence | Event | Trace |
 | --- | --- | --- | --- |
-| Nascimento | `Entity`, `Identity`, `SelfModel` | `EntityCreated`, `SelfModelInitialized` | `ENTITY(CREATED)`, `SELF_MODEL(INITIALIZED)` |
-| Arranque normal | leitura de `Identity` e `SelfModel` | `SelfModelLoaded` | `SELF_MODEL(LOADED)` |
-| Encerramento | `MindState` inclui referências de Self | `EntityShutdown` | `ENTITY_RUNTIME(STOPPED)` |
-| Restauro | mesmas referências e versão | `EntityRestored`, `SelfModelLoaded` | `ENTITY(RESTORED)`, `SELF_MODEL(LOADED)` |
-| Autoidentificação | nenhum campo inventado | `ThoughtCreated`, `ResponseProduced` | `SELF_MODEL(USED_FOR_SELF_DESCRIPTION)` |
+| Birth | `Entity`, `Identity`, `SelfModel` | `EntityCreated`, `SelfModelInitialized` | `ENTITY(CREATED)`, `SELF_MODEL(INITIALIZED)` |
+| Normal start | reading of `Identity` and `SelfModel` | `SelfModelLoaded` | `SELF_MODEL(LOADED)` |
+| Closing | `MindState` includes Self references | `EntityShutdown` | `ENTITY_RUNTIME(STOPPED)` |
+| Restoration | same references and version | `EntityRestored`, `SelfModelLoaded` | `ENTITY(RESTORED)`, `SELF_MODEL(LOADED)` |
+| Self-Identification | no field invented | `ThoughtCreated`, `ResponseProduced` | `SELF_MODEL(USED_FOR_SELF_DESCRIPTION)` |
 
-Todos os objetos, eventos e entradas de trace DEVEM transportar o mesmo `entity_id` do ciclo.
+All objects, events and trace entries MUST carry the same `entity_id` in the cycle.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O nascimento de uma Entity DEVE criar exatamente uma `Identity` ativa e um `SelfModel` inicial.
-2. Um arranque posterior NUNCA pode substituir nome, propósito ou Genome com argumentos de linha de comandos; carrega o estado persistido.
-3. Ausência de `Identity` ou `SelfModel` numa Entity já existente ativa uma inicialização de compatibilidade auditada; não cria uma segunda Entity.
-4. Perguntas como “Quem és?” DEVEM usar `Identity` e `SelfModel` persistidos, não o `entity_id` recebido na mensagem.
-5. `SelfModel` não concede capacidades, permissões ou autonomia. Referências vazias significam indisponibilidade, não autorização implícita.
-6. A descrição devolvida ao utilizador é segura: não inclui segredos, caminhos locais, topologia, IDs de credenciais ou detalhes internos não necessários.
+1. The birth of an Entity MUST create exactly one active `Identity` and one initial `SelfModel`.
+2. A later startup may NEVER replace name, purpose, or Genome with command-line arguments; carries persisted state.
+3. Absence of `Identity` or `SelfModel` in an existing Entity activates an audited compatibility initialization; does not create a second Entity.
+4. Questions like “Who are you?” MUST use persisted `Identity` and `SelfModel`, not the `entity_id` received in the message.
+5. `SelfModel` does not grant capabilities, permissions or autonomy. Empty references mean unavailability, not implied authorization.
+6. The description returned to the user is secure: it does not include secrets, local paths, topology, credential IDs, or unnecessary internal details.
 
-## Critérios de aceitação
+## Acceptance criteria
 
-1. Criar `Roberto` com `assistant-v1` persiste `Identity` e `SelfModel` de versão 1.
-2. “Quem és?” responde com o nome, natureza e propósito guardados, em português europeu.
-3. Após shutdown e restauro numa nova Session, a resposta é idêntica e usa os mesmos IDs de Identity/SelfModel.
-4. O trace contém `SELF_MODEL(INITIALIZED|LOADED|USED_FOR_SELF_DESCRIPTION)` e os eventos associados.
-5. Repetir o arranque é idempotente: não duplica Identity nem altera o Self existente.
-6. O conjunto VS-000 e VS-001 continua verde.
+1. Create `Roberto` with `assistant-v1` persists `Identity` and `SelfModel` from version 1.
+2. “Who are you?” responds with the saved name, nature and purpose, in European Portuguese.
+3. After shutdown and restoration in a new Session, the response is identical and uses the same Identity/SelfModel IDs.
+4. The trace contains `SELF_MODEL(INITIALIZED|LOADED|USED_FOR_SELF_DESCRIPTION)` and associated events.
+5. Repeating the start is idempotent: it does not duplicate Identity or alter the existing Self.
+6. The VS-000 and VS-001 set remains green.
 
-## Falhas e casos limite
+## Failures and edge cases
 
-- **Identity em falta, Self presente:** bloquear a descrição e reparar apenas por migração aprovada; o slice de compatibilidade atual só inicializa ambos quando ambos estão ausentes.
-- **Self em falta, Identity presente:** criar um Self que referencia a Identity existente e emitir evento de compatibilidade.
-- **Dados incompatíveis:** manter a Entity em `RECOVERING`; não responder com informação inventada.
-- **Nome/purpose vazio:** rejeitar o nascimento explícito; no caminho legado usar o `entity_id` como nome e o propósito baseline documentado.
+- **Identity missing, Self present:** block description and repair only by approved migration; the current compatibility slice only initializes both when both are missing.
+- **Self missing, Identity present:** create a Self that references the existing Identity and emit a compatibility event.- **Incompatible data:** keep the Entity in `RECOVERING`; Do not respond with invented information.
+- **Empty name/purpose:** reject explicit birth; in the legacy path use `entity_id` as the name and the baseline purpose documented.
 
-## Justificação
+## Justification
 
-VS-001 demonstrou continuidade de processo. VS-002 demonstra continuidade de identidade: a entidade restaurada não sabe apenas que existe uma chave técnica; consulta uma representação persistente, limitada e verificável de quem é. Isto cria a base para, mais tarde, acrescentar Personality, Beliefs, Preferences, Relationships, Goals e Learning sem os confundir com a identidade inicial.
+VS-001 demonstrated process continuity. VS-002 demonstrates identity continuity: the restored entity doesn't just know that a technical key exists; queries a persistent, limited, and verifiable representation of who you are. This creates the basis for later adding Personality, Beliefs, Preferences, Relationships, Goals and Learning without confusing them with the initial identity.

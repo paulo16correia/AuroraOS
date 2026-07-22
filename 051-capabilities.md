@@ -1,26 +1,26 @@
-# Aurora Platform — RFC 051: Sistema de capacidades
+# Aurora Platform — RFC 051: Capabilities System
 
-**Estado:** Normativo · **Depende de:** RFC 06, 045, 050
+**Status:** Normative · **Depends on:** RFC 06, 045, 050
 
-## Objetivo
+## Objective
 
-Modelar necessidades funcionais em abstrações de alto nível. A Mind decide a capacidade desejada — por exemplo, comunicar ou pesquisar — e o Kernel seleciona uma Application/ferramenta permitida. Assim a intenção não fica acoplada a Gmail, Discord, browser ou qualquer fornecedor concreto.
+Model functional needs in high-level abstractions. The Mind decides the desired capability — for example, communicating or searching — and the Kernel selects a permitted Application/tool. Therefore, the intention is not linked to Gmail, Discord, browser or any specific provider.
 
-## Arquitetura
+## Architecture
 
 ```text
 Decision: “preciso comunicar”
              │
              ▼
 Capability Resolver
-  ├─ comunicação → Email | Discord | Telegram | WhatsApp
-  └─ pesquisa     → Browser | índice documental | filesystem
+├─ communication → Email | Discord | Telegram | WhatsApp
+└─ search → Browser | document index | filesystem
              │
              ▼
 Policy + Self + Resource Model → ToolCall concreto
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Capability
@@ -44,24 +44,23 @@ Capabilities.execute(resolved_request) -> ToolCall
 Capabilities.explainResolution(request_id) -> ResolutionReport
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. A Mind pede capacidades, não fornecedores, salvo quando o utilizador exigir explicitamente um destino/serviço.
-2. Resolução considera permissões, destinatário, classificação, custo, disponibilidade e preferência explícita.
-3. Um provider não pode oferecer efeitos fora do manifesto da capacidade.
-4. Falha de provider permite alternativa apenas se preserva intenção, âmbito e política; caso contrário bloqueia/pede decisão.
+1. Mind asks for capabilities, not suppliers, unless the user explicitly requires a destination/service.
+2. Resolution considers permissions, recipient, classification, cost, availability and explicit preference.
+3. A provider cannot offer effects outside of the capability's manifest.
+4. Failure of provider allows alternative only if it preserves intention, scope and policy; otherwise it blocks/requests a decision.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Email indisponível, Discord disponível:** não substituir automaticamente se a intenção era enviar email a destinatário específico.
-- **Utilizador prefere VS Code:** preferência influencia provider de desenvolvimento, mas não ultrapassa segurança/custo.
-- **Nenhum provider:** `BLOCKED` com capacidade em falta, não uma chamada genérica a shell.
+- **Email unavailable, Discord available:** does not automatically replace if the intention was to send email to a specific recipient.
+- **User prefers VS Code:** preference influences development provider, but does not exceed security/cost.
+- **No provider:** `BLOCKED` with missing capability, not a generic shell call.
 
-## Justificação
+## Justification
 
-Capacidades dão portabilidade e evitam que o modelo associe cada objetivo a um fornecedor fixo. O Kernel decide a melhor concretização autorizada.
+Capabilities provide portability and prevent the model from associating each objective with a fixed supplier. The Kernel decides the best authorized realization.
 
-## Expansões futuras
+## Future expansions
 
-Composição de capacidades, negociação de qualidade, marketplace certificado e fallback declarativo.
-
+Composition of capabilities, quality negotiation, certified marketplace and declarative fallback.

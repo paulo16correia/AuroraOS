@@ -1,11 +1,11 @@
 # VS-020 — Calendar Free/Busy
 
-## Objetivo
+## Objective
 
-Introduzir `CALENDAR_FREEBUSY` como capability externa de leitura. A intenção é responder a consultas de disponibilidade sem transformar uma leitura num efeito externo de escrita.
+Enter `CALENDAR_FREEBUSY` as external reading capability. The intention is to respond to availability queries without transforming a read into an external write effect.
 
 ```text
-Mensagem do utilizador
+User message
         ↓
 CapabilityRequest(CALENDAR_FREEBUSY, READY)
         ↓
@@ -24,23 +24,23 @@ ExecutionRecord(COMPLETED)
 CapabilityResult(SUCCESS)
 ```
 
-## Regras
+## Rules
 
-- A mensagem que pede disponibilidade autoriza apenas a consulta de leitura atual.
-- `CALENDAR_FREEBUSY` nunca cria, altera ou elimina eventos.
-- A policy é persistida e pode ser alterada para exigir aprovação, se o proprietário da entidade assim o decidir.
-- A execução tem `approval_ref = approval:not-required`, tornando a ausência de aprovação explícita auditável, e não implícita.
-- O resultado e a `CalendarAvailabilityQuery` são persistidos; repetir a mesma mensagem com a mesma chave de idempotência não volta a consultar a API.
+- The message requesting availability authorizes only the current read query.
+- `CALENDAR_FREEBUSY` never creates, changes or deletes events.
+- The policy is persisted and can be changed to require approval if the entity owner so decides.
+- The execution has `approval_ref = approval:not-required`, making the absence of explicit approval auditable, not implicit.
+- The result and `CalendarAvailabilityQuery` are persisted; repeating the same message with the same idempotence key does not query the API again.
 
-## Intenções suportadas
+## Supported intents
 
 ```text
-Estou livre amanhã às 15h?
-Quando tenho uma hora livre esta semana?
+Am I free tomorrow at 3pm?
+When do I have a free hour this week?
 ```
 
-A primeira consulta avalia uma janela de uma hora. A segunda procura a primeira janela livre de 60 minutos, em dias úteis, entre as 09:00 e as 18:00 locais, num horizonte de sete dias.
+The first consultation evaluates a one-hour window. The second searches for the first free window of 60 minutes, on weekdays, between 09:00 and 18:00 local time, over a seven-day horizon.
 
-## Limites conhecidos
+## Known limits
 
-O VS-020 consulta apenas o calendário `primary`. Resolução de nomes, múltiplos calendários, preferências de horário e fuso horário por entidade pertencem a slices posteriores.
+The VS-020 only queries the `primary` calendar. Name resolution, multiple calendars, time preferences and time zones per entity belong to later slices.

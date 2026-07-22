@@ -1,9 +1,9 @@
-# VS-018 — Scheduler persistente
+# VS-018 — Persistent Scheduler
 
-## Objetivo
+## Objective
 
-Retomar uma `Task` em `WAITING_FOR_TIME` quando a hora persistida chega, sem
-reexecutar uma transição já efetuada nem chamar capabilities diretamente.
+Resume a `Task` in `WAITING_FOR_TIME` when the persisted time arrives, without
+reexecute an already performed transition or call capabilities directly.
 
 ```text
 Task(WAITING_FOR_TIME, wait_until)
@@ -15,15 +15,15 @@ Task(READY)
 TASK_RESUMED + trace SCHEDULER
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-- `wait_until` é ISO-8601 com offset.
-- Só Tasks vencidas em `WAITING_FOR_TIME` transitam para `READY`.
-- O segundo tick observa `READY` e não produz nova transição: é idempotente.
-- O Scheduler não executa capabilities nem concede aprovação implícita.
-- A Task é persistida antes do evento e do trace.
+- `wait_until` is ISO-8601 with offset.
+- Only Tasks won in `WAITING_FOR_TIME` are carried over to `READY`.
+- The second tick observes `READY` and does not produce a new transition: it is idempotent.
+- The Scheduler does not execute capabilities or grant implicit approval.
+- The Task is persisted before the event and trace.
 
-## Critério de aceitação
+## Acceptance criteria
 
-Uma Task vencida transita uma vez para `READY`, emite `TaskResumed` com razão
-`DUE_TIME`, sobrevive a reinício e não volta a ser retomada num tick seguinte.
+An expired Task transitions once to `READY`, issues `TaskResumed` with reason
+`DUE_TIME`, survives restart and is not resumed on the next tick.

@@ -1,15 +1,15 @@
 # Aurora Platform — RFC 036: Genome
 
-**Estado:** Normativo · **Depende de:** RFC 035, 040
+**State:** Normative · **Depends on:** RFC 035, 040
 
-## Objetivo
+## Objective
 
-Definir o **Genome**: o manifesto versionado de tudo o que uma instância da Aurora recebe no nascimento. O Genome reúne configuração inata e herdável sem confundir dados de instalação, personalidade amadurecida ou memória adquirida.
+Define the **Genome**: the versioned manifest of everything an Aurora instance receives at birth. The Genome brings together innate and inheritable configuration without confusing installation data, mature personality or acquired memory.
 
-## Arquitetura
+## Architecture
 
 ```text
-Genome base + variantes autorizadas + ambiente de instalação
+Base genome + authorized variants + installation environment
                          │
                          ▼
                  GenomeResolution
@@ -21,7 +21,7 @@ Genome base + variantes autorizadas + ambiente de instalação
                  Life History: “nascimento”
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Genome
@@ -36,7 +36,7 @@ GenomeResolution
   denied_overrides[], resolved_at, resolver
 ```
 
-Exemplos de famílias: `Aurora Personal`, `Aurora Casa`, `Aurora Empresa`, `Aurora Finance`. Uma variante pode restringir capacidades ou políticas, mas nunca relaxar Constituição, Leis ou garantias de segurança.
+Example families: `Aurora Personal`, `Aurora Casa`, `Aurora Empresa`, `Aurora Finance`. A variant may restrict capabilities or policies, but never relax Constitution, Laws or security guarantees.
 
 ## Interfaces
 
@@ -46,23 +46,23 @@ Genome.bootstrap(resolution_id) -> BootstrapPlan
 Genome.validateOverride(change) -> ALLOW|DENY|REVIEW
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O Genome DEVE ser assinado, versionado, reprodutível e independente de segredos.
-2. Não contém memória do utilizador, credenciais, relações, crenças ou estado de execução.
-3. Toda a instalação preserva referência ao Genome efetivo na Mind State e Life History.
-4. Alterações incompatíveis criam novo Genome/versão e plano de migração; não alteram silenciosamente instâncias existentes.
+1. The Genome MUST be signed, versioned, reproducible and independent of secrets.
+2. Contains no user memory, credentials, relationships, beliefs or execution state.
+3. The entire installation preserves reference to the effective Genome in Mind State and Life History.
+4. Incompatible changes create new Genome/version and migration plan; do not silently alter existing instances.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Override enfraquece uma Lei:** rejeitar na resolução.
-- **Capacidade exigida indisponível:** bootstrap fica bloqueado/degradado, não inventa uma substituição.
-- **Assinatura inválida:** não criar instância.
+- **Override weakens a Law:** reject in resolution.
+- **Required capacity unavailable:** bootstrap becomes blocked/degraded, does not invent a replacement.
+- **Invalid signature:** do not create instance.
 
-## Justificação
+## Justification
 
-O Genome permite criar Auroras especializadas a partir de uma raiz comum, mantendo rastreabilidade do que é inato versus aprendido.
+The Genome allows you to create specialized Auroras from a common root, maintaining traceability of what is innate versus learned.
 
-## Expansões futuras
+## Future expansions
 
-Catálogo de Genomes, composição declarativa de variantes, testes de compatibilidade e promoção entre ambientes.
+Genome catalog, declarative composition of variants, compatibility tests and promotion between environments.

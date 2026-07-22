@@ -1,29 +1,29 @@
-# Aurora OS — RFC 020: Mind — modelo de estado cognitivo
+# Aurora OS — RFC 020: Mind — Cognitive State Model
 
-**Estado:** Normativo · **Depende de:** RFC 000, 01, 010
+**Status:** Normative · **Depends on:** RFC 000, 01, 010
 
-## Objetivo
+## Objective
 
-Definir a **Mind** como agregado canónico de estado persistente da Aurora, gerido pelo Aurora Kernel. A Mind não é um prompt nem uma base de dados única; é o contrato que liga identidade, realidade conhecida, experiência e intenção. As RFCs de memória, conhecimento, objetivos, personalidade e aprendizagem concretizam os seus componentes sem alterar este contrato.
+Set **Mind** as Aurora's canonical persistent state aggregate, managed by the Aurora Kernel. Mind is not a prompt or a single database; it is the contract that links identity, known reality, experience and intention. The memory, knowledge, goals, personality and learning RFCs flesh out their components without changing this contract.
 
-## Composição
+## Composition
 
 ```text
 Mind
-├─ Self                     capacidades, limites, saúde e trabalho atual
-├─ Identity                 quem é e como comunica
-├─ Memory / Experience      o que aconteceu e o que foi aprendido
-├─ Knowledge / World Model  o que é conhecido sobre entidades e relações
-├─ Beliefs / Preferences    padrões revisáveis e escolhas do utilizador
-├─ Relationships            relações sociais, profissionais e de recursos
-├─ Goals / Plans / Tasks    o que se pretende alcançar
-├─ Attention                o que merece recursos agora
-├─ Working Memory            contexto ativo, temporário e isolado
-├─ Reflection / Learning    avaliação e mudança governada
-└─ Policies / Permissions   o que é permitido fazer
+├─ Self capabilities, limits, health and current work
+├─ Identity who you are and how you communicate
+├─ Memory/Experience what happened and what was learned
+├─ Knowledge / World Model what is known about entities and relationships
+├─ Beliefs/Preferences Revisible defaults and user choices
+├─ Social, professional and resource relationships
+├─ Goals / Plans / Tasks what you want to achieve
+├─ Attention what deserves resources now
+├─ Working Memory active, temporary and isolated context
+├─ Reflection/Learning assessment and governed change
+└─ Policies / Permissions what is allowed to do
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Mind
@@ -49,23 +49,23 @@ MindService.apply(change_set_id) -> Mind
 MindService.pause(mind_id, actor) -> Mind
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. O estado persistente da Aurora DEVE pertencer a uma `Mind` e estar sujeito a controlo de acesso.
-2. `MindChangeSet` DEVE ser atómico por agregado ou compensado por mudanças explícitas; nunca parcialmente silencioso.
-3. `PAUSED` impede novas ações e tarefas automáticas, mas permite inspeção e exportação autorizada.
-4. Working Memory não é consolidada sem a RFC 024 e RFC 03; observação temporária não é memória.
+1. Aurora persistent state MUST belong to a `Mind` and be subject to access control.
+2. `MindChangeSet` MUST be atomic per aggregate or compensated for explicit changes; never partially silent.
+3. `PAUSED` prevents new automatic actions and tasks, but allows inspection and authorized export.
+4. Working Memory is not consolidated without RFC 024 and RFC 03; Temporary observation is not memory.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Duas operações alteram a mesma intenção:** usar versão otimista; uma falha com conflito e é reavaliada.
-- **Recuperação após interrupção:** `RECOVERING` reconcilia tarefas e chamadas de ferramentas antes de regressar a `ACTIVE`.
-- **Retirada da Mind:** exportar/apagar segundo retenção, revogar conectores e impedir reativação sem bootstrap explícito.
+- **Two operations change the same intention:** use optimistic version; a failure with conflict and is reevaluated.
+- **Abort recovery:** `RECOVERING` reconciles tasks and tool calls before returning to `ACTIVE`.
+- **Withdrawal from Mind:** export/delete according to retention, revoke connectors and prevent reactivation without explicit bootstrap.
 
-## Justificação
+## Justification
 
-Nomear a Mind elimina a falsa simplificação “LLM + memória”. A arquitetura passa a tratar contexto, realidade, objetivos e experiência como partes de um mesmo sistema governado.
+Naming Mind eliminates the “LLM + memory” false simplification. Architecture starts to treat context, reality, objectives and experience as parts of the same governed system.
 
-## Expansões futuras
+## Future expansions
 
-Minds pessoais e de equipa, snapshots assinados, ramificações para simulação e migração entre instalações.
+Personal and team minds, signed snapshots, branches for simulation and migration between installations.

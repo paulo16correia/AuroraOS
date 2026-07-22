@@ -1,30 +1,30 @@
-# ADR-008 — Interface de Executor com resultados sem efeito externo
+# ADR-008 — Executor Interface with results without external effect
 
-**Estado:** ACEITE  
-**Data:** 2026-07-18  
-**RFCs afetadas:** RFC 021, RFC 040, RFC 051, ADR-006, ADR-007, LAW-002, LAW-003, LAW-006
+**Status:** ACCEPT
+**Date:** 2026-07-18
+**RFCs affected:** RFC 021, RFC 040, RFC 051, ADR-006, ADR-007, LAW-002, LAW-003, LAW-006
 
-## Contexto
+## Context
 
-O Kernel já representa a intenção externa como `CapabilityRequest`, mas falta um contrato explícito para o componente que, no futuro, poderá transformar um pedido autorizado num efeito observável. Ligar já um executor real misturaria interface, política e integração externa.
+The Kernel already represents the external intent as `CapabilityRequest`, but it lacks an explicit contract for the component that, in the future, could transform an authorized request into an observable effect. Connecting a real executor now would mix interface, politics and external integration.
 
-## Decisão
+## Decision
 
-VS-008 introduz `Executor` e `CapabilityResult`. O Kernel despacha a request validada para um executor de referência sem efeitos (`NoopExecutor`). Este executor não possui credenciais, rede, ficheiros, plugins, providers nem chamadas de ferramentas; devolve apenas `NOT_IMPLEMENTED` ou `DRY_RUN`.
+VS-008 introduces `Executor` and `CapabilityResult`. The Kernel dispatches the validated request to an effectless reference executor (`NoopExecutor`). This executor has no credentials, network, files, plugins, providers or tool calls; returns only `NOT_IMPLEMENTED` or `DRY_RUN`.
 
 ```text
 CapabilityRequest → Executor Interface → CapabilityResult
-```
+````
 
-`CapabilityResult` é persistido, auditável e não altera o estado da request. Nenhum resultado VS-008 representa envio, execução, sucesso externo ou autorização.
+CapabilityResult` is persisted, auditable and does not change the state of the request. No VS-008 results represent submission, execution, external success, or authorization.
 
-## Consequências
+## Consequences
 
-- A fronteira de execução passa a existir e é testável sem abrir acesso ao exterior.
-- A Aurora pode distinguir capacidade indisponível de executor ainda não implementado.
-- Integrações futuras devem implementar o mesmo contrato, atrás de política e aprovação.
-- O Kernel continua a ser dono de contexto, estado, memória, objetivos e decisões; executores são consumidores limitados de requests.
+- The execution boundary now exists and is testable without opening access to the outside.
+- Aurora can distinguish unavailable capacity from not-yet-implemented executor.
+- Future integrations must implement the same contract, behind policy and approval.
+- The Kernel continues to own context, state, memory, objectives and decisions; executors are limited consumers of requests.
 
-## Migração e reversão
+## Migration and rollback
 
-Não existem migrações destrutivas. Requests existentes passam a poder receber um resultado de referência no próximo ciclo elegível. Remover VS-008 impede a criação de novos resultados, preservando a auditoria existente.
+There are no destructive migrations. Existing requests can now receive a reference result in the next eligible cycle. Removing VS-008 prevents the creation of new results while preserving the existing audit.

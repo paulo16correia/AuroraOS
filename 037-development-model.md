@@ -1,24 +1,24 @@
-# Aurora Platform — RFC 037: Modelo de desenvolvimento
+# Aurora Platform — RFC 037: Development Model
 
-**Estado:** Normativo · **Depende de:** RFC 07, 027–028, 036, 040
+**State:** Normative · **Depends on:** RFC 07, 027–028, 036, 040
 
-## Objetivo
+## Objective
 
-Definir como uma instância ganha confiança operacional ao longo do tempo sem que “aprender” se converta em aumento automático de poder. Desenvolvimento altera padrões de assistência, exigência de confirmação e autonomia delegada dentro dos limites do Genome, Constituição e políticas.
+Define how an instance gains operational confidence over time without “learning” converting into an automatic increase in power. Development alters patterns of assistance, confirmation requirements, and delegated autonomy within the boundaries of the Genome, Constitution, and policies.
 
-## Arquitetura
+## Architecture
 
 ```text
-evidência de uso + avaliações + preferências explícitas + incidentes
+evidence of use + reviews + explicit preferences + incidents
                                   │
                                   ▼
                          DevelopmentAssessment
                                   │
                                   ▼
-                    fase proposta → aprovação/política → perfil efetivo
+proposed phase → approval/policy → effective profile
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 DevelopmentProfile
@@ -32,7 +32,7 @@ DevelopmentState
   status: PROBATION|ACTIVE|RESTRICTED|PAUSED
 ```
 
-Uma fase inicial pode privilegiar explicação, rascunhos e confirmação; fases posteriores podem permitir regras pré-autorizadas estreitas. Nenhuma fase concede capacidades fora do que o utilizador e a política autorizaram.
+An initial phase may focus on explanation, drafts and confirmation; later phases may allow for narrow preauthorization rules. No phase grants capabilities outside of what the user and policy have authorized.
 
 ## Interfaces
 
@@ -42,23 +42,23 @@ Development.proposeTransition(mind_id, target_stage) -> Proposal
 Development.applyTransition(proposal_id, approval) -> DevelopmentState
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Promoção requer evidência de fiabilidade, não apenas tempo decorrido.
-2. Incidente, revogação ou degradação relevante pode restringir/reverter a fase.
-3. Personalidade pode adaptar estilo dentro de limites; valores constitucionais e identidade base não evoluem por inferência.
-4. Mudanças de autonomia são visíveis e reversíveis pelo utilizador.
+1. Promotion requires evidence of reliability, not just elapsed time.
+2. Relevant incident, revocation or degradation may restrict/revert the phase.
+3. Personality can adapt style within limits; constitutional values ​​and base identity do not evolve by inference.
+4. Changes in autonomy are visible and reversible by the user.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Muitos sucessos de baixo risco:** não justificam autonomia financeira, SSH ou comunicação pública.
-- **Falha durante fase avançada:** reduzir apenas o âmbito afetado quando possível, preservando evidência.
-- **Dados insuficientes:** manter fase atual; não promover por padrão.
+- **Many low-risk successes:** do not justify financial autonomy, SSH or public communication.
+- **Failure during advanced phase:** only reduce the affected scope when possible, preserving evidence.
+- **Insufficient data:** maintain current phase; do not promote by default.
 
-## Justificação
+## Justification
 
-Desenvolvimento distingue maturidade operacional de uma personalidade que “deriva”. A confiança cresce por provas e pode diminuir por risco.
+Development distinguishes operational maturity from a personality that “drifts”. Confidence grows through trials and can decrease through risk.
 
-## Expansões futuras
+## Future expansions
 
-Perfis por domínio, ensaios controlados, canários de autonomia e métricas de confiança explicáveis.
+Domain profiles, controlled trials, autonomy canaries, and explainable trust metrics.
