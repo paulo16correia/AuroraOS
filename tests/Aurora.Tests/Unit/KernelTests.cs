@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aurora.Adapters.Consent;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
@@ -31,13 +32,16 @@ public sealed class KernelTests
         bool grant = true,
         ReasonerProposal? proposal = null,
         IIdempotencyStore? idempotency = null,
-        RecordingAuditStore? audit = null) =>
+        RecordingAuditStore? audit = null,
+        IConsentGate? consent = null,
+        IApprovalStore? approvals = null) =>
         new(
             new FakeReasoner(proposal),
             new FakeRegistry(capability),
             new FakeValidator(valid),
             new FakePolicy(allow),
-            new FakeConsent(grant),
+            consent ?? new FakeConsent(grant),
+            approvals ?? new FakeApprovalStore(),
             new DirectExecutor(),
             audit ?? new RecordingAuditStore(),
             idempotency ?? new InMemoryIdempotencyStore());
@@ -206,5 +210,113 @@ public sealed class KernelTests
         var replay = await kernel.ExecuteAsync(request, Caller, CancellationToken.None);
         Assert.Equal(ExecuteStatus.Conflict, replay.Status);
         Assert.Equal(ErrorCodes.UnknownState, replay.Error?.Code);
+    }
+
+    // --- It.2: persistent approval (design/0002) ---
+
+    [Fact]
+    public async Task RequiresApproval_IsDenied_WithApprovalId_ButNotTerminal()
+    {
+        var consent = new FakeConsent(false, ConsentDecision.RequiresApproval, "appr-1");
+        var kernel = Build(EchoCapability(), consent: consent);
+
+        var response = await kernel.ExecuteAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: Message("x")), Caller, CancellationToken.None);
+
+        Assert.Equal(ExecuteStatus.Denied, response.Status);
+        Assert.Equal(ErrorCodes.ApprovalRequired, response.Error?.Code);
+        Assert.Equal("appr-1", response.Consent?.ApprovalId);
+    }
+
+    [Fact]
+    public async Task RequiresApproval_WithIdempotencyKey_AbandonsReservation_SoRetryStartsFresh()
+    {
+        var store = new InMemoryIdempotencyStore();
+        var consent = new FakeConsent(false, ConsentDecision.RequiresApproval, "appr-1");
+        var kernel = Build(EchoCapability(), consent: consent, idempotency: store);
+        var request = new ExecuteRequest(ActionId: "echo.say", Input: Message("x"), IdempotencyKey: "k1");
+
+        var first = await kernel.ExecuteAsync(request, Caller, CancellationToken.None);
+        Assert.Equal(ExecuteStatus.Denied, first.Status);
+
+        // The reservation was abandoned, not settled as failed, so a retry with the SAME key sees a
+        // fresh Begin rather than an eternal ReplayFailed of the pre-approval denial.
+        var begin = await store.BeginAsync(Caller, "k1", "irrelevant-hash-for-this-check", CancellationToken.None);
+        Assert.Equal(IdempotencyDisposition.Begin, begin.Disposition);
+    }
+
+    [Fact]
+    public async Task ApprovalRejected_IsDenied_Terminal_ConsentRequiredCode()
+    {
+        var consent = new FakeConsent(false, ConsentDecision.Denied, "appr-1");
+        var audit = new RecordingAuditStore();
+        var kernel = Build(EchoCapability(), consent: consent, audit: audit);
+
+        var response = await kernel.ExecuteAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: Message("x")), Caller, CancellationToken.None);
+
+        Assert.Equal(ExecuteStatus.Denied, response.Status);
+        Assert.Equal(ErrorCodes.ConsentRequired, response.Error?.Code);
+        Assert.Equal(["consent_denied"], audit.Outcomes);
+    }
+
+    [Fact]
+    public async Task Approve_Decided_ReturnsApprovalState_AndConsumesOnNextExecute()
+    {
+        var descriptor = new CapabilityDescriptor(
+            "vault.write", "vault.write", "test capability",
+            JsonDocument.Parse("""{"type":"object","additionalProperties":false,"properties":{}}""").RootElement.Clone(),
+            ["writes"], RiskLevel.Medium, ApprovalRequired: true);
+        var capability = new FakeCapability(descriptor, _ =>
+            JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["ok"] = "true" }));
+
+        var approvals = new FakeApprovalStore();
+        var kernel = Build(capability, approvals: approvals, consent: new PersistentApprovalConsentGate(approvals));
+        var request = new ExecuteRequest(ActionId: "vault.write", Input: JsonDocument.Parse("{}").RootElement);
+
+        var denied = await kernel.ExecuteAsync(request, Caller, CancellationToken.None);
+        Assert.Equal(ExecuteStatus.Denied, denied.Status);
+        var approvalId = denied.Consent!.ApprovalId!;
+
+        var decide = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
+        Assert.Equal(ApproveStatus.Decided, decide.Status);
+        Assert.Equal(ApprovalStatus.Approved, decide.ApprovalState);
+
+        var retried = await kernel.ExecuteAsync(request, Caller, CancellationToken.None);
+        Assert.Equal(ExecuteStatus.Completed, retried.Status);
+    }
+
+    [Fact]
+    public async Task Approve_UnknownId_ReturnsNotFound()
+    {
+        var kernel = Build(EchoCapability());
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest("nope", ApprovalDecision.Approved), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.NotFound, response.Status);
+        Assert.Equal(ErrorCodes.ApprovalNotFound, response.Error?.Code);
+    }
+
+    [Fact]
+    public async Task Approve_MissingApprovalId_IsInvalid()
+    {
+        var kernel = Build(EchoCapability());
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(null, ApprovalDecision.Approved), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Invalid, response.Status);
+        Assert.Equal(ErrorCodes.ApprovalIdRequired, response.Error?.Code);
+    }
+
+    [Fact]
+    public async Task Approve_InvalidDecisionWord_IsInvalid()
+    {
+        var kernel = Build(EchoCapability());
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest("appr-1", "maybe"), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Invalid, response.Status);
+        Assert.Equal(ErrorCodes.InvalidDecision, response.Error?.Code);
     }
 }

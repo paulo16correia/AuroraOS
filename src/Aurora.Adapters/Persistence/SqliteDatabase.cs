@@ -39,6 +39,32 @@ public sealed class SqliteDatabase
           updated_at_utc TEXT NOT NULL,
           PRIMARY KEY (principal_client_id, idempotency_key)
         );
+
+        CREATE TABLE IF NOT EXISTS approval (
+          approval_id TEXT PRIMARY KEY,
+          principal_client_id TEXT NOT NULL,
+          principal_windows_user TEXT NOT NULL,
+          action_id TEXT NOT NULL,
+          scope_hash TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          expires_at_utc TEXT NOT NULL,
+          decided_at_utc TEXT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_one_live_pending
+          ON approval(principal_client_id, action_id, scope_hash)
+          WHERE status = 'PENDING';
+
+        CREATE INDEX IF NOT EXISTS idx_approval_scope
+          ON approval(principal_client_id, action_id, scope_hash);
+
+        CREATE TABLE IF NOT EXISTS remembered_note (
+          note_id TEXT PRIMARY KEY,
+          principal_client_id TEXT NOT NULL,
+          note TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL
+        );
         """;
 
     private readonly SqliteConnectionFactory _factory;

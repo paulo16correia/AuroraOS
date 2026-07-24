@@ -23,6 +23,8 @@ public static class ServiceRegistration
         services.AddSingleton<SqliteDatabase>();
         services.AddSingleton<IAuditStore, SqliteAuditStore>();
         services.AddSingleton<IIdempotencyStore, SqliteIdempotencyStore>();
+        services.AddSingleton<IApprovalStore, SqliteApprovalStore>();
+        services.AddSingleton<INoteStore, SqliteNoteStore>();
 
         // Runtime.
         services.AddSingleton<IClock, SystemClock>();
@@ -31,10 +33,12 @@ public static class ServiceRegistration
         // Domain adapters.
         services.AddSingleton<ISchemaValidator, JsonSchemaValidator>();
         services.AddSingleton<IPolicyEngine, AllowlistPolicyEngine>();
-        services.AddSingleton<IConsentGate, AutoLowConsentGate>();
+        services.AddSingleton<IConsentGate, PersistentApprovalConsentGate>();
         services.AddSingleton<IReasoner, NullReasoner>();
         services.AddSingleton<ICapability, ClockNowCapability>();
         services.AddSingleton<ICapability, EchoSayCapability>();
+        services.AddSingleton<ICapability, RememberNoteCapability>();
+        services.AddSingleton<ICapability, RecallNotesCapability>();
         services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 

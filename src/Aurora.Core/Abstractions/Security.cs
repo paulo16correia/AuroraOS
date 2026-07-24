@@ -20,10 +20,16 @@ public interface IPolicyEngine
     PolicyDecision Evaluate(CapabilityDescriptor capability, JsonElement input, Principal principal);
 }
 
-/// <summary>Consent gate. It.0: LOW auto-grants; ≥MEDIUM is refused (real sessions arrive in It.2).</summary>
+/// <summary>
+/// Consent gate. LOW auto-grants. A capability explicitly marked
+/// <see cref="CapabilityDescriptor.ApprovalRequired"/> is gated by a persisted, one-time approval
+/// scoped to the exact action + input (It.2, first increment — see <see cref="IApprovalStore"/>).
+/// Anything else at MEDIUM+ has no consent path yet and stays refused.
+/// </summary>
 public interface IConsentGate
 {
-    ConsentOutcome Evaluate(CapabilityDescriptor capability, Principal principal);
+    Task<ConsentOutcome> EvaluateAsync(
+        CapabilityDescriptor capability, JsonElement input, string scopeHash, Principal principal, CancellationToken ct);
 }
 
 /// <summary>Untrusted NL→action proposer (It.1+). Returns null when it cannot resolve.</summary>

@@ -32,4 +32,11 @@ public interface IIdempotencyStore
     Task<bool> MarkExecutingAsync(Principal principal, string key, CancellationToken ct);
 
     Task CompleteAsync(Principal principal, string key, string state, string resultJson, CancellationToken ct);
+
+    /// <summary>
+    /// Releases a reservation that is still ACCEPTED (not yet executed), so a later call with the
+    /// same key starts a fresh reservation instead of replaying this attempt's disposition forever.
+    /// A no-op, not an error, when the row is no longer ACCEPTED.
+    /// </summary>
+    Task AbandonAsync(Principal principal, string key, CancellationToken ct);
 }

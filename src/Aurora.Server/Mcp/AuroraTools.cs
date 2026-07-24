@@ -9,7 +9,7 @@ using ModelContextProtocol.Server;
 namespace Aurora.Server.Mcp;
 
 /// <summary>
-/// The two fixed MCP tools. Both return a <see cref="JsonElement"/> serialized via
+/// The fixed MCP tools. All return a <see cref="JsonElement"/> serialized via
 /// <see cref="AuroraJson.Options"/>, so the wire payload is snake_case regardless of the MCP SDK's
 /// own serializer.
 /// </summary>
@@ -49,6 +49,22 @@ public sealed class AuroraTools
             IdempotencyKey: idempotency_key);
 
         var response = await kernel.ExecuteAsync(request, principals.Current, ct);
+        return JsonSerializer.SerializeToElement(response, AuroraJson.Options);
+    }
+
+    [McpServerTool(Name = "aurora_approve")]
+    [Description("Decide a pending Aurora approval. 'approval_id' comes from a prior aurora_execute "
+        + "response whose status was 'denied' with error code 'approval_required'. 'decision' is "
+        + "'approved' or 'rejected'.")]
+    public static async Task<JsonElement> Approve(
+        AuroraKernel kernel,
+        IPrincipalAccessor principals,
+        string approval_id,
+        string decision,
+        CancellationToken ct = default)
+    {
+        var request = new ApproveRequest(approval_id, decision);
+        var response = await kernel.ApproveAsync(request, principals.Current, ct);
         return JsonSerializer.SerializeToElement(response, AuroraJson.Options);
     }
 }

@@ -13,10 +13,15 @@ public static class ErrorCodes
     public const string KeyTooLong = "idempotency_key_too_long";
     public const string PolicyDenied = "policy_denied";
     public const string ConsentRequired = "consent_required";
+    public const string ApprovalRequired = "approval_required";
     public const string IdempotencyConflict = "idempotency_conflict";
     public const string ExecutionInProgress = "execution_in_progress";
     public const string ExecutionFailed = "execution_failed";
     public const string UnknownState = "unknown_state";
+    public const string ApprovalIdRequired = "approval_id_required";
+    public const string InvalidDecision = "invalid_decision";
+    public const string ApprovalNotPending = "approval_not_pending";
+    public const string ApprovalNotFound = "approval_not_found";
 }
 
 /// <summary>Hard input limits enforced by the kernel before any effect.</summary>

@@ -51,7 +51,7 @@ public static class ConsentDecision
     public const string RequiresApproval = "requires_approval";
 }
 
-public sealed record ConsentInfo(string Decision, string Via);
+public sealed record ConsentInfo(string Decision, string Via, string? ApprovalId = null);
 
 public sealed record ExecuteError(string Code, string Message, IReadOnlyList<string>? Details = null);
 

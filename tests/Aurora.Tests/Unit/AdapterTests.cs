@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Validation;
 using Aurora.Core.Abstractions;
@@ -21,6 +22,9 @@ public sealed class AdapterTests
 
     private static CapabilityDescriptor Descriptor(RiskLevel risk, params string[] effects) =>
         new("x", "x", "x", Parse("{}"), effects, risk, false);
+
+    private static CapabilityDescriptor ApprovalGatedDescriptor(RiskLevel risk) =>
+        new("x", "x", "x", Parse("{}"), ["writes"], risk, ApprovalRequired: true);
 
     // --- JSON Schema validation (real JsonSchema.Net) ---
 
@@ -61,22 +65,112 @@ public sealed class AdapterTests
     public void Policy_DeniesLowWithEffects() =>
         Assert.False(new AllowlistPolicyEngine().Evaluate(Descriptor(RiskLevel.Low, "writes"), Parse("{}"), Caller).Allowed);
 
-    // --- Consent gate ---
+    [Fact]
+    public void Policy_AllowsMediumWithApprovalRequired() =>
+        Assert.True(new AllowlistPolicyEngine()
+            .Evaluate(ApprovalGatedDescriptor(RiskLevel.Medium), Parse("{}"), Caller).Allowed);
 
     [Fact]
-    public void Consent_AutoGrantsLow()
+    public void Policy_DeniesHighEvenWithApprovalRequired() =>
+        Assert.False(new AllowlistPolicyEngine()
+            .Evaluate(ApprovalGatedDescriptor(RiskLevel.High), Parse("{}"), Caller).Allowed);
+
+    // --- Consent gate (It.2, design/0002) ---
+
+    [Fact]
+    public async Task Consent_AutoGrantsLow()
     {
-        var outcome = new AutoLowConsentGate().Evaluate(Descriptor(RiskLevel.Low), Caller);
+        var outcome = await new PersistentApprovalConsentGate(new FakeApprovalStore())
+            .EvaluateAsync(Descriptor(RiskLevel.Low), Parse("{}"), "scope-1", Caller, CancellationToken.None);
         Assert.True(outcome.Granted);
         Assert.Equal(ConsentDecision.AutoLow, outcome.Info.Decision);
     }
 
     [Fact]
-    public void Consent_RefusesMedium()
+    public async Task Consent_RefusesMediumWithoutApprovalRequired()
     {
-        var outcome = new AutoLowConsentGate().Evaluate(Descriptor(RiskLevel.Medium), Caller);
+        var outcome = await new PersistentApprovalConsentGate(new FakeApprovalStore())
+            .EvaluateAsync(Descriptor(RiskLevel.Medium), Parse("{}"), "scope-1", Caller, CancellationToken.None);
         Assert.False(outcome.Granted);
-        Assert.Equal(ConsentDecision.RequiresApproval, outcome.Info.Decision);
+        Assert.Equal(ConsentDecision.Denied, outcome.Info.Decision);
+    }
+
+    [Fact]
+    public async Task Consent_ApprovalGated_RequestsThenGrantsOnceApproved()
+    {
+        var approvals = new FakeApprovalStore();
+        var gate = new PersistentApprovalConsentGate(approvals);
+        var descriptor = ApprovalGatedDescriptor(RiskLevel.Medium);
+
+        var first = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
+        Assert.False(first.Granted);
+        Assert.Equal(ConsentDecision.RequiresApproval, first.Info.Decision);
+        var approvalId = first.Info.ApprovalId!;
+
+        await approvals.DecideAsync(Caller, approvalId, approve: true, CancellationToken.None);
+
+        var second = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
+        Assert.True(second.Granted);
+        Assert.Equal(ConsentDecision.Granted, second.Info.Decision);
+
+        // One-time use: a third evaluation for the same scope has nothing live to consume.
+        var third = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
+        Assert.False(third.Granted);
+        Assert.Equal(ConsentDecision.RequiresApproval, third.Info.Decision);
+        Assert.NotEqual(approvalId, third.Info.ApprovalId);
+    }
+
+    [Fact]
+    public async Task Consent_ApprovalGated_StaysDeniedAfterRejection()
+    {
+        var approvals = new FakeApprovalStore();
+        var gate = new PersistentApprovalConsentGate(approvals);
+        var descriptor = ApprovalGatedDescriptor(RiskLevel.Medium);
+
+        var first = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
+        await approvals.DecideAsync(Caller, first.Info.ApprovalId!, approve: false, CancellationToken.None);
+
+        var second = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
+        Assert.False(second.Granted);
+        Assert.Equal(ConsentDecision.Denied, second.Info.Decision);
+    }
+
+    // --- memory.remember / memory.recall (design/0002) ---
+
+    [Fact]
+    public async Task RememberNote_ThenRecall_ReturnsIt()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var notes = new SqliteNoteStore(db.Factory, clock);
+        var principals = new FakePrincipalAccessor(Caller);
+
+        var remember = new RememberNoteCapability(notes, principals);
+        var recall = new RecallNotesCapability(notes, principals);
+
+        var saveResult = await remember.ExecuteAsync(Parse("""{"note":"buy milk"}"""), CancellationToken.None);
+        Assert.Equal("buy milk", saveResult.GetProperty("note").GetString());
+
+        var recallResult = await recall.ExecuteAsync(Parse("{}"), CancellationToken.None);
+        var listed = recallResult.GetProperty("notes").EnumerateArray().ToList();
+        Assert.Single(listed);
+        Assert.Equal("buy milk", listed[0].GetProperty("note").GetString());
+    }
+
+    [Fact]
+    public async Task RememberNote_IsScopedPerPrincipal()
+    {
+        using var db = new SqliteTestDb();
+        var notes = new SqliteNoteStore(db.Factory, new TestClock(DateTimeOffset.UnixEpoch));
+
+        await new RememberNoteCapability(notes, new FakePrincipalAccessor(Caller))
+            .ExecuteAsync(Parse("""{"note":"mine"}"""), CancellationToken.None);
+
+        var other = new Principal("c2", "u2");
+        var recallResult = await new RecallNotesCapability(notes, new FakePrincipalAccessor(other))
+            .ExecuteAsync(Parse("{}"), CancellationToken.None);
+
+        Assert.Empty(recallResult.GetProperty("notes").EnumerateArray());
     }
 
     // --- Capabilities ---

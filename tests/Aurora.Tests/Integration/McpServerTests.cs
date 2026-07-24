@@ -50,17 +50,18 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
     }
 
     [Fact]
-    public async Task ListTools_ExposesTheTwoFixedTools()
+    public async Task ListTools_ExposesTheFixedTools()
     {
         await using var client = await ConnectAsync();
         var names = (await client.ListToolsAsync(cancellationToken: Timeout())).Select(t => t.Name).ToList();
 
         Assert.Contains("aurora_catalog", names);
         Assert.Contains("aurora_execute", names);
+        Assert.Contains("aurora_approve", names);
     }
 
     [Fact]
-    public async Task Catalog_ListsClockAndEcho()
+    public async Task Catalog_ListsClockEchoAndMemory()
     {
         await using var client = await ConnectAsync();
         var result = await client.CallToolAsync(
@@ -73,6 +74,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
 
         Assert.Contains("clock.now", ids);
         Assert.Contains("echo.say", ids);
+        Assert.Contains("memory.remember", ids);
+        Assert.Contains("memory.recall", ids);
     }
 
     [Fact]
@@ -177,5 +180,83 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         using var doc = JsonDocument.Parse(body);
         Assert.Equal("invalid_token", doc.RootElement.GetProperty("error").GetString());
         Assert.Equal("unauthorized", doc.RootElement.GetProperty("error_description").GetString());
+    }
+
+    // --- It.2: persistent approval end to end (design/0002) ---
+
+    [Fact]
+    public async Task Remember_RequiresApproval_ThenApprove_ThenExecuteCompletes_ThenRecall()
+    {
+        await using var client = await ConnectAsync();
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "memory.remember",
+            ["input"] = new Dictionary<string, object?> { ["note"] = "buy milk" },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("denied", denied.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approval_required", denied.RootElement.GetProperty("error").GetProperty("code").GetString());
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+        Assert.False(string.IsNullOrEmpty(approvalId));
+
+        var approve = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
+            cancellationToken: Timeout())));
+        Assert.Equal("decided", approve.RootElement.GetProperty("status").GetString());
+        Assert.Equal("APPROVED", approve.RootElement.GetProperty("approval_state").GetString());
+
+        var completed = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("completed", completed.RootElement.GetProperty("status").GetString());
+        Assert.Equal("buy milk", completed.RootElement.GetProperty("result").GetProperty("note").GetString());
+
+        var recalled = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?> { ["action_id"] = "memory.recall" },
+            cancellationToken: Timeout())));
+        var notes = recalled.RootElement.GetProperty("result").GetProperty("notes").EnumerateArray()
+            .Select(n => n.GetProperty("note").GetString())
+            .ToList();
+        Assert.Contains("buy milk", notes);
+    }
+
+    [Fact]
+    public async Task Remember_Rejected_StaysDenied_ForTheSameInput()
+    {
+        await using var client = await ConnectAsync();
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "memory.remember",
+            ["input"] = new Dictionary<string, object?> { ["note"] = "do not remember this" },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "rejected" },
+            cancellationToken: Timeout());
+
+        var retried = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("denied", retried.RootElement.GetProperty("status").GetString());
+        Assert.Equal("consent_required", retried.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task Approve_UnknownApprovalId_ReturnsNotFound()
+    {
+        await using var client = await ConnectAsync();
+        var result = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = "does-not-exist", ["decision"] = "approved" },
+            cancellationToken: Timeout())));
+
+        Assert.Equal("not_found", result.RootElement.GetProperty("status").GetString());
     }
 }

@@ -21,6 +21,7 @@ public sealed class AuroraKernel
     private readonly ISchemaValidator _validator;
     private readonly IPolicyEngine _policy;
     private readonly IConsentGate _consent;
+    private readonly IApprovalStore _approvals;
     private readonly ICapabilityExecutor _executor;
     private readonly IAuditStore _audit;
     private readonly IIdempotencyStore _idempotency;
@@ -31,6 +32,7 @@ public sealed class AuroraKernel
         ISchemaValidator validator,
         IPolicyEngine policy,
         IConsentGate consent,
+        IApprovalStore approvals,
         ICapabilityExecutor executor,
         IAuditStore audit,
         IIdempotencyStore idempotency)
@@ -40,6 +42,7 @@ public sealed class AuroraKernel
         _validator = validator;
         _policy = policy;
         _consent = consent;
+        _approvals = approvals;
         _executor = executor;
         _audit = audit;
         _idempotency = idempotency;
@@ -167,14 +170,27 @@ public sealed class AuroraKernel
                     Error: new ExecuteError(ErrorCodes.PolicyDenied, policy.Reason ?? "Denied by policy."))).ConfigureAwait(false);
         }
 
-        // 7. Consent — LOW auto; ≥MEDIUM requires It.2.
-        var consent = _consent.Evaluate(descriptor, principal);
+        // 7. Consent — LOW auto; approval-gated capabilities go through the persisted approval
+        //    ledger (It.2, first increment); everything else at MEDIUM+ stays refused.
+        var consent = await _consent.EvaluateAsync(descriptor, input, requestHash, principal, ct).ConfigureAwait(false);
         if (!consent.Granted)
         {
-            return await TerminalAsync(
-                principal, actionId, inputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
-                new ExecuteResponse(ExecuteStatus.Denied, resolved, consent.Info,
-                    Error: new ExecuteError(ErrorCodes.ConsentRequired, "Consent is required and not available in this iteration."))).ConfigureAwait(false);
+            var isRetryable = consent.Info.Decision == ConsentDecision.RequiresApproval;
+            var deniedResponse = new ExecuteResponse(ExecuteStatus.Denied, resolved, consent.Info,
+                Error: new ExecuteError(
+                    isRetryable ? ErrorCodes.ApprovalRequired : ErrorCodes.ConsentRequired,
+                    isRetryable
+                        ? "Approval is required. Call aurora_approve with the returned approval_id, then retry this exact request."
+                        : "Consent was denied for this request."));
+
+            // A retryable denial abandons the idempotency reservation instead of settling it as a
+            // terminal failure, so a retry after the approval is decided starts fresh rather than
+            // replaying this denial forever (It.2 design note, design/0002).
+            return isRetryable
+                ? await AbandonedAsync(principal, actionId, inputHash, key, reserved, deniedResponse).ConfigureAwait(false)
+                : await TerminalAsync(
+                    principal, actionId, inputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
+                    deniedResponse).ConfigureAwait(false);
         }
 
         // 8. Claim the reservation for execution. If we no longer own it, fail closed.
@@ -242,6 +258,87 @@ public sealed class AuroraKernel
         }
 
         return stamped;
+    }
+
+    /// <summary>
+    /// Records the audit entry for a "requires approval" outcome and releases the idempotency
+    /// reservation (rather than settling it as a terminal failure), so a retry after the approval
+    /// is decided starts a fresh reservation instead of forever replaying this denial.
+    /// </summary>
+    private async Task<ExecuteResponse> AbandonedAsync(
+        Principal principal, string actionId, string inputHash, string? key, bool reserved, ExecuteResponse response)
+    {
+        var auditRef = await _audit.AppendAsync(
+            principal.ClientId, principal.WindowsUser, actionId, inputHash, "requires_approval", CancellationToken.None)
+            .ConfigureAwait(false);
+        var stamped = response with { AuditRef = [auditRef] };
+
+        if (reserved && key is not null)
+        {
+            try
+            {
+                await _idempotency.AbandonAsync(principal, key, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort: a stale ACCEPTED row just makes an immediate retry see in_progress
+                // until it is naturally superseded; it can never cause a false replay or a double-execute.
+            }
+        }
+
+        return stamped;
+    }
+
+    /// <summary>
+    /// Decides a pending approval on behalf of the caller. Distinct from <see cref="ExecuteAsync"/>:
+    /// it never touches a capability, policy or the executor — only the approval ledger and audit.
+    /// </summary>
+    public async Task<ApproveResponse> ApproveAsync(ApproveRequest request, Principal principal, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ApprovalId))
+        {
+            return new ApproveResponse(ApproveStatus.Invalid,
+                Error: new ExecuteError(ErrorCodes.ApprovalIdRequired, "approval_id is required."));
+        }
+
+        bool approve;
+        if (string.Equals(request.Decision, ApprovalDecision.Approved, StringComparison.Ordinal))
+        {
+            approve = true;
+        }
+        else if (string.Equals(request.Decision, ApprovalDecision.Rejected, StringComparison.Ordinal))
+        {
+            approve = false;
+        }
+        else
+        {
+            return new ApproveResponse(ApproveStatus.Invalid,
+                Error: new ExecuteError(ErrorCodes.InvalidDecision, "decision must be 'approved' or 'rejected'."));
+        }
+
+        var result = await _approvals.DecideAsync(principal, request.ApprovalId, approve, ct).ConfigureAwait(false);
+
+        var outcome = result.Outcome switch
+        {
+            ApprovalDecideOutcome.Decided => approve ? "approval_granted" : "approval_rejected",
+            ApprovalDecideOutcome.NotPending => "approval_not_pending",
+            _ => "approval_not_found",
+        };
+        var auditRef = await _audit.AppendAsync(
+            principal.ClientId, principal.WindowsUser, result.Record?.ActionId ?? "approval.decide",
+            Hashing.Sha256Hex(request.ApprovalId), outcome, CancellationToken.None).ConfigureAwait(false);
+
+        return result.Outcome switch
+        {
+            ApprovalDecideOutcome.Decided => new ApproveResponse(
+                ApproveStatus.Decided, request.ApprovalId, result.Record!.Status, result.Record.ActionId, [auditRef]),
+            ApprovalDecideOutcome.NotPending => new ApproveResponse(
+                ApproveStatus.NotPending, request.ApprovalId, AuditRef: [auditRef],
+                Error: new ExecuteError(ErrorCodes.ApprovalNotPending, "The approval is not pending (already decided or expired).")),
+            _ => new ApproveResponse(
+                ApproveStatus.NotFound, request.ApprovalId, AuditRef: [auditRef],
+                Error: new ExecuteError(ErrorCodes.ApprovalNotFound, "No pending approval with this id belongs to the caller.")),
+        };
     }
 
     /// <summary>

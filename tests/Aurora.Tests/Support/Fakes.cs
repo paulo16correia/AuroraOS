@@ -54,12 +54,77 @@ public sealed class FakePolicy(bool allow) : IPolicyEngine
         allow ? PolicyDecision.Allow("test.allow") : PolicyDecision.Deny("denied by test", "test.deny");
 }
 
-public sealed class FakeConsent(bool grant) : IConsentGate
+public sealed class FakeConsent : IConsentGate
 {
-    public ConsentOutcome Evaluate(CapabilityDescriptor capability, Principal principal) =>
-        grant
-            ? new ConsentOutcome(true, new ConsentInfo(ConsentDecision.AutoLow, "policy"))
-            : new ConsentOutcome(false, new ConsentInfo(ConsentDecision.RequiresApproval, "session"));
+    private readonly ConsentOutcome _outcome;
+
+    public FakeConsent(bool grant, string? decision = null, string? approvalId = null)
+    {
+        var effectiveDecision = decision ?? (grant ? ConsentDecision.AutoLow : ConsentDecision.Denied);
+        _outcome = new ConsentOutcome(grant, new ConsentInfo(effectiveDecision, "test", approvalId));
+    }
+
+    public Task<ConsentOutcome> EvaluateAsync(
+        CapabilityDescriptor capability, JsonElement input, string scopeHash, Principal principal, CancellationToken ct) =>
+        Task.FromResult(_outcome);
+}
+
+/// <summary>In-memory <see cref="IApprovalStore"/> mirroring the real one-time-per-scope semantics.</summary>
+public sealed class FakeApprovalStore : IApprovalStore
+{
+    private readonly Dictionary<string, ApprovalRecord> _byId = [];
+    private int _sequence;
+
+    public Task<ApprovalEvaluation> EvaluateAsync(Principal principal, string actionId, string scopeHash, CancellationToken ct)
+    {
+        var existing = _byId.Values.FirstOrDefault(a =>
+            a.PrincipalClientId == principal.ClientId && a.ActionId == actionId && a.ScopeHash == scopeHash
+            && a.Status is ApprovalStatus.Pending or ApprovalStatus.Approved or ApprovalStatus.Rejected);
+
+        if (existing is { Status: ApprovalStatus.Approved })
+        {
+            _byId[existing.ApprovalId] = existing with { Status = ApprovalStatus.Consumed };
+            return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Consumed, existing.ApprovalId));
+        }
+
+        if (existing is { Status: ApprovalStatus.Rejected })
+        {
+            return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Rejected, existing.ApprovalId));
+        }
+
+        if (existing is { Status: ApprovalStatus.Pending })
+        {
+            return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Pending, existing.ApprovalId));
+        }
+
+        var id = $"appr-{++_sequence}";
+        _byId[id] = new ApprovalRecord(
+            id, principal.ClientId, principal.WindowsUser, actionId, scopeHash, ApprovalStatus.Pending, "t0", "t1", null);
+        return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Pending, id));
+    }
+
+    public Task<ApprovalDecideResult> DecideAsync(Principal principal, string approvalId, bool approve, CancellationToken ct)
+    {
+        if (!_byId.TryGetValue(approvalId, out var record) || record.PrincipalClientId != principal.ClientId)
+        {
+            return Task.FromResult(new ApprovalDecideResult(ApprovalDecideOutcome.NotFound, null));
+        }
+
+        if (record.Status != ApprovalStatus.Pending)
+        {
+            return Task.FromResult(new ApprovalDecideResult(ApprovalDecideOutcome.NotPending, null));
+        }
+
+        var updated = record with { Status = approve ? ApprovalStatus.Approved : ApprovalStatus.Rejected, DecidedAtUtc = "t2" };
+        _byId[approvalId] = updated;
+        return Task.FromResult(new ApprovalDecideResult(ApprovalDecideOutcome.Decided, updated));
+    }
+}
+
+/// <summary>Fixed-principal <see cref="IPrincipalAccessor"/> for unit tests.</summary>
+public sealed class FakePrincipalAccessor(Principal principal) : IPrincipalAccessor
+{
+    public Principal Current { get; } = principal;
 }
 
 public sealed class DirectExecutor : ICapabilityExecutor
@@ -131,6 +196,17 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
         var k = (principal.ClientId, key);
         var requestHash = _rows.TryGetValue(k, out var existing) ? existing.RequestHash : string.Empty;
         _rows[k] = new Row(requestHash, state, resultJson);
+        return Task.CompletedTask;
+    }
+
+    public Task AbandonAsync(Principal principal, string key, CancellationToken ct)
+    {
+        var k = (principal.ClientId, key);
+        if (_rows.TryGetValue(k, out var row) && row.State == IdempotencyState.Accepted)
+        {
+            _rows.Remove(k);
+        }
+
         return Task.CompletedTask;
     }
 }

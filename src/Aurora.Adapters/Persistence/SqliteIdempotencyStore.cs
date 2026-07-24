@@ -128,6 +128,20 @@ public sealed class SqliteIdempotencyStore : IIdempotencyStore
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task AbandonAsync(Principal principal, string key, CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM idempotency
+            WHERE principal_client_id = @c AND idempotency_key = @k AND state = @accepted;
+            """;
+        command.Parameters.AddWithValue("@c", principal.ClientId);
+        command.Parameters.AddWithValue("@k", key);
+        command.Parameters.AddWithValue("@accepted", IdempotencyState.Accepted);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     private static IdempotencyBegin Resolve(string storedRequestHash, string storedState, string? storedResultJson, string requestHash)
     {
         if (!string.Equals(storedRequestHash, requestHash, StringComparison.Ordinal))
