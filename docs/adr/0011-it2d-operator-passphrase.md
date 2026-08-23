@@ -86,14 +86,13 @@ the secret, made the decision. It raises the bar from "the agent can approve
 itself" to "the agent must obtain a secret it was never given". That is a large
 step and not the whole journey.
 
-## A test-infrastructure defect fixed along the way
+## Test execution model
 
-`SqliteTestDb.Dispose` calls `SqliteConnection.ClearAllPools()`, which is
-process-wide. Under xUnit's default parallelism, one test finishing could drop
-pooled connections belonging to an unrelated test mid-operation, and the symptom
-was sporadic failures in the audit and backup tests, which had nothing to do with
-the cause. Test classes now run sequentially; the suite still finishes in under a
-second. Verified over six consecutive runs.
+Test classes run sequentially. `SqliteTestDb.Dispose` calls
+`SqliteConnection.ClearAllPools()`, which is process-wide: under parallel
+execution, one test finishing would drop pooled connections belonging to another
+test still in flight. Serialising costs nothing measurable — the suite finishes
+in well under a second.
 
 ## Tests
 

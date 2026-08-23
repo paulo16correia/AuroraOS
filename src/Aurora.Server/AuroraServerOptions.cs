@@ -20,6 +20,14 @@ public sealed class AuroraServerOptions
     public required string SandboxRoot { get; init; }
 
     /// <summary>
+    /// Whether the sandbox file capabilities are registered in the catalog. Default false since
+    /// the re-baseline (docs/adr/0012): they are step 8 of the frozen implementation order and
+    /// their prerequisites (steps 3-7) do not exist yet. The code and tests stay; the capability
+    /// is simply not offered.
+    /// </summary>
+    public bool SandboxFilesEnabled { get; init; }
+
+    /// <summary>
     /// How long a reservation may sit in EXECUTING before startup reconciliation calls it
     /// indeterminate. Long enough that a slow-but-live execution is never stolen from itself.
     /// </summary>
@@ -58,6 +66,8 @@ public sealed class AuroraServerOptions
             Directory.CreateDirectory(dir);
             dbPath = Path.Combine(dir, "aurora.db");
         }
+
+        var sandboxFilesEnabled = config.GetValue<bool?>("Aurora:SandboxFilesEnabled") ?? false;
 
         var sandboxRoot = config["Aurora:SandboxRoot"];
         if (string.IsNullOrWhiteSpace(sandboxRoot))
@@ -106,6 +116,7 @@ public sealed class AuroraServerOptions
             Port = port,
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
+            SandboxFilesEnabled = sandboxFilesEnabled,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,
             AuditAnchorPath = auditAnchorPath,

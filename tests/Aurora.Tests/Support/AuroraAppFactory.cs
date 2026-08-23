@@ -28,6 +28,10 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("Aurora:DbPath", _dbPath);
         builder.UseSetting("Aurora:SandboxRoot", SandboxRoot);
         builder.UseSetting("Aurora:PassphrasePath", PassphrasePath);
+
+        // The sandbox capabilities are frozen for production (docs/adr/0012) but stay covered:
+        // the tests keep proving the path hardening still holds for whenever they are unfrozen.
+        builder.UseSetting("Aurora:SandboxFilesEnabled", "true");
     }
 
     protected override void Dispose(bool disposing)

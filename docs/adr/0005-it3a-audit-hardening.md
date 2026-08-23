@@ -45,17 +45,16 @@ to hide a deletion.
 "records missing from 7" are different diagnoses that call for different
 responses.
 
-## A mistake worth recording
+## Anchor scope
 
-The first version put the anchor at a fixed per-**directory** name
-(`aurora.audit.anchor`). Two databases in the same folder then shared one anchor,
-and each read the other's head as evidence of truncation — the server refused to
-start. Caught by the integration tests, which use a temporary database per
-instance.
+The anchor is derived from the database file (`<db>.anchor`), not from its
+directory. Two databases in the same folder must not share one anchor: each would
+read the other's head as evidence of truncation, and the server would refuse to
+start.
 
-The anchor is now derived from the database file (`<db>.anchor`). The lesson is
-not about filenames: a tamper detector with false positives is as useless as none
-at all, because the human response to a frequent, wrong alarm is to switch it off.
+This matters beyond naming. A tamper detector with false positives is as useless
+as none at all, because the human response to a frequent, wrong alarm is to
+switch it off.
 
 ## Configuration
 

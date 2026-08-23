@@ -68,8 +68,13 @@ public static class ServiceRegistration
         services.AddSingleton<ICapability, EchoSayCapability>();
         services.AddSingleton<ICapability, RememberNoteCapability>();
         services.AddSingleton<ICapability, RecallNotesCapability>();
-        services.AddSingleton<ICapability, WriteSandboxFileCapability>();
-        services.AddSingleton<ICapability, ReadSandboxFileCapability>();
+        // Frozen by the re-baseline (docs/adr/0012): filesystem capabilities are step 8 of the
+        // frozen implementation order and were built before steps 3-7 existed. Off by default.
+        if (options.SandboxFilesEnabled)
+        {
+            services.AddSingleton<ICapability, WriteSandboxFileCapability>();
+            services.AddSingleton<ICapability, ReadSandboxFileCapability>();
+        }
         services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 

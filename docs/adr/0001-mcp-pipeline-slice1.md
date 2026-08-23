@@ -1,7 +1,7 @@
 # Design 0001 — Aurora MCP Pipeline, Slice 1
 
-**Status:** Approved for It.0 · **Date:** 2026-07-21
-**Relationship to the imported spec:** the RFCs, laws, governance and review documents under `docs/` are **non-binding reference** (owner's decision: "reference only"). This design knowingly **diverges** from Paulo's v1.0 freeze in favour of a minimal, iterable slice. The AuroraOS spec ADRs (ADR-000…029) that once sat beside these files were removed from this repository and remain in the `paulo16correia/AuroraOS` spec repo. The implementation's own design records live here, in `docs/adr/`.
+**Status:** Superseded in part by `docs/adr/0012-specification-baseline.md` · **Date:** 2026-07-21
+**Relationship to the imported spec:** this document set the scope of the first phase, a minimal iterable slice for validating the security invariants. The specification under `docs/` is **normative** as of `docs/adr/0012-specification-baseline.md`, which supersedes the reference-only status recorded here and defines how this phase's components are re-founded in the frozen implementation order. The AuroraOS spec ADRs (ADR-000…029) that once sat beside these files were removed from this repository and remain in the `paulo16correia/AuroraOS` spec repo. The implementation's own design records live here, in `docs/adr/`.
 
 ## Objective
 
@@ -85,4 +85,4 @@ tests/Aurora.Tests   xUnit — unit (reasoner and prompt mocked) + integration (
 **Adopted from It.0:** untrusted reasoner; fail-closed policy evaluated with the input; hash-chained audit; idempotency with states, conflict and re-auth on replay; loopback + bearer + Origin; XOR objective/action_id with strict fields and size limits; WAL/busy_timeout plus migrations; Planner removed.
 **Deferred (It.2):** the consent and session corrections (server-side session binding, single-flight, deadline plus heartbeat, anti-spoofing, passphrase KDF) and sandbox hardening.
 **Deferred (It.3):** UNKNOWN recovery and reconciliation, metrics, interop with a real MCP client, backup/restore.
-**Accepted divergence:** we do not conform to Paulo's v1.0 freeze (Decision/CapabilityRequest/Action/Observation/Event Bus) — the "reference only" decision.
+**Scope of this phase:** the Decision/CapabilityRequest/Action/Observation model and the Event Bus are not part of this slice; they enter with the frozen implementation order (see `docs/adr/0012-specification-baseline.md`).
