@@ -14,6 +14,9 @@ public sealed class AuroraServerOptions
 
     public required string DbPath { get; init; }
 
+    /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (design/0003).</summary>
+    public required string SandboxRoot { get; init; }
+
     public static AuroraServerOptions FromConfiguration(IConfiguration config)
     {
         var token = config["Aurora:BearerToken"]
@@ -36,7 +39,20 @@ public sealed class AuroraServerOptions
             dbPath = Path.Combine(dir, "aurora.db");
         }
 
-        var options = new AuroraServerOptions { BearerToken = token, Port = port, DbPath = dbPath };
+        var sandboxRoot = config["Aurora:SandboxRoot"];
+        if (string.IsNullOrWhiteSpace(sandboxRoot))
+        {
+            sandboxRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Aurora", "sandbox");
+        }
+
+        Directory.CreateDirectory(sandboxRoot);
+
+        var options = new AuroraServerOptions
+        {
+            BearerToken = token, Port = port, DbPath = dbPath, SandboxRoot = sandboxRoot,
+        };
         if (generated)
         {
             Console.WriteLine($"[Aurora] No bearer token configured; generated one for this run: {token}");

@@ -259,4 +259,74 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
 
         Assert.Equal("not_found", result.RootElement.GetProperty("status").GetString());
     }
+
+    [Fact]
+    public async Task Execute_WriteSandbox_RequiresApproval_ThenWritesTheFile()
+    {
+        await using var client = await ConnectAsync();
+        var relative = $"it2/{Guid.NewGuid():N}.txt";
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "files.write_sandbox",
+            ["input"] = new Dictionary<string, object?> { ["path"] = relative, ["content"] = "written by aurora" },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("denied", denied.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approval_required", denied.RootElement.GetProperty("error").GetProperty("code").GetString());
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+        // Nothing may exist on disk until the approval is actually decided.
+        Assert.False(File.Exists(Path.Combine(_factory.SandboxRoot, "it2", Path.GetFileName(relative))));
+
+        var approve = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
+            cancellationToken: Timeout())));
+        Assert.Equal("decided", approve.RootElement.GetProperty("status").GetString());
+
+        var completed = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("completed", completed.RootElement.GetProperty("status").GetString());
+        Assert.False(completed.RootElement.GetProperty("result").GetProperty("overwritten").GetBoolean());
+
+        var written = Path.Combine(_factory.SandboxRoot, "it2", Path.GetFileName(relative));
+        Assert.True(File.Exists(written));
+        Assert.Equal("written by aurora", await File.ReadAllTextAsync(written));
+    }
+
+    [Fact]
+    public async Task Execute_WriteSandbox_TraversalFails_EvenAfterApproval()
+    {
+        await using var client = await ConnectAsync();
+        var escapeName = $"aurora-escaped-{Guid.NewGuid():N}.txt";
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "files.write_sandbox",
+            ["input"] = new Dictionary<string, object?>
+            {
+                ["path"] = $"../{escapeName}",
+                ["content"] = "should never land",
+            },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
+            cancellationToken: Timeout());
+
+        // Approval authorises the action, never the escape: the sandbox is a separate boundary.
+        var failed = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("failed", failed.RootElement.GetProperty("status").GetString());
+        Assert.Equal("execution_failed", failed.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+        var parent = Directory.GetParent(_factory.SandboxRoot)!.FullName;
+        Assert.False(File.Exists(Path.Combine(parent, escapeName)));
+    }
 }

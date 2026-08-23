@@ -5,7 +5,7 @@ namespace Aurora.Tests.Support;
 
 /// <summary>
 /// Hosts the real Aurora server in-memory for integration tests, with a known bearer token and an
-/// isolated temp SQLite database per factory instance.
+/// isolated temp SQLite database and sandbox root per factory instance.
 /// </summary>
 public sealed class AuroraAppFactory : WebApplicationFactory<Program>
 {
@@ -14,10 +14,15 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
     private readonly string _dbPath =
         Path.Combine(Path.GetTempPath(), $"aurora-test-{Guid.NewGuid():N}.db");
 
+    /// <summary>Sandbox root for this instance, so a test write never escapes into the real one.</summary>
+    public string SandboxRoot { get; } =
+        Path.Combine(Path.GetTempPath(), $"aurora-sandbox-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Aurora:BearerToken", BearerToken);
         builder.UseSetting("Aurora:DbPath", _dbPath);
+        builder.UseSetting("Aurora:SandboxRoot", SandboxRoot);
     }
 
     protected override void Dispose(bool disposing)
@@ -31,6 +36,22 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
         {
             TryDelete(_dbPath + suffix);
+        }
+
+        try
+        {
+            if (Directory.Exists(SandboxRoot))
+            {
+                Directory.Delete(SandboxRoot, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort cleanup.
         }
     }
 

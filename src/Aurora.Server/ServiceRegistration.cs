@@ -1,5 +1,6 @@
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Files;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
@@ -35,10 +36,12 @@ public static class ServiceRegistration
         services.AddSingleton<IPolicyEngine, AllowlistPolicyEngine>();
         services.AddSingleton<IConsentGate, PersistentApprovalConsentGate>();
         services.AddSingleton<IReasoner, NullReasoner>();
+        services.AddSingleton<ISandboxFileWriter>(_ => new SandboxFileWriter(options.SandboxRoot));
         services.AddSingleton<ICapability, ClockNowCapability>();
         services.AddSingleton<ICapability, EchoSayCapability>();
         services.AddSingleton<ICapability, RememberNoteCapability>();
         services.AddSingleton<ICapability, RecallNotesCapability>();
+        services.AddSingleton<ICapability, WriteSandboxFileCapability>();
         services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 
