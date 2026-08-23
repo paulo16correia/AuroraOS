@@ -15,7 +15,7 @@ public sealed class SqliteApprovalStore : IApprovalStore
     /// <summary>SQLite primary result code for a constraint violation (SQLITE_CONSTRAINT).</summary>
     private const int SqliteConstraintError = 19;
 
-    /// <summary>Single window covering request → decide → consume (design/0002).</summary>
+    /// <summary>Single window covering request → decide → consume (docs/adr/0002).</summary>
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
 
     private readonly SqliteConnectionFactory _factory;

@@ -7,7 +7,7 @@ namespace Aurora.Adapters.Capabilities;
 
 /// <summary>
 /// MEDIUM, approval-gated capability that writes a UTF-8 text file inside the sandbox root
-/// (design/0003). The first capability that touches the filesystem.
+/// (docs/adr/0003). The first capability that touches the filesystem.
 /// </summary>
 public sealed class WriteSandboxFileCapability : ICapability
 {

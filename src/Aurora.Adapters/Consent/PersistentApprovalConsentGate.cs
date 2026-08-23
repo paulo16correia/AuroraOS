@@ -5,7 +5,7 @@ using Aurora.Core.Contracts;
 namespace Aurora.Adapters.Consent;
 
 /// <summary>
-/// It.2 consent gate, first increment (design/0002). LOW-risk capabilities auto-grant.
+/// It.2 consent gate, first increment (docs/adr/0002). LOW-risk capabilities auto-grant.
 /// A capability explicitly marked <see cref="CapabilityDescriptor.ApprovalRequired"/> is gated by
 /// a persisted, one-time approval scoped to the exact action + input (see
 /// <see cref="IApprovalStore"/>). Anything else at MEDIUM+ has no consent path yet and is refused.

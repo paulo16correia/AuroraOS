@@ -18,7 +18,7 @@ public static class Hashing
 
     /// <summary>
     /// Keyed HMAC-SHA-256, lowercase hex. Used for the audit chain so that write access to the
-    /// database file is not enough to forge a consistent chain (design/0005).
+    /// database file is not enough to forge a consistent chain (docs/adr/0005).
     /// </summary>
     public static string HmacSha256Hex(ReadOnlySpan<byte> key, string utf8Text)
     {

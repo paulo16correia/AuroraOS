@@ -8,7 +8,7 @@ namespace Aurora.Adapters.Persistence;
 public sealed record BackupResult(string DatabasePath, string AnchorPath, bool AuditVerified, string? AuditReason);
 
 /// <summary>
-/// Online backup of the Aurora database plus its audit anchor (design/0009).
+/// Online backup of the Aurora database plus its audit anchor (docs/adr/0009).
 /// </summary>
 /// <remarks>
 /// Uses SQLite's own backup API rather than copying the file: a plain copy of a WAL database while
@@ -16,7 +16,7 @@ public sealed record BackupResult(string DatabasePath, string AnchorPath, bool A
 /// <para>
 /// The audit signing key is deliberately NOT copied. Keeping the key beside the database in the
 /// same backup would hand an attacker who steals that backup everything needed to rewrite the
-/// chain and re-sign it — which is exactly the defence design/0005 set out to build. The key is
+/// chain and re-sign it — which is exactly the defence docs/adr/0005 set out to build. The key is
 /// the operator's to back up separately, and to store somewhere the database backups do not reach.
 /// </para>
 /// </remarks>

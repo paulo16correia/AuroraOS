@@ -5,7 +5,7 @@ using Aurora.Core.Files;
 namespace Aurora.Adapters.Files;
 
 /// <summary>
-/// Atomic, link-aware file writer confined to a sandbox root (design/0003).
+/// Atomic, link-aware file writer confined to a sandbox root (docs/adr/0003).
 /// </summary>
 /// <remarks>
 /// Three defences, in order: <see cref="SandboxPathValidator"/> rejects the path lexically; every

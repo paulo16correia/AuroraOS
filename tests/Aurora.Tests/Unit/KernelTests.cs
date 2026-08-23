@@ -215,7 +215,7 @@ public sealed class KernelTests
         Assert.Equal(ErrorCodes.UnknownState, replay.Error?.Code);
     }
 
-    // --- It.2: persistent approval (design/0002) ---
+    // --- It.2: persistent approval (docs/adr/0002) ---
 
     [Fact]
     public async Task RequiresApproval_IsDenied_WithApprovalId_ButNotTerminal()

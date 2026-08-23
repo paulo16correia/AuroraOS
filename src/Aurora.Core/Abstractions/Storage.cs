@@ -10,7 +10,7 @@ public sealed record AuditVerification(bool Ok, long? BrokenSequence, string? Re
 
 /// <summary>
 /// One audit record. Beyond the bare outcome it carries *why* the kernel decided as it did
-/// (design/0006): with an untrusted reasoner able to pick the action since It.1, "what happened"
+/// (docs/adr/0006): with an untrusted reasoner able to pick the action since It.1, "what happened"
 /// is no longer enough to reconstruct a decision after the fact.
 /// </summary>
 public sealed record AuditEntry(
@@ -57,7 +57,7 @@ public interface IIdempotencyStore
 
     /// <summary>
     /// Moves reservations left in EXECUTING for longer than <paramref name="staleAfter"/> to
-    /// UNKNOWN, and returns how many were moved (design/0007). A process that dies mid-effect
+    /// UNKNOWN, and returns how many were moved (docs/adr/0007). A process that dies mid-effect
     /// leaves EXECUTING behind; without this the key is wedged forever, because EXECUTING is
     /// deliberately not retryable — the effect may have happened.
     /// </summary>

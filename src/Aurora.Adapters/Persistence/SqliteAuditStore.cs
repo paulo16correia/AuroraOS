@@ -13,7 +13,7 @@ namespace Aurora.Adapters.Persistence;
 /// </summary>
 /// <remarks>
 /// The chain is keyed (HMAC-SHA-256) with a secret held outside the database, and the head is
-/// mirrored to an external anchor (design/0005). Together these cover the three tampering
+/// mirrored to an external anchor (docs/adr/0005). Together these cover the three tampering
 /// shapes: an in-place edit breaks the recomputation, a wholesale rewrite cannot be signed
 /// without the key, and a truncated tail is caught by the anchor being ahead of the database.
 /// </remarks>

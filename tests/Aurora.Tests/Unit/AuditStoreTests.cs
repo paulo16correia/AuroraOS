@@ -58,7 +58,7 @@ public sealed class AuditStoreTests
         Assert.Equal(1, verification.BrokenSequence);
     }
 
-    // ---- It.3 hardening: keyed chain + external anchor (design/0005) ----
+    // ---- It.3 hardening: keyed chain + external anchor (docs/adr/0005) ----
 
     private static SqliteAuditStore StoreWith(SqliteTestDb db, byte[] key, string anchorPath) =>
         new(db.Factory, new TestClock(DateTimeOffset.UnixEpoch), key, new AuditAnchorFile(anchorPath));

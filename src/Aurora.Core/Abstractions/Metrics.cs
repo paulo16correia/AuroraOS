@@ -1,7 +1,7 @@
 namespace Aurora.Core.Abstractions;
 
 /// <summary>
-/// A point-in-time reading of the operational counters (design/0008).
+/// A point-in-time reading of the operational counters (docs/adr/0008).
 /// </summary>
 /// <remarks>
 /// Counters are process-lifetime and reset on restart; only <see cref="PendingApprovals"/> is a

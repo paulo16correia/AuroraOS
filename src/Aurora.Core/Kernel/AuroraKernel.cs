@@ -53,7 +53,7 @@ public sealed class AuroraKernel
     }
 
     /// <summary>
-    /// Why the kernel decided as it did, attached to every audit record (design/0006).
+    /// Why the kernel decided as it did, attached to every audit record (docs/adr/0006).
     /// Nullable throughout: a request rejected before resolution has no risk or via to report.
     /// </summary>
     private readonly record struct AuditFacts(
@@ -215,7 +215,7 @@ public sealed class AuroraKernel
 
             // A retryable denial abandons the idempotency reservation instead of settling it as a
             // terminal failure, so a retry after the approval is decided starts fresh rather than
-            // replaying this denial forever (It.2 design note, design/0002).
+            // replaying this denial forever (It.2 design note, docs/adr/0002).
             var deniedFacts = new AuditFacts(
                 descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds));
 

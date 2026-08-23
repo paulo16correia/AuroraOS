@@ -74,7 +74,7 @@ public sealed class IdempotencyStoreTests
         Assert.False(await store.MarkExecutingAsync(Caller, "k", CancellationToken.None)); // no longer ACCEPTED
     }
 
-    // ---- It.3 reconciliation (design/0007) ----
+    // ---- It.3 reconciliation (docs/adr/0007) ----
 
     private static SqliteIdempotencyStore StoreAt(SqliteTestDb db, DateTimeOffset now) =>
         new(db.Factory, new TestClock(now));

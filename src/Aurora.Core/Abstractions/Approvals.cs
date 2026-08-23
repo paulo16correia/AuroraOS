@@ -21,7 +21,7 @@ public interface IApprovalStore
 
     /// <summary>
     /// Number of approvals still awaiting a human and not yet expired — the "active prompts"
-    /// gauge (design/0008). Read from storage rather than counted in memory, so it survives a
+    /// gauge (docs/adr/0008). Read from storage rather than counted in memory, so it survives a
     /// restart and cannot drift from the ledger.
     /// </summary>
     Task<int> CountPendingAsync(CancellationToken ct);

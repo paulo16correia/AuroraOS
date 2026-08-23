@@ -15,7 +15,7 @@ public sealed record AzureOpenAiOptions(
     int TimeoutSeconds = 15);
 
 /// <summary>
-/// Untrusted NL→action proposer backed by Azure OpenAI (design/0004).
+/// Untrusted NL→action proposer backed by Azure OpenAI (docs/adr/0004).
 /// </summary>
 /// <remarks>
 /// Spoken to over the REST API with a plain <see cref="HttpClient"/> rather than the

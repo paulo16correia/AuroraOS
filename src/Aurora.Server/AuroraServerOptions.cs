@@ -16,7 +16,7 @@ public sealed class AuroraServerOptions
 
     public required string DbPath { get; init; }
 
-    /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (design/0003).</summary>
+    /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (docs/adr/0003).</summary>
     public required string SandboxRoot { get; init; }
 
     /// <summary>
@@ -25,7 +25,7 @@ public sealed class AuroraServerOptions
     /// </summary>
     public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
 
-    /// <summary>File holding the HMAC key that signs the audit chain (design/0005).</summary>
+    /// <summary>File holding the HMAC key that signs the audit chain (docs/adr/0005).</summary>
     public required string AuditKeyPath { get; init; }
 
     /// <summary>File mirroring the audit head, so a truncated tail is detectable.</summary>

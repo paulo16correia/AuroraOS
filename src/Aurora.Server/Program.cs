@@ -35,7 +35,7 @@ if (!auditVerification.Ok)
 
 // A process that died mid-effect leaves reservations in EXECUTING, which is deliberately not
 // retryable. Move the stale ones to UNKNOWN before serving, so those keys stop being wedged
-// and an operator can see them (design/0007).
+// and an operator can see them (docs/adr/0007).
 var reconciled = await app.Services.GetRequiredService<IIdempotencyStore>()
     .ReconcileStaleAsync(options.ExecutingStaleAfter, CancellationToken.None);
 if (reconciled > 0)

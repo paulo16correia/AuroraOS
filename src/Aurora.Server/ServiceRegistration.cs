@@ -24,7 +24,7 @@ public static class ServiceRegistration
         services.AddSingleton(new SqliteConnectionFactory(options.DbPath));
         services.AddSingleton<SqliteDatabase>();
         // The audit signing key and head anchor live outside the database on purpose, so write
-        // access to the .db alone cannot forge or silently shorten the chain (design/0005).
+        // access to the .db alone cannot forge or silently shorten the chain (docs/adr/0005).
         services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(
             sp.GetRequiredService<SqliteConnectionFactory>(),
             sp.GetRequiredService<IClock>(),

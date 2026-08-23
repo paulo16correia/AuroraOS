@@ -6,7 +6,7 @@ using Aurora.Core.Contracts;
 namespace Aurora.Adapters.Capabilities;
 
 /// <summary>
-/// MEDIUM, approval-gated capability that persists a short note (design/0002). The first
+/// MEDIUM, approval-gated capability that persists a short note (docs/adr/0002). The first
 /// capability with a real, stateful effect; exercises the It.2 approval path end to end.
 /// </summary>
 public sealed class RememberNoteCapability : ICapability

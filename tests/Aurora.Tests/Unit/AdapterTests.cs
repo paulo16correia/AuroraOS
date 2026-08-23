@@ -75,7 +75,7 @@ public sealed class AdapterTests
         Assert.False(new AllowlistPolicyEngine()
             .Evaluate(ApprovalGatedDescriptor(RiskLevel.High), Parse("{}"), Caller).Allowed);
 
-    // --- Consent gate (It.2, design/0002) ---
+    // --- Consent gate (It.2, docs/adr/0002) ---
 
     [Fact]
     public async Task Consent_AutoGrantsLow()
@@ -135,7 +135,7 @@ public sealed class AdapterTests
         Assert.Equal(ConsentDecision.Denied, second.Info.Decision);
     }
 
-    // --- memory.remember / memory.recall (design/0002) ---
+    // --- memory.remember / memory.recall (docs/adr/0002) ---
 
     [Fact]
     public async Task RememberNote_ThenRecall_ReturnsIt()

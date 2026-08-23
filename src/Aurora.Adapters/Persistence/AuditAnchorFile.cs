@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace Aurora.Adapters.Persistence;
 
-/// <summary>The newest audit position observed, held outside the database (design/0005).</summary>
+/// <summary>The newest audit position observed, held outside the database (docs/adr/0005).</summary>
 public sealed record AuditAnchor(long Sequence, string RecordHash);
 
 /// <summary>

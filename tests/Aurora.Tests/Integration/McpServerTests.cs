@@ -182,7 +182,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Equal("unauthorized", doc.RootElement.GetProperty("error_description").GetString());
     }
 
-    // --- It.2: persistent approval end to end (design/0002) ---
+    // --- It.2: persistent approval end to end (docs/adr/0002) ---
 
     [Fact]
     public async Task Remember_RequiresApproval_ThenApprove_ThenExecuteCompletes_ThenRecall()
@@ -366,7 +366,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             doc.RootElement.GetProperty("error").GetProperty("code").GetString());
     }
 
-    // ---- It.3 metrics surface (design/0008) ----
+    // ---- It.3 metrics surface (docs/adr/0008) ----
 
     [Fact]
     public async Task Metrics_RequireTheBearerToken()

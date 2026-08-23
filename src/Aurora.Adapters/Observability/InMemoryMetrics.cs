@@ -4,7 +4,7 @@ using Aurora.Core.Abstractions;
 namespace Aurora.Adapters.Observability;
 
 /// <summary>
-/// Thread-safe, in-process counters (design/0008). Deliberately not a time series: the goal is to
+/// Thread-safe, in-process counters (docs/adr/0008). Deliberately not a time series: the goal is to
 /// answer "is this install healthy right now", not to replace a monitoring system.
 /// </summary>
 public sealed class InMemoryMetrics : IAuroraMetrics

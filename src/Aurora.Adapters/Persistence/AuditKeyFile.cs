@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace Aurora.Adapters.Persistence;
 
 /// <summary>
-/// Loads, or creates on first use, the 32-byte key that signs the audit chain (design/0005).
+/// Loads, or creates on first use, the 32-byte key that signs the audit chain (docs/adr/0005).
 /// </summary>
 /// <remarks>
 /// The key deliberately lives outside the SQLite file: the whole point is that write access to the
