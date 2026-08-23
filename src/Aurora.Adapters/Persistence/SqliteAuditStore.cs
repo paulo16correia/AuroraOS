@@ -12,9 +12,10 @@ namespace Aurora.Adapters.Persistence;
 /// strictly linear. Verification recomputes every record hash and every link, fail-closed.
 /// </summary>
 /// <remarks>
-/// The chain is unkeyed: an in-place edit of any record is tamper-evident, but truncation of the
-/// newest rows or a fully consistent rewrite by a party with write access to the database file is
-/// NOT detected. External head anchoring / keyed (HMAC) signing is deferred to It.3.
+/// The chain is keyed (HMAC-SHA-256) with a secret held outside the database, and the head is
+/// mirrored to an external anchor (design/0005). Together these cover the three tampering
+/// shapes: an in-place edit breaks the recomputation, a wholesale rewrite cannot be signed
+/// without the key, and a truncated tail is caught by the anchor being ahead of the database.
 /// </remarks>
 public sealed class SqliteAuditStore : IAuditStore
 {
@@ -26,11 +27,16 @@ public sealed class SqliteAuditStore : IAuditStore
     private readonly SqliteConnectionFactory _factory;
     private readonly IClock _clock;
     private readonly SemaphoreSlim _gate;
+    private readonly byte[] _key;
+    private readonly AuditAnchorFile _anchor;
 
-    public SqliteAuditStore(SqliteConnectionFactory factory, IClock clock)
+    public SqliteAuditStore(
+        SqliteConnectionFactory factory, IClock clock, byte[] key, AuditAnchorFile anchor)
     {
         _factory = factory;
         _clock = clock;
+        _key = key;
+        _anchor = anchor;
         _gate = Gates.GetOrAdd(factory.DbPath, static _ => new SemaphoreSlim(1, 1));
     }
 
@@ -105,6 +111,10 @@ public sealed class SqliteAuditStore : IAuditStore
             }
 
             await transaction.CommitAsync(ct).ConfigureAwait(false);
+
+            // Anchor only after the commit: an anchor ahead of a rolled-back append would look
+            // exactly like truncation and raise a false alarm.
+            _anchor.Advance(nextSequence, recordHash);
             return recordHash;
         }
         finally
@@ -128,6 +138,8 @@ public sealed class SqliteAuditStore : IAuditStore
 
         var isFirst = true;
         var expectedPreviousHash = string.Empty;
+        long headSequence = 0;
+        var headHash = string.Empty;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var sequence = reader.GetInt64(0);
@@ -167,13 +179,36 @@ public sealed class SqliteAuditStore : IAuditStore
             }
 
             expectedPreviousHash = recordHash;
+            headSequence = sequence;
+            headHash = recordHash;
             isFirst = false;
+        }
+
+        // The chain is internally consistent. That is exactly what a truncated log also looks
+        // like, so the external anchor is what actually detects a removed tail.
+        AuditAnchor? anchor = _anchor.Read();
+        if (anchor is not null)
+        {
+            if (anchor.Sequence > headSequence)
+            {
+                return new AuditVerification(
+                    false, headSequence + 1,
+                    $"Audit log ends at {headSequence} but the anchor records {anchor.Sequence}; "
+                    + "records have been removed.");
+            }
+
+            if (anchor.Sequence == headSequence
+                && !string.Equals(anchor.RecordHash, headHash, StringComparison.Ordinal))
+            {
+                return new AuditVerification(
+                    false, headSequence, "Head record does not match the external anchor.");
+            }
         }
 
         return new AuditVerification(true, null);
     }
 
-    private static string ComputeRecordHash(
+    private string ComputeRecordHash(
         string previousHash,
         long sequence,
         string recordId,
@@ -198,6 +233,6 @@ public sealed class SqliteAuditStore : IAuditStore
                 outcome,
                 createdAt,
             });
-        return Hashing.Sha256Hex(preimage);
+        return Hashing.HmacSha256Hex(_key, preimage);
     }
 }

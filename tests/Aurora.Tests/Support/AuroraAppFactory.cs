@@ -33,7 +33,7 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
             return;
         }
 
-        foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+        foreach (var suffix in new[] { string.Empty, "-wal", "-shm", ".anchor" })
         {
             TryDelete(_dbPath + suffix);
         }

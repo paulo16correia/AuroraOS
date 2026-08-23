@@ -2,7 +2,11 @@ using Aurora.Core.Contracts;
 
 namespace Aurora.Core.Abstractions;
 
-public sealed record AuditVerification(bool Ok, long? BrokenSequence);
+/// <summary>
+/// Outcome of an integrity check. <paramref name="Reason"/> distinguishes an edited record
+/// from a truncated tail, which the chain alone cannot tell apart.
+/// </summary>
+public sealed record AuditVerification(bool Ok, long? BrokenSequence, string? Reason = null);
 
 /// <summary>Append-only, hash-chained audit log. Integrity failure is fail-closed.</summary>
 public interface IAuditStore

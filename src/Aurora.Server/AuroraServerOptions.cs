@@ -19,6 +19,12 @@ public sealed class AuroraServerOptions
     /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (design/0003).</summary>
     public required string SandboxRoot { get; init; }
 
+    /// <summary>File holding the HMAC key that signs the audit chain (design/0005).</summary>
+    public required string AuditKeyPath { get; init; }
+
+    /// <summary>File mirroring the audit head, so a truncated tail is detectable.</summary>
+    public required string AuditAnchorPath { get; init; }
+
     /// <summary>Azure OpenAI settings, or null when objective mode falls back to keywords only.</summary>
     public AzureOpenAiOptions? AzureOpenAi { get; init; }
 
@@ -54,6 +60,15 @@ public sealed class AuroraServerOptions
 
         Directory.CreateDirectory(sandboxRoot);
 
+        // Default the audit key and anchor beside the database, but keep them configurable so an
+        // operator can put the key somewhere the database's own backups do not reach.
+        var auditKeyPath = config["Aurora:AuditKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.audit.key");
+        // Derived from the database file, not the directory: two databases side by side must not
+        // share one anchor, or each would read the other's head as evidence of truncation.
+        var auditAnchorPath = config["Aurora:AuditAnchorPath"]
+            ?? Path.GetFullPath(dbPath) + ".anchor";
+
         // Objective mode only reaches the model when all three are present; otherwise the
         // keyword fallback stands in, restricted to LOW read-only actions.
         var azureEndpoint = config["Aurora:AzureOpenAI:Endpoint"];
@@ -79,6 +94,8 @@ public sealed class AuroraServerOptions
             Port = port,
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
+            AuditKeyPath = auditKeyPath,
+            AuditAnchorPath = auditAnchorPath,
             AzureOpenAi = azure,
         };
         if (generated)
