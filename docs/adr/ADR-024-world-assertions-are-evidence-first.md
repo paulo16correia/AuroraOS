@@ -1,31 +1,31 @@
-# ADR-024 - World Assertions sao orientadas a evidencia
+# ADR-024 - World Assertions are evidence-oriented
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Contexto
+## Context
 
-Memorias textuais sao insuficientes para representar a realidade operacional:
-nao permitem perguntar de forma segura por relacoes, explicar a origem de um
-facto ou distinguir uma observacao de uma inferencia.
+Textual memories are insufficient to represent operational reality:
+do not allow us to safely ask about relationships, explain the origin of a
+fact or distinguish an observation from an inference.
 
-## Decisao
+## Decision
 
-Introduzir `WorldAssertion` como objeto imutavel e persistido. Cada assertion
-guarda sujeito, predicado, objeto, validade, proveniencia e referencias de
-evidencia. O primeiro predicado e `WORKS_ON_PROJECT`, criado unicamente por
-uma mensagem assertiva explicita do utilizador.
+Enter `WorldAssertion` as an immutable and persisted object. Each assertion
+stores subject, predicate, object, validity, provenance and references of
+evidence. The first predicate is `WORKS_ON_PROJECT`, created solely by
+an explicit assertive message from the user.
 
-## Consequencias
+## Consequences
 
-- Queries podem ser respondidas a partir de relacoes estruturadas e auditaveis.
-- O LLM recebe apenas factos recuperados e nao tem autoridade de escrita.
-- A evolucao para grafo, temporalidade rica, conflitos e resolucao de entidade
-  conserva o mesmo contrato de evidencia.
+- Queries can be answered from structured and auditable relationships.
+- The LLM only receives retrieved facts and has no writing authority.
+- The evolution to graph, rich temporality, conflicts and entity resolution
+  maintains the same evidence contract.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-- **Usar apenas pesquisa vetorial de mensagens:** nao fornece predicado,
-  validade ou proveniencia estruturada.
-- **Permitir que o LLM extraia e persista qualquer facto:** mistura proposta
-  nao confiavel com estado canonicamente auditavel.
+- **Use only message vector search:** does not provide predicate,
+  validity or structured provenance.
+- **Allow LLM to extract and persist any fact:** proposed mix
+  unreliable with canonically auditable state.

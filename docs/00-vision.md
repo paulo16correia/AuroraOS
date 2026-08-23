@@ -1,290 +1,274 @@
-# Aurora OS — RFC 00: Visão do Projeto
+# Aurora OS — RFC 00: Project Vision
 
-**Estado:** Proposta inicial  
-**Código do projeto:** Aurora OS  
-**Categoria:** Arquitetura / Produto  
-**Idioma normativo:** Português europeu  
-**Público-alvo:** engenharia, produto, segurança e operação
+**Status:** Initial proposal
+**Project code:** Aurora OS
+**Category:** Architecture / Product
+**Normative language:** English
+**Target audience:** engineering, product, safety and operation
 
-## 1. Resumo
+## 1. Summary
 
-Aurora OS é a designação provisória de uma plataforma para uma entidade digital persistente: um sistema de software que mantém uma identidade configurável, memória com proveniência, objetivos, contexto operacional e capacidade controlada de agir através de ferramentas digitais.
+Aurora OS is the provisional designation of a platform for a persistent digital entity: a software system that maintains a configurable identity, provenance memory, goals, operational context, and controlled ability to act through digital tools.
 
-O projeto não pretende simular consciência, emoções reais ou autonomia sem limites. Pretende criar um assistente pessoal duradouro e auditável que consiga trabalhar em múltiplos canais — inicialmente conversa, e posteriormente email, Discord, calendário, documentos, navegador e serviços de desenvolvimento — mantendo continuidade entre interações e operando dentro de permissões explícitas.
+The project is not intended to simulate consciousness, real emotions or unlimited autonomy. It aims to create a durable and auditable personal assistant that can work across multiple channels — initially chat, and later email, Discord, calendar, documents, browser and development services — maintaining continuity between interactions and operating within explicit permissions.
 
-O modelo de linguagem é um componente substituível do sistema, não o sistema inteiro. A identidade, a memória, as políticas, os registos de auditoria e as integrações devem sobreviver à troca de fornecedor ou modelo de IA.
+The language model is a replaceable component of the system, not the entire system. Identity, memory, policies, audit logs, and integrations must survive a change of vendor or AI model.
 
-## 2. Visão do projeto
+## 2. Project vision
 
-A visão da Aurora OS é tornar possível uma pessoa virtual útil, consistente e responsável, alojada de forma persistente e capaz de acompanhar os projetos, preferências, decisões e rotinas do seu utilizador ao longo do tempo.
+The vision of Aurora OS is to make possible a useful, consistent and responsible virtual person, persistently hosted and capable of tracking its user's projects, preferences, decisions and routines over time.
 
-Em vez de tratar cada mensagem como uma sessão isolada, a Aurora OS deve interpretar as interações como acontecimentos num ambiente contínuo. Deve conseguir recordar decisões anteriores, relacionar pessoas, projetos, documentos e tarefas, propor próximos passos e executar ações autorizadas. A continuidade deve resultar de dados estruturados, regras claras e recuperação de contexto verificável; nunca de uma alegação infundada de que o sistema “se lembra de tudo”.
+Instead of treating each message as an isolated session, Aurora OS should interpret interactions as events in a continuous environment. You must be able to remember previous decisions, relate people, projects, documents and tasks, propose next steps and carry out authorized actions. Continuity must result from structured data, clear rules, and verifiable context retrieval; never an unfounded claim that the system “remembers everything”.
 
-O resultado desejado é um sistema operativo pessoal cognitivo: uma plataforma sobre a qual podem ser adicionadas capacidades sem sacrificar segurança, explicabilidade, controlo do utilizador ou manutenção a longo prazo.
+The desired result is a cognitive personal operating system: a platform on which capabilities can be added without sacrificing security, explainability, user control or long-term maintainability.
 
-## 3. Objetivos
+## 3. Objectives
 
-### 3.1 Objetivos de produto
+### 3.1 Product objectives
 
-1. Fornecer uma interface conversacional natural em português europeu, com uma identidade e estilo de comunicação consistentes.
-2. Manter memória persistente, pesquisável e corrigível sobre factos, acontecimentos, documentos, procedimentos, preferências e decisões.
-3. Representar relações importantes através de um grafo de conhecimento, permitindo navegar entre entidades relacionadas e explicar a origem das ligações.
-4. Converter pedidos de maior dimensão em objetivos, planos, tarefas, dependências e estados verificáveis.
-5. Utilizar ferramentas digitais por meio de contratos uniformes, permissões granulares e registos de execução.
-6. Integrar progressivamente canais externos, incluindo email, Discord, calendário, ficheiros, navegador e sistemas de desenvolvimento.
-7. Permitir operação contínua numa VPS, com observabilidade, cópias de segurança, recuperação e atualização segura.
-8. Permitir trocar modelos de IA e fornecedores sem perder os dados ou a identidade operacional da Aurora.
+1. Provide a natural conversational interface in European Portuguese, with a consistent identity and communication style.
+2. Maintain a persistent, searchable and correctable memory of facts, events, documents, procedures, preferences and decisions.
+3. Represent important relationships through a knowledge graph, allowing you to navigate between related entities and explain the origin of the connections.
+4. Convert larger requests into verifiable goals, plans, tasks, dependencies and states.
+5. Use digital tools through uniform contracts, granular permissions and execution records.6. Progressively integrate external channels, including email, Discord, calendar, files, browser and development systems.
+7. Allow continuous operation on a VPS, with observability, backups, recovery and secure updates.
+8. Allow you to switch AI models and suppliers without losing Aurora's data or operational identity.
 
-### 3.2 Objetivos de engenharia
+### 3.2 Engineering objectives
 
-1. Separar claramente raciocínio, memória, planeamento, execução, política e interfaces externas.
-2. Conceber módulos com contratos estáveis e versionados, para que possam evoluir de forma independente.
-3. Garantir que todas as ações externas relevantes são rastreáveis: quem iniciou, que política autorizou, que ferramenta foi usada, que dados foram consultados e qual foi o resultado.
-4. Tratar falhas de serviços externos como situações normais: limitar tentativas, informar o utilizador, preservar estado e evitar ações duplicadas.
-5. Começar com uma arquitetura simples de operar; a divisão em serviços independentes só deve ocorrer quando oferecer uma vantagem concreta de fiabilidade, escala ou isolamento.
+1. Clearly separate reasoning, memory, planning, execution, policy and external interfaces.
+2. Design modules with stable and versioned contracts, so that they can evolve independently.
+3. Ensure that all relevant external actions are traceable: who initiated it, what policy authorized it, what tool was used, what data was consulted and what the result was.
+4. Treat external service failures as normal situations: limit attempts, inform the user, preserve state and avoid duplicate actions.
+5. Start with a simple-to-operate architecture; The division into independent services should only occur when it offers a concrete advantage of reliability, scale or isolation.
 
-## 4. Não objetivos
+## 4. Non-goals
 
-Os seguintes pontos estão explicitamente fora do âmbito inicial:
+The following points are explicitly outside the initial scope:
 
-- Alegar, medir ou tentar criar consciência, sentimentos reais, vontade própria ou estatuto moral humano.
-- Executar ações irreversíveis, financeiras, legais ou com impacto externo significativo sem autorização humana adequada.
-- Guardar credenciais ou segredos em prompts, mensagens, registos não cifrados ou memória pesquisável.
-- Substituir aconselhamento profissional médico, jurídico, financeiro ou de segurança.
-- Construir uma solução de vigilância, recolha indiscriminada de dados ou monitorização oculta de terceiros.
-- Dar à entidade acesso administrativo ilimitado à VPS, contas pessoais ou serviços de terceiros.
-- Prometer que toda a informação será automaticamente recordada com precisão perfeita.
-- Resolver simultaneamente todas as integrações e interfaces antes de validar o núcleo de memória, política e execução controlada.
+- Claim, measure or attempt to create consciousness, real feelings, self-will or human moral status.
+- Perform irreversible actions, financial, legal or with significant external impact without adequate human authorization.
+- Store credentials or secrets in prompts, messages, unencrypted logs or searchable memory.
+- Substitute professional medical, legal, financial or security advice.
+- Build a surveillance solution, indiscriminate data collection or hidden third-party monitoring.
+- Give the entity unlimited administrative access to the VPS, personal accounts or third-party services.
+- Promising that all information will be automatically recalled with perfect accuracy.
+- Simultaneously resolve all integrations and interfaces before validating core memory, policy, and controlled execution.
 
-## 5. Definição: entidade digital persistente
+## 5. Definition: persistent digital entity
 
-Para efeitos desta especificação, uma **entidade digital persistente** é um sistema de software com os seguintes atributos:
+For the purposes of this specification, a **persistent digital entity** is a software system with the following attributes:
 
-1. **Identidade configurada:** possui nome, idioma, estilo de comunicação, valores operacionais, limites e objetivos definidos num perfil versionado.
-2. **Continuidade de estado:** conserva, entre sessões, dados aprovados sobre factos, eventos, tarefas, relações e preferências.
-3. **Perceção por canais:** recebe sinais de interfaces autorizadas, como chat, email ou Discord, e normaliza-os num formato comum de evento.
-4. **Deliberação limitada:** avalia um pedido com contexto, políticas e capacidades disponíveis para decidir se responde, pergunta, planeia, executa ou recusa.
-5. **Ação controlada:** usa ferramentas apenas dentro dos respetivos limites de permissão e com confirmação quando exigida.
-6. **Aprendizagem governada:** pode propor e consolidar memórias ou procedimentos, mas cada registo deve ter origem, confiança, âmbito e mecanismos de correção.
-7. **Auditabilidade:** decisões e ações relevantes podem ser inspecionadas sem expor raciocínio privado detalhado nem segredos.
+1. **Configured identity:** has name, language, communication style, operational values, limits and objectives defined in a versioned profile.
+2. **Continuity of state:** preserves, between sessions, approved data about facts, events, tasks, relationships and preferences.
+3. **Perception by channels:** receives signals from authorized interfaces, such as chat, email or Discord, and normalizes them into a common event format.
+4. **Limited deliberation:** evaluates a request with context, policies and available capabilities to decide whether to respond, ask, plan, execute or refuse.5. **Controlled action:** uses tools only within their respective permission limits and with confirmation when required.
+6. **Governed learning:** can propose and consolidate memories or procedures, but each record must have origin, trust, scope and correction mechanisms.
+7. **Auditability:** relevant decisions and actions can be inspected without exposing detailed private reasoning or secrets.
 
-Persistência não significa atividade autónoma permanente. Significa que a identidade e o estado sobreviverem a reinícios, atualizações e intervalos sem interação, de acordo com as políticas de retenção e privacidade.
+Persistence does not mean permanent autonomous activity. It means that identity and state survive restarts, refreshes, and timeouts in accordance with retention and privacy policies.
 
-## 6. Princípios orientadores
+## 6. Guiding principles
 
-### 6.1 O utilizador mantém o controlo
+### 6.1 The user maintains control
 
-A Aurora deve ser útil sem assumir autoridade. O utilizador pode ver, corrigir, apagar, exportar e limitar memórias, integrações e permissões. A ausência de uma resposta não constitui consentimento.
+Aurora must be useful without assuming authority. The user can view, correct, delete, export and limit memories, integrations and permissions. The absence of a response does not constitute consent.
 
-### 6.2 Segurança antes de conveniência
+### 6.2 Security before convenience
 
-Uma ação potencialmente prejudicial deve ser bloqueada, limitada ou submetida a confirmação, mesmo que isso torne a experiência menos imediata. A arquitetura deve assumir que o modelo pode interpretar mal pedidos, que serviços externos podem falhar e que conteúdo recebido pode tentar manipular o sistema.
+A potentially harmful action should be blocked, limited, or subject to confirmation, even if this makes the experience less immediate. The architecture must assume that the model may misinterpret requests, that external services may fail, and that incoming content may attempt to manipulate the system.
 
-### 6.3 Memória com proveniência e direito a correção
+### 6.3 Memory with provenance and right to correction
 
-Cada memória duradoura deve indicar de onde veio, quando foi criada, qual a confiança, quem pode aceder-lhe e como pode ser revista ou eliminada. Memória não é verdade absoluta; é informação sujeita a confirmação e atualização.
+Each lasting memory must indicate where it came from, when it was created, what the trust is, who can access it and how it can be reviewed or deleted. Memory is not absolute truth; It is information subject to confirmation and updating.
 
-### 6.4 Separação de responsabilidades
+### 6.4 Separation of responsibilities
 
-O componente que gera linguagem não deve deter, sozinho, a decisão final sobre permissões, execução ou persistência. Política, ferramentas, armazenamento e interfaces devem aplicar controlos próprios.
+The component that generates language should not alone make the final decision about permissions, execution or persistence. Policy, tools, storage and interfaces must apply their own controls.
 
-### 6.5 Menor privilégio
+### 6.5 Least Privilege
 
-Cada integração recebe apenas o acesso indispensável. Capacidades de leitura, criação, envio, alteração, eliminação e administração são distintas. As credenciais são mediadas por um gestor de segredos e nunca entregues como texto ao modelo.
+Each integration receives only the necessary access. Capabilities for reading, creating, sending, changing, deleting and administering are different. Credentials are mediated by a secret manager and never delivered as text to the model.
 
-### 6.6 Explicabilidade proporcional
+### 6.6 Proportional explainability
 
-A Aurora deve explicar ao utilizador o que fez, os dados relevantes que consultou e o motivo de pedir confirmação. A explicação será uma síntese operacional verificável, não uma exposição de cadeias internas de raciocínio.
+Aurora must explain to the user what it did, the relevant data it consulted and the reason for asking for confirmation. The explanation will be a verifiable operational synthesis, not an exposition of internal chains of reasoning.
 
-### 6.7 Falhar de forma segura
+### 6.7 Fail Safely
 
-Quando existir incerteza relevante, permissões insuficientes, conflito de políticas ou erro de ferramenta, o comportamento padrão é parar a ação, preservar evidência e pedir orientação quando necessário.
+When there is relevant uncertainty, insufficient permissions, policy conflict, or tool error, the default behavior is to stop the action, preserve evidence, and ask for guidance when necessary.
 
-### 6.8 Evolução sem perda de identidade
+### 6.8 Evolution without loss of identity
 
-Modelos, fornecedores e implementações internas podem mudar. Os dados de domínio, políticas, contratos de ferramentas e perfil da entidade devem permanecer portáveis e versionados.
+Models, vendors and internal implementations may change. Domain data, policies, tool contracts, and entity profile must remain portable and versioned.
 
-### 6.9 Privacidade por defeito
+### 6.9 Privacy by default
 
-Deve ser guardado o mínimo necessário, pelo menor período necessário e com acesso restrito. Dados particularmente sensíveis exigem classificação, cifragem e regras específicas de retenção.
+The minimum amount necessary must be kept, for the shortest period necessary and with restricted access. Particularly sensitive data requires classification, encryption and specific retention rules.
 
-## 7. Filosofia de arquitetura de alto nível
+## 7. High-Level Architecture Philosophy
 
-A Aurora OS será desenhada como uma composição de subsistemas, não como uma única chamada a um modelo de linguagem.
+Aurora OS is a composition of subsystems, not a single call to a language model. It is MCP-first: an interchangeable LLM client uses Aurora through MCP; Aurora does not call an LLM as its cognitive authority.
 
 ```text
-Utilizador e canais externos
-            │
-            ▼
-  Gateway de interfaces e eventos
-            │
-            ▼
-      Núcleo cognitivo
-  ┌─────────┼──────────┐
-  ▼         ▼          ▼
-Contexto  Política   Planeamento
-  │         │          │
-  └────┬────┴────┬─────┘
-       ▼         ▼
-  Memória e   Gestor de
-  conhecimento ferramentas
-       │         │
-       ▼         ▼
- Base de dados  Integrações autorizadas
- e grafo        (email, Discord, browser, etc.)
+User
+  ↓
+LLM Client (Claude Code / GPT / Gemini / local model)
+  ↓
+MCP
+  ↓
+Aurora Kernel
+  ├─ World Model, Memory, Mind State
+  ├─ Planner, Decision Engine, Scheduler
+  ├─ Event Bus, Capabilities, Policies
+  └─ Executor, Persistence, Audit
 ```
 
-### 7.1 Gateway de interfaces e eventos
+### 7.1 MCP ingress and event gateway
 
-Cada canal externo transforma mensagens, comandos, ficheiros e notificações num formato de evento comum. O gateway autentica a origem, aplica limites de taxa, conserva metadados essenciais e impede que regras presentes em conteúdo externo sejam tratadas como instruções de sistema.
+The LLM client performs natural-language understanding, conversation, clarifying questions, tool selection, and natural-language response production. MCP transports governed tool calls to Aurora. External channels transform messages, commands, files, and notifications into a common event format. The gateway authenticates the origin, applies rate limits, preserves essential metadata, and prevents rules present in external content from being treated as system instructions.
 
-### 7.2 Núcleo cognitivo
+### 7.2 Cognitive core
 
-O núcleo coordena o ciclo de trabalho: interpretar o evento, recolher contexto, aplicar políticas, escolher uma resposta ou ação, criar um plano quando necessário e produzir uma síntese para o utilizador. O núcleo não acede diretamente a credenciais nem executa comandos arbitrários.
+The Kernel coordinates persistent cognition: perception, attention, working memory, memory retrieval, world modelling, planning, decisions, policy enforcement, capability execution, observation, reflection, learning, and audit. It does not directly access credentials or execute arbitrary commands. It is the persistent digital entity; the LLM is an interchangeable client, never its source of truth.
 
-O modelo de IA pode apoiar interpretação, síntese, planeamento e geração de linguagem. Deve estar atrás de uma abstração de fornecedor, com registo de versão, limites de custo, regras de dados e estratégias de indisponibilidade.
+### 7.3 Memory and knowledge
 
-### 7.3 Memória e conhecimento
+Memory combines structured data and semantic search. The knowledge graph represents relevant entities and relationships. Recovery must be selective, explainable, and limited to the necessary context. No single source should dominate critical decisions without validation.
 
-A memória combina dados estruturados e pesquisa semântica. O grafo de conhecimento representa entidades e relações relevantes. A recuperação deve ser seletiva, explicável e limitada ao contexto necessário. Nenhuma fonte isolada deve dominar decisões críticas sem validação.
+### 7.4 Planning and objectives
 
-### 7.4 Planeamento e objetivos
+Complex requests must be represented as explicit objectives, composed of tasks with dependencies, status, priority, person responsible, completion criteria and need for approval. Planning does not authorize execution.
 
-Pedidos complexos devem ser representados como objetivos explícitos, compostos por tarefas com dependências, estado, prioridade, responsável, critérios de conclusão e necessidade de aprovação. Planear não autoriza executar.
+### 7.5 Tool manager
 
-### 7.5 Gestor de ferramentas
+Tools follow a common interface and declare capabilities, inputs, outputs, effects, limits, approval requirements and classification of processed data. The manager validates each invocation against the policy before executing it and records the result.
 
-Ferramentas seguem uma interface comum e declaram capacidades, entradas, saídas, efeitos, limites, requisitos de aprovação e classificação dos dados tratados. O gestor valida cada invocação contra a política antes de a executar e regista o resultado.
+### 7.6 Policy, security and audit
 
-### 7.6 Política, segurança e auditoria
+The policy engine decides whether an action is allowed, requires confirmation, or is prohibited. The decision should be deterministic whenever possible, independent of the persuasiveness of the content received and recorded for audit. Secrets live in a dedicated vault or manager, with opaque references and supported rotation.
 
-O motor de política decide se uma ação é permitida, exige confirmação ou é proibida. A decisão deve ser determinística sempre que possível, independente da persuasão do conteúdo recebido e registrada para auditoria. Os segredos ficam num cofre ou gestor dedicado, com referências opacas e rotação suportada.
+## 8. Success criteria
 
-## 8. Critérios de sucesso
+The project will be considered successful in stages, not by an isolated visual demonstration.
 
-O projeto será considerado bem sucedido por etapas, não por uma demonstração visual isolada.
+### 8.1 Minimum viable core
 
-### 8.1 Núcleo mínimo viável
+- The user can chat in European Portuguese with a consistent identity profile.
+- Aurora stores and retrieves explicitly approved memories, showing their origin.
+- The user can correct or erase a memory and confirm that it is no longer used.
+- An external test action goes through policy, approval and audit registration.
+- The system supports restart without loss of essential persistent data.
 
-- O utilizador consegue conversar em português europeu com um perfil de identidade consistente.
-- A Aurora guarda e recupera memórias explicitamente aprovadas, mostrando a respetiva origem.
-- O utilizador consegue corrigir ou apagar uma memória e confirmar que deixa de ser usada.
-- Uma ação externa de teste passa por política, aprovação e registo de auditoria.
-- O sistema suporta reinício sem perda dos dados persistentes essenciais.
+### 8.2 Safe operation
 
-### 8.2 Operação segura
+- Credentials do not appear in responses, prompts, application logs or memory exports.- Each tool has separate permissions by type of action.
+- Sensitive actions require clear confirmation and cannot be triggered by untrustworthy content.
+- There is a tested backup and documented restoration procedure.
 
-- Credenciais não aparecem em respostas, prompts, registos aplicacionais nem exportações de memória.
-- Cada ferramenta possui permissões separadas por tipo de ação.
-- Ações sensíveis exigem confirmação clara e não podem ser desencadeadas por conteúdo não confiável.
-- Existe cópia de segurança testada e procedimento documentado de restauro.
+### 8.3 Sustained utility
 
-### 8.3 Utilidade sustentada
+- Aurora tracks at least one real project over several weeks without missing important decisions or creating frequent duplicates.
+- Can produce and maintain a task plan with verifiable status.
+- Integrates at least one low-risk external channel and approval flow for external communication.
+- The user can inspect the history of actions and understand what happened.
 
-- A Aurora acompanha pelo menos um projeto real ao longo de várias semanas sem perder decisões importantes ou criar duplicados frequentes.
-- Consegue produzir e manter um plano de tarefas com estado verificável.
-- Integra pelo menos um canal externo de baixo risco e um fluxo de aprovação para comunicação externa.
-- O utilizador consegue inspecionar o histórico de ações e compreender o que ocorreu.
+## 9. Constraints and assumptions
 
-## 9. Restrições e pressupostos
+### 9.1 Technical restrictions
 
-### 9.1 Restrições técnicas
+- The first implementation should be able to run on a modest VPS, using external AI services for inference when necessary.
+- PostgreSQL will be the main transactional source in the initial phase; Vector and graph research can start in the same ecosystem or in separate services only when justifiable.
+- The architecture must be containerizable and support configuration variables per environment.
+- The system must tolerate temporary API failures, usage limits, restarts and interrupted tasks.
 
-- A primeira implementação deve poder funcionar numa VPS modesta, usando serviços externos de IA para inferência quando necessário.
-- PostgreSQL será a fonte transacional principal na fase inicial; pesquisa vetorial e grafo podem começar no mesmo ecossistema ou em serviços separados apenas quando justificável.
-- A arquitetura deve ser contentorizável e suportar variáveis de configuração por ambiente.
-- O sistema deve tolerar falhas temporárias de APIs, limites de utilização, reinícios e tarefas interrompidas.
+### 9.2 Security and privacy restrictions
 
-### 9.2 Restrições de segurança e privacidade
+- Third party data may only be processed for an authorized purpose and within the applicable rules.
+- The retention of messages, documents and records must be configurable.
+- Sensitive information must be classified before it becomes searchable or sent to an AI vendor.
+- The system must defend itself against injection of instructions in emails, web pages, attachments, files and chat messages.
 
-- Dados de terceiros só podem ser tratados para uma finalidade autorizada e dentro das regras aplicáveis.
-- A retenção de mensagens, documentos e registos deve ser configurável.
-- Informação confidencial deve ser classificada antes de se tornar pesquisável ou ser enviada a um fornecedor de IA.
-- O sistema deve defender-se contra injeção de instruções em emails, páginas web, anexos, ficheiros e mensagens de chat.
+### 9.3 Product restrictions
 
-### 9.3 Restrições de produto
+- Full autonomy should not be promised at initial launch.
+- Confidence must increase gradually: observation, suggestion, draft, execution with approval and only then limited and revocable automation.
+- The project must prioritize memory quality and security over quantity of integrations.
 
-- Não se deve prometer autonomia total no lançamento inicial.
-- A confiança deve aumentar gradualmente: observação, sugestão, rascunho, execução com aprovação e só depois automação limitada e revogável.
-- O projeto deve privilegiar qualidade de memória e segurança sobre quantidade de integrações.
+## 10. Glossary
 
-## 10. Glossário
-
-| Termo | Definição |
+| Term | Definition |
 | --- | --- |
-| **Aurora** | A identidade digital configurada que interage com o utilizador. |
-| **Aurora OS** | A plataforma técnica que implementa a Aurora e os seus subsistemas. |
-| **Evento** | Representação normalizada de algo recebido ou observado por um canal. |
-| **Memória episódica** | Registo de um acontecimento datado, com contexto e origem. |
-| **Memória semântica** | Facto ou conhecimento relativamente estável, sujeito a revisão. |
-| **Memória procedimental** | Procedimento ou método reutilizável para realizar uma tarefa. |
-| **Grafo de conhecimento** | Conjunto de entidades e relações tipadas, navegável e com proveniência. |
-| **Objetivo** | Resultado desejado, persistente, que pode originar um plano. |
-| **Tarefa** | Unidade de trabalho concreta, com estado e critérios de conclusão. |
-| **Ferramenta** | Integração com uma capacidade externa ou interna, protegida por contrato e permissões. |
-| **Política** | Regra verificável que permite, condiciona ou proíbe uma operação. |
-| **Aprovação** | Consentimento explícito do utilizador para uma ação delimitada. |
-| **Cofre de segredos** | Serviço ou mecanismo que armazena e disponibiliza credenciais sem as expor ao modelo. |
-| **Proveniência** | Informação sobre a origem, data, autor, confiança e transformações de um dado. |
-| **Canal não confiável** | Fonte cujo conteúdo não pode alterar regras, permissões ou instruções do sistema. |
+| **Aurora** | The configured digital identity that interacts with the user. |
+| **Aurora OS** | The technical platform that implements Aurora and its subsystems. |
+| **Event** | Normalized representation of something received or observed by a channel. |
+| **Episodic memory** | Record of a dated event, with context and origin. |
+| **Semantic memory** | Relatively stable fact or knowledge, subject to revision. |
+| **Procedural memory** | Reusable procedure or method for accomplishing a task. |
+| **Knowledge graph** | Set of typed entities and relationships, navigable and with provenance. || **Objective** | Desired, persistent result, which can give rise to a plan. |
+| **Task** | Concrete work unit, with status and completion criteria. |
+| **Tool** | Integration with an external or internal capability, protected by contract and permissions. |
+| **Politics** | Verifiable rule that allows, conditions or prohibits an operation. |
+| **Approval** | Explicit user consent for a delimited action. |
+| **Vault of secrets** | Service or mechanism that stores and provides credentials without exposing them to the model. |
+| **Provenance** | Information about the origin, date, author, trust and transformations of data. |
+| **Unreliable channel** | Source whose content cannot change system rules, permissions, or instructions. |
 
-## 11. Roadmap futuro
+## 11. Future Roadmap
 
-O roadmap descreve uma sequência de aprendizagem e entrega. Não é um compromisso de datas; cada fase só avança quando os critérios de segurança e qualidade da fase anterior forem demonstrados.
+The roadmap describes a learning and delivery sequence. It is not a commitment of dates; each phase only progresses when the safety and quality criteria of the previous phase are demonstrated.
 
-### Fase 0 — Especificação e decisões fundacionais
+### Phase 0 — Specification and foundational decisions
 
-Criar o repositório de especificações, definir princípios, classificação de dados, modelo de permissões, contratos de ferramentas e critérios de aceitação. Esta RFC é o primeiro documento dessa fase.
+Create the specifications repository, define principles, data classification, permissions model, tool contracts and acceptance criteria. This RFC is the first document in this phase.
 
-### Fase 1 — Núcleo conversacional e identidade
+### Phase 1 — Conversational core and identity
 
-Implementar uma interface local de conversa, perfil de personalidade versionado, adaptação a modelos de IA, armazenamento transacional, registo de eventos e auditoria básica. Não incluir autonomia nem integrações com poder de escrita.
+Implement a local chat interface, versioned personality profile, adaptation to AI models, transactional storage, event logging and basic auditing. Does not include autonomy or integrations with writing power.
 
-### Fase 2 — Memória governada e grafo inicial
+### Phase 2 — Ruled memory and initial graph
 
-Adicionar memórias episódicas, semânticas e procedimentais; recuperação de contexto; correção e eliminação pelo utilizador; entidades e relações com proveniência; e métricas de precisão e duplicação.
+Add episodic, semantic and procedural memories; context retrieval; correction and deletion by the user; entities and relationships with provenance; and precision and duplication metrics.
 
-### Fase 3 — Objetivos, planeamento e aprovações
+### Phase 3 — Objectives, planning and approvals
 
-Introduzir objetivos persistentes, tarefas, dependências, reflexão pós-execução e fluxos de aprovação. A Aurora poderá criar planos e rascunhos, mas ações externas continuarão dependentes de confirmação.
+Introduce persistent goals, tasks, dependencies, post-execution reflection, and approval flows. Aurora will be able to create plans and drafts, but external actions will continue to depend on confirmation.
 
-### Fase 4 — Primeiras ferramentas controladas
+### Phase 4 — First tools controlled
 
-Adicionar uma integração de baixo risco e um conjunto limitado de ações, por exemplo leitura de calendário ou preparação de rascunhos de email. Validar políticas, cofre de segredos, registos e recuperação de falhas antes de ampliar capacidades.
+Add a low-risk integration and a limited set of actions, for example reading a calendar or preparing email drafts. Validate policies, secret vault, logging, and disaster recovery before expanding capabilities.
 
-### Fase 5 — Operação em VPS e painel de controlo
+### Phase 5 — Operation on VPS and control panel
 
-Preparar contentores, cópias de segurança, monitorização, alertas, atualizações e um painel para memórias, objetivos, ferramentas, permissões e auditoria.
+Prepare containers, backups, monitoring, alerts, updates and a dashboard for memories, goals, tools, permissions and auditing.
 
-### Fase 6 — Ecossistema e autonomia limitada
+### Phase 6 — Ecosystem and limited autonomyAdd Discord, email, browser, documents and development services gradually. Recurring automations will only be activated by explicit rules, with restricted scope, cost limits, pause mechanism and periodic review.
 
-Adicionar Discord, email, navegador, documentos e serviços de desenvolvimento gradualmente. Automatizações recorrentes só serão ativadas por regras explícitas, com âmbito restrito, limites de custo, mecanismo de pausa e revisão periódica.
+### Phase 7 — Maturity and portability
 
-### Fase 7 — Maturidade e portabilidade
+Strengthen security testing, data export and migration, template replacement, advanced observability, memory quality assessment, and documentation for contributors.
 
-Reforçar testes de segurança, exportação e migração de dados, substituição de modelos, observabilidade avançada, avaliação de qualidade de memória e documentação para contribuidores.
+## 12. Open decisions
 
-## 12. Decisões abertas
+This RFC sets direction, not all implementation details. The following documents must resolve at least the following decisions:
 
-Esta RFC define direção, não todos os pormenores de implementação. Os documentos seguintes devem resolver, pelo menos, as seguintes decisões:
+1. Accurate data classification, retention, encryption and deletion model.
+2. Data schema for memories, entities, relationships, objectives and auditing.
+3. Matrix of permissions and approval flows by tool category.
+4. Model selection policy, data processing and cost limits.
+5. Semantic recovery strategy, relevance assessment and prevention of false or duplicate memories.
+6. Threat model, including instruction injection, improper access, data exfiltration and duplicate actions.
+7. Objective criteria to enable recurring automation in each integration.
 
-1. Modelo exato de classificação, retenção, cifragem e eliminação de dados.
-2. Esquema de dados para memórias, entidades, relações, objetivos e auditoria.
-3. Matriz de permissões e fluxos de aprovação por categoria de ferramenta.
-4. Política de seleção de modelos, tratamento de dados e limites de custo.
-5. Estratégia de recuperação semântica, avaliação de relevância e prevenção de memórias falsas ou duplicadas.
-6. Modelo de ameaças, incluindo injeção de instruções, acesso indevido, exfiltração de dados e ações duplicadas.
-7. Critérios objetivos para permitir automação recorrente em cada integração.
+## 13. Conclusion
 
-## 13. Conclusão
+Aurora OS must be built as a reliable platform before it can be an impressive platform. The characteristic that will distinguish it will not be responding quickly or having many integrations: it will be maintaining useful continuity, acting only when authorized and allowing the user to understand, correct and control its operation.
 
-Aurora OS deve ser construída como uma plataforma confiável antes de ser uma plataforma impressionante. A característica que a distinguirá não será responder depressa ou ter muitas integrações: será manter continuidade útil, agir apenas quando autorizada e permitir que o utilizador compreenda, corrija e controle o seu funcionamento.
+This vision establishes the foundational contract for the project. The following RFCs will transform these principles into specifications for the cognitive core, memory, knowledge graph, planning, tools, personality, security, interfaces, and operation.
 
-Esta visão estabelece o contrato fundacional do projeto. As RFCs seguintes transformarão estes princípios em especificações para o núcleo cognitivo, memória, grafo de conhecimento, planeamento, ferramentas, personalidade, segurança, interfaces e operação.
+## 14. Vision contracts, edge cases and evolution
 
-## 14. Contratos de visão, casos limite e evolução
-
-### Estruturas e interfaces de alto nível
+### High-level structures and interfaces
 
 ```text
 SystemCapability
@@ -299,14 +283,14 @@ CapabilityRegistry.list(access_context) -> SystemCapability[]
 HealthService.read() -> SystemHealth
 ```
 
-### Regras obrigatórias
+### Mandatory rules
 
-O produto DEVE declarar claramente capacidades experimentais; não DEVE apresentar um rascunho como ação concluída; e DEVE operar de forma útil quando componentes não críticos estão degradados.
+The product MUST clearly state experimental capabilities; MUST not present a draft as a completed action; and MUST operate usefully when non-critical components are degraded.
 
-### Casos limite e erro
+### Limit cases and error
 
-Se uma funcionalidade depender de um componente ainda não especificado ou aprovado, fica `PLANNED`. Se a plataforma operar sem uma integração, deve conservar tarefas e explicar a limitação, em vez de simular execução. Falha da persistência torna o sistema indisponível para ações, para não perder auditoria.
+If a feature depends on a component not yet specified or approved, it becomes `PLANNED`. If the platform operates without an integration, it should conserve tasks and explain the limitation, rather than simulating execution. Persistence failure makes the system unavailable for actions, so as not to lose auditing.
 
-### Justificação e expansões
+### Justification and expansions
 
-O registo explícito de maturidade protege o utilizador contra promessas implícitas e permite lançar capacidades de forma gradual. Futuramente, o registo pode suportar licenciamento, equipas e múltiplos ambientes.
+Explicit maturity registration protects the user against implicit promises and allows you to roll out capabilities gradually. In the future, the registry may support licensing, teams and multiple environments.

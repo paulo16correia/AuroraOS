@@ -1,22 +1,21 @@
-# LAW-004 — Nenhuma memória nasce isolada
+# LAW-004 — No memory is born in isolation
 
-## Enunciado
+## Statement
 
-Uma memória persistente deve ter relação com pelo menos uma âncora contextual: entidade, objetivo, conversa, observação, data/intervalo, ferramenta, documento ou outra memória. Registos sem relação suficiente ficam candidatos temporários ou são descartados.
+A persistent memory must be related to at least one contextual anchor: entity, goal, conversation, observation, date/interval, tool, document or other memory. Records without sufficient relationships remain temporary candidates or are discarded.
 
-## Aplicação
+## Application
 
 ```text
-Memory candidate → âncoras mínimas → MemoryLink/Edge + proveniência → Memory ACTIVE
+Memory candidate → minimum anchors → MemoryLink/Edge + provenance → Memory ACTIVE
 ```
 
-## Controlo verificável
+## Verifiable control
 
-- O validador exige `source_refs` e pelo menos uma âncora tipada.
-- `MemoryLink` e relações de grafo guardam razão/evidência, não apenas similaridade vetorial.
-- O processo de consolidação reporta candidatos órfãos para revisão ou expiração.
+- Validator requires `source_refs` and at least one typed anchor.
+- `MemoryLink` and graph relations hold reason/evidence, not just vector similarity.
+- The consolidation process reports orphaned candidates for review or expiration.
 
-## Justificação
+## Justification
 
-Relações tornam uma memória recuperável, explicável e temporalmente situada. Uma frase solta é fraca demais para orientar decisões futuras.
-
+Relations make a memory retrievable, explicable and temporally situated. A single sentence is too weak to guide future decisions.

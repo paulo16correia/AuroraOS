@@ -1,15 +1,15 @@
-# Aurora OS — RFC 032: Motor de curiosidade governada
+# Aurora OS — RFC 032: Governed Curiosity Engine
 
-**Estado:** Normativo · **Depende de:** RFC 028, 030–031, 033–034, LAW-006
+**State:** Normative · **Depends on:** RFC 028, 030–031, 033–034, LAW-006
 
-## Objetivo
+## Objective
 
-Identificar lacunas de conhecimento potencialmente úteis e propor investigação de baixo risco. Curiosidade é uma capacidade de descoberta governada, não um pretexto para recolher dados, navegar sem limite ou contactar terceiros.
+Identify potentially useful knowledge gaps and propose low-risk investigation. Curiosity is a governed capacity for discovery, not an excuse to collect data, browse without limits or contact third parties.
 
-## Arquitetura
+## Architecture
 
 ```text
-Padrões recorrentes + lacunas do World Model + objetivos autorizados
+Recurring patterns + World Model gaps + authorized objectives
                               │
                               ▼
                    CuriosityProposal
@@ -17,10 +17,10 @@ Padrões recorrentes + lacunas do World Model + objetivos autorizados
                  valor × risco × recursos × consentimento
                               │
                               ▼
-           descartar | agendar pesquisa permitida | pedir aprovação
+discard | schedule search allowed | ask for approval
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 CuriosityProposal
@@ -38,24 +38,23 @@ Curiosity.evaluate(proposal, situation, resources) -> DecisionOption
 Curiosity.schedule(proposal_id, approval) -> Task
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Curiosidade só pode usar fontes e classificação de dados explicitamente permitidas.
-2. Não pode aceder a contas privadas, enviar mensagens, comprar, alterar estado externo ou inferir dados pessoais sensíveis sem objetivo e aprovação próprios.
-3. Pesquisa autónoma é limitada por orçamento, janela temporal, necessidades mais urgentes e preferência do utilizador.
-4. Resultados percorrem Perceção e LAW-001; pesquisar não cria conhecimento automaticamente.
+1. Curiosity can only use explicitly permitted data sources and classification.
+2. You cannot access private accounts, send messages, make purchases, change external status or infer sensitive personal data without your own objective and approval.
+3. Autonomous search is limited by budget, time window, most urgent needs and user preference.
+4. Results cover Perception and LAW-001; researching does not automatically create knowledge.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Utilizador menciona Rust repetidamente:** pode surgir proposta de pesquisa, nunca subscrição/compra/ação externa automática.
-- **Sistema ocupado:** proposta fica `DEFERRED`/`EXPIRED`, sem competir com segurança ou tarefas do utilizador.
-- **Fonte hostil:** conteúdo é tratado como observação não confiável e não altera políticas.
+- **User mentions Rust repeatedly:** research proposal may appear, never automatic subscription/purchase/external action.
+- **System busy:** proposal is `DEFERRED`/`EXPIRED`, without competing with security or user tasks.
+- **Hostile source:** content is treated as untrustworthy observation and does not change policies.
 
-## Justificação
+## Justification
 
-Curiosidade bem limitada permite evolução útil sem transformar a Aurora numa máquina de recolha indiscriminada.
+Very limited curiosity allows useful evolution without turning Aurora into an indiscriminate collection machine.
 
-## Expansões futuras
+## Future expansions
 
-Catálogos de fontes confiáveis, aprendizagem por projeto, avaliações de utilidade e listas de temas proibidos.
-
+Catalogs from trusted sources, project-based learning, usefulness reviews, and banned topics lists.

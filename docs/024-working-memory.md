@@ -1,24 +1,24 @@
-# Aurora OS — RFC 024: Memória de trabalho
+# Aurora OS — RFC 024: Working Memory
 
-**Estado:** Normativo · **Depende de:** RFC 03, 021, 023, 040
+**Status:** Normative · **Depends on:** RFC 03, 021, 023, 040
 
-## Objetivo
+## Objective
 
-Fornecer o espaço temporário, isolado e limitado onde um ciclo mantém rascunhos, contexto selecionado, resultados intermédios e decisões pendentes. Não é uma base vetorial, não é uma conversa sem fim e não é memória persistente por defeito.
+Provide the temporary, isolated, and limited space where a cycle maintains drafts, selected context, intermediate results, and pending decisions. It's not a vector basis, it's not an endless conversation and it's not persistent memory by default.
 
-## Arquitetura
+## Architecture
 
 ```text
-AttentionSet → ContextFrame (por ciclo) → rascunhos/resultados/hipóteses
+AttentionSet → ContextFrame (per cycle) → drafts/results/hypotheses
                                            │
                                            ▼
-                                  decisão de consolidação
+consolidation decision
                                   ├─ descartar
                                   ├─ anexar a auditoria
                                   └─ propor Memory/Experience
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 WorkingMemory
@@ -40,24 +40,23 @@ WM.seal(id) -> WorkingMemory
 WM.dispose(id, consolidation_decisions) -> DisposalReport
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada Working Memory DEVE pertencer a um ciclo; partilha entre ciclos exige transferência explícita de itens.
-2. Tem TTL, limites de capacidade e teto de classificação; ao expirar, é selada e descartada/consolidada.
-3. Hipóteses permanecem marcadas como tal e NÃO podem tornar-se factos sem o fluxo da RFC 03.
-4. O conteúdo não deve ser exposto ao utilizador como “raciocínio interno”; saídas são sínteses operacionais aprovadas.
+1. Each Working Memory MUST belong to a cycle; Sharing between cycles requires explicit transfer of items.
+2. It has TTL, capacity limits and rating ceiling; upon expiration, it is sealed and discarded/consolidated.
+3. Hypotheses remain marked as such and may NOT become facts without the flow of RFC 03.
+4. The content must not be exposed to the user as “internal reasoning”; Outputs are approved operational summaries.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Capacidade esgotada:** Attention remove o item menos útil ou ciclo pede clarificação; não trunca silenciosamente dados sensíveis.
-- **Reinício:** recuperar apenas objetos selados num armazenamento cifrado de curta duração; rascunhos abertos podem ser descartados conforme política.
-- **Sessão longa:** abrir frames sucessivos com resumos citados, não prolongar um frame ilimitado.
+- **Capacity exhausted:** Attention removes the least useful item or cycle requests clarification; does not silently truncate sensitive data.
+- **Reset:** retrieve only objects sealed in short-term encrypted storage; Open drafts may be discarded per policy.
+- **Long session:** open successive frames with cited summaries, do not extend an unlimited frame.
 
-## Justificação
+## Justification
 
-Uma memória de trabalho explícita permite tratar uma tarefa complexa sem poluir memória duradoura e limita o raio de exposição do contexto.
+An explicit working memory allows handling a complex task without polluting lasting memory and limits the context exposure radius.
 
-## Expansões futuras
+## Future expansions
 
-Frames para multimodalidade, snapshots de depuração autorizados e memória de trabalho colaborativa por tarefa.
-
+Frames for multimodality, authorized debug snapshots, and per-task collaborative working memory.

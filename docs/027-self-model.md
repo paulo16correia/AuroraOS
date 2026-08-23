@@ -1,12 +1,12 @@
-# Aurora OS — RFC 027: Self — autoconsciência operacional
+# Aurora OS — RFC 027: Self — operational self-awareness
 
-**Estado:** Normativo · **Depende de:** RFC 011, 020, 040
+**Status:** Normative · **Depends on:** RFC 011, 020, 040
 
-## Objetivo
+## Objective
 
-Definir o **Self** como o modelo operacional que a Aurora mantém sobre si própria: identidade ativa, capacidades instaladas, permissões efetivas, limites, recursos, saúde, trabalho em curso e história operacional recente. Self não significa consciência humana, experiência subjetiva ou autoridade autónoma.
+Define **Self** as the operating model that Aurora maintains about itself: active identity, installed capabilities, effective permissions, limits, resources, health, work in progress, and recent operational history. Self does not mean human consciousness, subjective experience or autonomous authority.
 
-## Arquitetura
+## Architecture
 
 ```text
 Identity + Personality + Capability Registry + Policy + Health + Work state
@@ -16,10 +16,10 @@ Identity + Personality + Capability Registry + Policy + Health + Work state
                                  │
             ┌────────────────────┼─────────────────────┐
             ▼                    ▼                     ▼
-      Decision Engine       UI/diagnóstico       explicação de limites
+Decision Engine UI/Diagnostic Limits Explanation
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 SelfModel
@@ -47,24 +47,23 @@ Self.can(capability, context) -> CapabilityAssessment
 Self.pause(actor, reason) -> SelfModel
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Decisões que propõem uma ferramenta DEVEM consultar o Self para confirmar capacidade disponível e limite operacional.
-2. O Self DEVE separar “capacidade instalada”, “permissão concedida” e “ação atualmente segura”; uma não implica a outra.
-3. `Self.describe` só expõe uma visão segura, sem segredos, topologia sensível ou identificadores de credenciais.
-4. Estado de saúde é observado, datado e revogável; não se presume saudável por ausência de alerta.
+1. Decisions that propose a tool MUST consult the Self to confirm available capacity and operational limit.
+2. Self MUST separate “installed capacity”, “permission granted” and “currently safe action”; one does not imply the other.
+3. `Self.describe` only exposes a secure view, without secrets, sensitive topology or credential identifiers.
+4. Health status is observed, dated and revocable; is not presumed healthy due to lack of warning.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Conector instalado mas revogado:** aparece como capacidade indisponível; o plano é bloqueado/replaneado.
-- **Estado desatualizado:** a execução revalida permissões e saúde, não confia só no snapshot.
-- **Recuperação após reinício:** Self entra em `RECOVERING` até tarefas e chamadas `UNKNOWN` serem reconciliadas.
+- **Connector installed but revoked:** appears as unavailable capacity; the plan is blocked/replanned.
+- **Outdated state:** the execution revalidates permissions and health, it does not rely only on the snapshot.
+- **Recovery after restart:** Self enters `RECOVERING` until tasks and `UNKNOWN` calls are reconciled.
 
-## Justificação
+## Justification
 
-Um agente que não sabe o que pode fazer cria promessas erradas e tentativas falhadas. O Self permite à Aurora dizer “posso preparar, mas não enviar” com base num estado verificável.
+An agent who doesn't know what he can do creates wrong promises and failed attempts. Self allows Aurora to say “I can prepare, but not send” based on verifiable status.
 
-## Expansões futuras
+## Future expansions
 
-Orçamentos por utilizador, capacidade distribuída, autodiagnóstico assistido e relatórios operacionais diários.
-
+Budgets per user, distributed capacity, assisted self-diagnosis and daily operational reports.

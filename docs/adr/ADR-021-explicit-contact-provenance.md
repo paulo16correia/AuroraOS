@@ -1,13 +1,13 @@
-# ADR-021 — Proveniência explícita para contactos
+# ADR-021 — Explicit provenance for contacts
 
-## Decisão
+## Decision
 
-O diretório de contactos da Aurora só aprende através de afirmações explícitas do utilizador. Cada contacto e grupo regista `provenance = USER_ASSERTION`.
+Aurora's contact directory only learns through explicit user assertions. Each contact and group registers `provenance = USER_ASSERTION`.
 
-## Justificação
+## Justification
 
-Resolver uma pessoa para o destinatário errado é um risco de execução externo. O modelo de linguagem e inferências implícitas não são fontes de verdade suficientes para essa decisão.
+Resolving a person to the wrong recipient is an external execution risk. The language model and implicit inferences are not sufficient sources of truth for this decision.
 
-## Consequências
+## Consequences
 
-O sistema pode dizer que não conhece “João” em vez de adivinhar. Quando existe uma resolução, esta é auditável, persistente e ligada a uma Entity concreta. A qualidade conversacional futura pode evoluir sem enfraquecer a fronteira de segurança.
+The system can say that it doesn't know “John” instead of guessing. When there is a resolution, it is auditable, persistent and linked to a concrete Entity. Future conversational quality can evolve without weakening the security boundary.

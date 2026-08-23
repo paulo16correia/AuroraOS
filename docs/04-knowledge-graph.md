@@ -1,24 +1,24 @@
-# Aurora OS — RFC 04: Grafo de conhecimento
+# Aurora OS — RFC 04: Knowledge Graph
 
-**Estado:** Normativo · **Depende de:** RFC 03
+**Status:** Normative · **Depends on:** RFC 03
 
-## Objetivo
+## Objective
 
-Representar entidades, relações e afirmações de forma navegável, explicável e coerente com a memória. O grafo acelera perguntas relacionais; não substitui a fonte transacional nem valida factos por si só.
+Represent entities, relationships and statements in a navigable, explainable and memory-coherent way. The graph accelerates relational questions; it does not replace the transactional source or validate facts in itself.
 
-## Arquitetura
+## Architecture
 
 ```text
-Memory ACTIVE ──→ normalizador de entidades ──→ proposta de nó/aresta
+Memory ACTIVE ──→ entity normalizer ──→ node/edge proposal
                          │                              │
                          ▼                              ▼
-                    resolução de                 validação/proveniência
-                    identidade                           │
+validation/provenance resolution
+identity │
                          └────────────→ grafo versionado ←┘
-Consulta → autorização → expansão limitada → evidência → resposta citada
+Consultation → authorization → limited expansion → evidence → cited response
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 Entity
@@ -36,7 +36,7 @@ EntityType / Predicate
   cardinality: ONE|MANY, inverse_key, sensitivity_rule
 ```
 
-Exemplos de predicados: `USES(Project, Technology)`, `OWNS(Person, Account)`, `DEPENDS_ON(Task, Task)`, `MENTIONED_IN(Entity, Document)`. Relações sem fonte ficam `PROPOSED` e não são usadas como base única de uma ação.
+Examples of predicates: `USES(Project, Technology)`, `OWNS(Person, Account)`, `DEPENDS_ON(Task, Task)`, `MENTIONED_IN(Entity, Document)`. Relationships without a source are `PROPOSED` and are not used as the sole basis of an action.
 
 ## Interfaces
 
@@ -47,26 +47,25 @@ Graph.merge(entity_a, entity_b, actor) -> MergeRecord
 Graph.explain(relation_id) -> provenance[]
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Nós e arestas DEVEM possuir tipo; relações livres em texto não são permitidas no grafo canónico.
-2. A profundidade de expansão tem limite por pedido, orçamento e política.
-3. O grafo DEVE guardar validade temporal: uma relação atual não elimina automaticamente a anterior.
-4. Fusão de entidades DEVE ser reversível através de registo de redirecionamento.
-5. Dados `SECRET` não DEVEM produzir nós pesquisáveis por nome ou vetores.
+1. Nodes and edges MUST have type; Free relationships in text are not allowed in the canonical graph.
+2. Expansion depth is limited by order, budget and policy.
+3. The graph MUST maintain temporal validity: a current relationship does not automatically eliminate the previous one.
+4. Entity merger MUST be reversible via redirection registration.
+5. `SECRET` data MUST not produce nodes searchable by name or vectors.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Homónimos:** criar entidades separadas até existir evidência suficiente para fusão.
-- **Ciclo indevido em dependências:** rejeitar mudança e devolver cadeia de ciclo.
-- **Fonte retraída:** preservar a aresta auditável, retirar-lhe estatuto de `ASSERTED` e reavaliar dependentes.
-- **Grafo indisponível:** usar memória estruturada; informar que a pesquisa relacional está degradada.
+- **Homonyms:** create separate entities until there is sufficient evidence for merger.
+- **Improper cycle in dependencies:** reject change and return cycle chain.
+- **Source withdrawn:** preserve the auditable edge, remove `ASSERTED` status and reevaluate dependents.
+- **Graph unavailable:** use structured memory; report that relational research is degraded.
 
-## Justificação
+## Justification
 
-Um esquema tipado impede que relações geradas por linguagem se tornem factos arbitrários. A temporalidade permite responder “era” versus “é” sem destruir história.
+A typed schema prevents language-generated relations from becoming arbitrary facts. Temporality allows us to answer “was” versus “is” without destroying history.
 
-## Expansões futuras
+## Future expansions
 
-Ontologia por domínio, importação de contactos, visualização interativa, raciocínio de regras aprovado e deteção de comunidades.
-
+Domain ontology, contact import, interactive visualization, approved rule reasoning and community detection.

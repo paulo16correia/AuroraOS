@@ -1,14 +1,14 @@
-# Aurora OS — RFC 040: Modelo de domínio canónico
+# Aurora OS — RFC 040: Canonical Domain Model
 
-**Estado:** Normativo · **Depende de:** RFC 020
+**Status:** Normative · **Depends on:** RFC 020
 
-## Objetivo
+## Objective
 
-Definir os objetos internos da Aurora antes da implementação. Nenhuma classe, tabela, mensagem de evento ou contrato público pode introduzir semântica nova sem alterar esta RFC ou criar uma RFC de extensão.
+Define Aurora's internal objects before deployment. No class, table, event message, or public contract may introduce new semantics without changing this RFC or creating an extension RFC.
 
-## Convenções e relações
+## Conventions and relationships
 
-Todos os objetos incluem `id`, `tenant_id`, `created_at`, `updated_at`, `version`, `source_refs[]` e `sensitivity`, salvo quando indicado. Identificadores são UUIDv7. Estados só transitam pelas máquinas definidas abaixo.
+All objects include `id`, `tenant_id`, `created_at`, `updated_at`, `version`, `source_refs[]`, and `sensitivity` unless noted. Identifiers are UUIDv7. States only transit through the machines defined below.
 
 ```text
 Identity ─owns→ Mind ─contains→ Memory / Knowledge / Experience / Goals
@@ -20,97 +20,91 @@ WorldModel ─contains→ Node ─linked by→ Edge / MemoryLink
 Permission ─authorizes→ Action; VaultItem ─is leased to→ ToolCall
 ```
 
-## Objetos de identidade, conversa e contexto
+## Identity, conversation and context objects
 
-| Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
+| Object | Additional required fields | States and life cycle |
 | --- | --- | --- |
-| `Identity` | `identity_id`, `entity_id`, `name`, `purpose`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; só uma ativa por Entity/Mind. No VS-002, `name`, `purpose`, `locale` e a proveniência no Genome são obrigatórios. |
-| `Entity` | `entity_id`, `genome_id`, `lifecycle_state`, `mind_state_version`, `created_at` | `CREATED → RECOVERING → READY ↔ STOPPED → RETIRED`; é dona de Sessions, Mind State e Life History. |
-| `EntityRuntimeContext` | `entity_id`, `genome_id`, `lifecycle_state`, `active_session?`, `snapshot_ref?`, `restored_at?` | criado/carregado pelo Kernel por processo; não pertence a uma Session. |
-| `Genome` | `family`, `version`, `constitution_version`, `law_set_version`, `allowed_capabilities[]`, `signature` | `DRAFT → RELEASED → RETIRED`; é herdável e não contém dados adquiridos. |
-| `DevelopmentState` | `stage`, `autonomy_ceiling`, `evidence_refs[]`, `assessment_at` | `PROBATION|ACTIVE|RESTRICTED|PAUSED`; promoção é aprovada e reversível. |
-| `LifeEpisode` | `kind`, `occurred_at`, `narrative_summary`, `evidence_refs[]`, `significance` | `CANDIDATE → VERIFIED|RETRACTED`; não substitui auditoria. |
-| `InstanceLifecycle` | `state`, `entered_at`, `reason`, `active_cycles[]`, `last_snapshot` | `CREATED → BOOTSTRAPPING → RECOVERING → READY … → STOPPED|RETIRED`; Kernel é o dono. |
-| `SelfModel` | `self_model_id`, `entity_id`, `identity_ref`, `genome_id`, `version`, `capability_snapshot`, `permission_snapshot`, `resource_snapshot`, `operational_state`, `current_focus`, `observed_at` | `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; é sempre observado e datado. O VS-002 cria a versão inicial sem capacidades, permissões, crenças, preferências ou relações. |
-| `SituationAssessment` | `local_time`, `user_availability`, `signals`, `needs`, `risk_posture`, `expires_at` | `CURRENT → INVALIDATED|EXPIRED`; é temporal e nunca persistido como facto. |
-| `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versionada; `DRAFT → ACTIVE → RETIRED`. |
-| `Conversation` | `channel`, `participants[]`, `access_policy_id`, `last_activity_at` | `OPEN → ARCHIVED → DELETED`; arquivar não apaga memória. |
-| `Session` | `conversation_id`, `principal_id`, `started_at`, `expires_at`, `auth_context` | `ACTIVE → EXPIRED|REVOKED`; nunca sobrevive a revogação. |
-| `Context` | `cycle_id`, `attention_set_id`, `memory_refs[]`, `goal_refs[]`, `budget` | `BUILDING → FROZEN → RELEASED`; é imutável depois de congelado. |
-| `Emotion` | `label`, `intensity`, `basis_refs[]`, `valid_until` | nome técnico recomendado: `InteractionState`; é estado comunicacional, não sentimento. `PROPOSED → ACTIVE → EXPIRED`. |
+| `Identity` | `identity_id`, `entity_id`, `name`, `purpose`, `profile_version`, `locale`, `values[]`, `disclosure_policy` | `DRAFT → ACTIVE → RETIRED`; only one active per Entity/Mind. In VS-002, `name`, `purpose`, `locale` and Genome provenance are required. |
+| `Entity` | `entity_id`, `genome_id`, `lifecycle_state`, `mind_state_version`, `created_at` | `CREATED → RECOVERING → READY ↔ STOPPED → RETIRED`; owns Sessions, Mind State and Life History. |
+| `EntityRuntimeContext` | `entity_id`, `genome_id`, `lifecycle_state`, `active_session?`, `snapshot_ref?`, `restored_at?` | created/loaded by the Kernel per process; does not belong to a Session. |
+| `Genome` | `family`, `version`, `constitution_version`, `law_set_version`, `allowed_capabilities[]`, `signature` | `DRAFT → RELEASED → RETIRED`; it is inheritable and does not contain acquired data. |
+| `DevelopmentState` | `stage`, `autonomy_ceiling`, `evidence_refs[]`, `assessment_at` | `PROBATION|ACTIVE|RESTRICTED|PAUSED`; promotion is approved and reversible. |
+| `LifeEpisode` | `kind`, `occurred_at`, `narrative_summary`, `evidence_refs[]`, `significance` | `CANDIDATE → VERIFIED|RETRACTED`; does not replace auditing. |
+| `InstanceLifecycle` | `state`, `entered_at`, `reason`, `active_cycles[]`, `last_snapshot` | `CREATED → BOOTSTRAPPING → RECOVERING → READY … → STOPPED|RETIRED`; Kernel is the owner. |
+| `SelfModel` | ZZProtect56zz `BOOTING → READY|BUSY|WAITING|DEGRADED|PAUSED|RECOVERING`; it is always observed and dated. VS-002 creates the initial version without capabilities, permissions, beliefs, preferences, or relationships. |
+| `SituationAssessment` | `local_time`, `user_availability`, `signals`, `needs`, `risk_posture`, `expires_at` | `CURRENT → INVALIDATED|EXPIRED`; it is temporal and never persisted as a fact. |
+| `Personality` | `identity_id`, `voice_json`, `interaction_rules[]`, `prohibited_claims[]` | versioned; `DRAFT → ACTIVE → RETIRED`. |
+| `Conversation` | `channel`, `participants[]`, `access_policy_id`, `last_activity_at` | `OPEN → ARCHIVED → DELETED`; archiving does not erase memory. |
+| `Session` | `conversation_id`, `principal_id`, `started_at`, `expires_at`, `auth_context` | `ACTIVE → EXPIRED|REVOKED`; never survives revocation. |
+| `Context` | `cycle_id`, `attention_set_id`, `memory_refs[]`, `goal_refs[]`, `budget` | `BUILDING → FROZEN → RELEASED`; it is immutable once frozen. || `Emotion` | `label`, `intensity`, `basis_refs[]`, `valid_until` | recommended technical name: `InteractionState`; It is a communicational state, not a feeling. `PROPOSED → ACTIVE → EXPIRED`. |
 
-## Objetos de conhecimento e realidade
+## Objects of knowledge and reality
 
-| Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
+| Object | Additional required fields | States and life cycle |
 | --- | --- | --- |
-| `Memory` | `memory_id`, `entity_id`, `kind`, `subject`, `predicate`, `object_value`, `confidence`, `provenance`, `signal_id`, `observation_id`, `anchors[]`, `status` | `CANDIDATE → ACTIVE ↔ DISPUTED → SUPERSEDED|RETRACTED|EXPIRED`. VS-003 só cria `EPISODIC/ACTIVE` com `USER_ASSERTION`. |
-| `MemoryRetrieval` | `memory_id`, `reason`, `confidence`, `retrieved_at` | efémero por ciclo; é a única forma de uma Memory entrar em Context. |
-| `MemoryLink` | `from_memory_id`, `to_memory_id`, `relation_type`, `weight`, `reason_refs[]` | `PROPOSED → ACTIVE → RETRACTED`; não é inferência livre. |
+| `Memory` | `memory_id`, `entity_id`, `kind`, `subject`, `predicate`, `object_value`, `confidence`, `provenance`, `signal_id`, `observation_id`, `anchors[]`, `status` | `CANDIDATE → ACTIVE ↔ DISPUTED → SUPERSEDED|RETRACTED|EXPIRED`. VS-003 only creates `EPISODIC/ACTIVE` with `USER_ASSERTION`. |
+| `MemoryRetrieval` | `memory_id`, `reason`, `confidence`, `retrieved_at` | ephemeral per cycle; it is the only way for a Memory to enter Context. |
+| `MemoryLink` | `from_memory_id`, `to_memory_id`, `relation_type`, `weight`, `reason_refs[]` | `PROPOSED → ACTIVE → RETRACTED`; it is not free inference. |
 | `Knowledge` | `claim`, `scope`, `evidence_refs[]`, `valid_time`, `certainty` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
 | `Belief` | `claim`, `scope`, `confidence`, `evidence_for[]`, `evidence_against[]`, `review_at` | `CANDIDATE → ACTIVE ↔ CHALLENGED → SUPERSEDED|RETRACTED|EXPIRED`. |
-| `Preference` | `owner`, `dimension`, `value`, `strength`, `basis`, `scope`, `consent_required` | `CANDIDATE|ACTIVE → REJECTED|EXPIRED`; explícita prevalece sobre inferida. |
+| `Preference` | `owner`, `dimension`, `value`, `strength`, `basis`, `scope`, `consent_required` | `CANDIDATE|ACTIVE → REJECTED|EXPIRED`; explicit prevails over inferred. |
 | `RelationshipAssertion` | `subject`, `relation_type`, `object`, `authority_scope`, `confidence`, `valid_time` | `PROPOSED → ACTIVE|DISPUTED → ENDED|RETRACTED`. |
-| `Node` | `world_model_id`, `type`, `canonical_name`, `aliases[]`, `attributes_json` | `ACTIVE → MERGED|ARCHIVED`; fusão preserva redirecionamento. |
+| `Node` | `world_model_id`, `type`, `canonical_name`, `aliases[]`, `attributes_json` | `ACTIVE → MERGED|ARCHIVED`; fusion preserves redirection. |
 | `Edge` | `subject_node_id`, `predicate`, `object_node_id|literal`, `qualifiers`, `valid_time` | `PROPOSED → ASSERTED|DISPUTED → RETRACTED`. |
 | `WorldModel` | `mind_id`, `schema_version`, `node_refs[]`, `edge_refs[]`, `last_reconciled_at` | `BUILDING → ACTIVE → DEGRADED|RETIRED`. |
 | `Observation` | `observer`, `observed_at`, `modality`, `payload_ref`, `integrity`, `external_ref` | `RAW → VALIDATED|REJECTED → CONSOLIDATED|EXPIRED`. |
 | `Signal` | `source_event`, `kind`, `severity`, `urgency`, `interruptibility`, `expires_at` | `NEW → QUEUED|FOCUSED|SUPPRESSED → RESOLVED|EXPIRED`. |
-| `DomainEvent` | `type`, `producer`, `aggregate_ref`, `payload_ref`, `correlation_id`, `schema_version` | imutável; publicado pela outbox e entregue idempotentemente. |
-| `Need` | `kind`, `intensity`, `evidence_refs[]`, `recommended_goal`, `satisfaction_condition` | `DETECTED → ACKNOWLEDGED|PLANNED → SATISFIED|DEFERRED|EXPIRED`. |
-| `CuriosityProposal` | `question`, `expected_value`, `allowed_sources`, `budget`, `approval_required` | `CANDIDATE → APPROVED|SCHEDULED → RESEARCHING → LEARNED|REJECTED|EXPIRED`. |
-| `ResourceState` | `cpu`, `memory`, `disk`, `queue`, `cost`, `operational_energy` | `NORMAL|CONSTRAINED|CRITICAL|UNKNOWN`; substituído por observação mais recente. |
+| `DomainEvent` | `type`, `producer`, `aggregate_ref`, `payload_ref`, `correlation_id`, `schema_version` | immutable; published by outbox and delivered idempotently. |
+| `Need` | `kind`, `intensity`, `evidence_refs[]`, `recommended_goal`, `satisfaction_condition` | `DETECTED → ACKNOWLEDGED|PLANNED → SATISFIED|DEFERRED|EXPIRED`. || `CuriosityProposal` | `question`, `expected_value`, `allowed_sources`, `budget`, `approval_required` | `CANDIDATE → APPROVED|SCHEDULED → RESEARCHING → LEARNED|REJECTED|EXPIRED`. |
+| `ResourceState` | `cpu`, `memory`, `disk`, `queue`, `cost`, `operational_energy` | `NORMAL|CONSTRAINED|CRITICAL|UNKNOWN`; replaced with most recent observation. |
 | `Experience` | `episode_ref`, `outcome`, `lessons[]`, `evidence_refs[]` | `CAPTURED → REVIEWED → CONSOLIDATED|DISCARDED`. |
 
-## Objetos de intenção e deliberação
+## Objects of intention and deliberation
 
-| Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
+| Object | Additional required fields | States and life cycle |
 | --- | --- | --- |
 | `Goal` | `outcome`, `owner`, `priority`, `success_criteria[]`, `constraints`, `deadline` | `DRAFT → ACTIVE ↔ PAUSED|BLOCKED → COMPLETED|CANCELLED|FAILED`. |
-| `EntityState` | `state_id`, `entity_id`, `availability`, `focus`, `energy`, `pending_goals`, `version`, `updated_at` | observado e versionado; VS-004 só usa `READY|STOPPED` e não representa emoção. |
-| `Need` | `need_id`, `entity_id`, `kind`, `reason`, `intensity`, `recommended_goal_ref`, `evidence_refs[]`, `status` | `DETECTED → SATISFIED`; VS-004 não permite que Need crie Action, Task ou Plan. |
-| `GoalEvaluation` | `evaluation_id`, `entity_id`, `goal_id`, `observation_id`, `progress_delta`, `evidence_refs[]`, `outcome`, `evaluated_at` | imutável; só é criado após Observation/Reflection. |
-| `Plan` | `plan_id`, `entity_id`, `type`, `goal_ref`, `created_from_need`, `steps[]`, `basis_memory_refs[]`, `execution_mode`, `version` | `PROPOSED → REVIEWED → APPROVED → REJECTED|COMPLETED`. VS-006 pode criar uma Task interna a partir de um Plan explícito; nunca cria Action. |
-| `PlanStep` | `sequence`, `action`, `execution_mode`, `status` | `PENDING → READY → EXECUTED|SKIPPED|BLOCKED`; VS-005 só permite `PENDING` e não os executa. |
-| `Task` | `task_id`, `entity_id`, `goal_ref`, `plan_ref`, `type`, `status`, `result_summary`, `version` | `READY → RUNNING → COMPLETED|FAILED`. VS-007 pode usar uma Task concluída como origem de um CapabilityRequest, sem criar Action. |
-| `Thought` | `intent`, `objective_ref`, `evidence_refs[]`, `options[]`, `uncertainty[]`, `recommendation` | `DRAFT → VALIDATED → SUPERSEDED|REJECTED`; não executa. |
+| `EntityState` | `state_id`, `entity_id`, `availability`, `focus`, `energy`, `pending_goals`, `version`, `updated_at` | observed and versioned; VS-004 only uses `READY|STOPPED` and does not represent emotion. |
+| `Need` | `need_id`, `entity_id`, `kind`, `reason`, `intensity`, `recommended_goal_ref`, `evidence_refs[]`, `status` | `DETECTED → SATISFIED`; VS-004 does not allow Need to create Action, Task or Plan. |
+| `GoalEvaluation` | `evaluation_id`, `entity_id`, `goal_id`, `observation_id`, `progress_delta`, `evidence_refs[]`, `outcome`, `evaluated_at` | immutable; is only created after Observation/Reflection. |
+| `Plan` | `plan_id`, `entity_id`, `type`, `goal_ref`, `created_from_need`, `steps[]`, `basis_memory_refs[]`, `execution_mode`, `version` | `PROPOSED → REVIEWED → APPROVED → REJECTED|COMPLETED`. VS-006 can create an internal Task from an explicit Plan; never creates Action. |
+| `PlanStep` | `sequence`, `action`, `execution_mode`, `status` | `PENDING → READY → EXECUTED|SKIPPED|BLOCKED`; VS-005 only allows `PENDING` and does not run them. |
+| `Task` | `task_id`, `entity_id`, `goal_ref`, `plan_ref`, `type`, `status`, `result_summary`, `version` | `READY → RUNNING → COMPLETED|FAILED`. VS-007 can use a completed Task as the source of a CapabilityRequest, without creating an Action. |
+| `Thought` | `intent`, `objective_ref`, `evidence_refs[]`, `options[]`, `uncertainty[]`, `recommendation` | `DRAFT → VALIDATED → SUPERSEDED|REJECTED`; does not execute. |
 | `Decision` | `mode`, `alternatives[]`, `policy_refs[]`, `expiry_at`, `approval_required` | `PROPOSED → COMMITTED → EXECUTED|SUPERSEDED|EXPIRED`. |
 | `Action` | `decision_id`, `effect_type`, `target_ref`, `parameters_hash`, `reversibility` | `PROPOSED → AUTHORIZED → DISPATCHED → OBSERVED|CANCELLED|UNKNOWN`. |
-| `WorkingMemory` | `cycle_id`, `capacity`, `expires_at`, `items[]` | `OPEN → SEALED → DISCARDED|EXPIRED`; não é persistida como facto. |
-| `Reflection` | `outcome`, `evidence_refs[]`, `lessons[]`, `proposal_refs[]` | `DRAFT → ACCEPTED|REJECTED → IMPLEMENTED|EXPIRED`. |
+| `WorkingMemory` | `cycle_id`, `capacity`, `expires_at`, `items[]` | `OPEN → SEALED → DISCARDED|EXPIRED`; it is not persisted as fact. |
+| `Reflection` | `outcome`, `evidence_refs[]`, `lessons[]`, `proposal_refs[]` | `DRAFT → ACCEPTED|REJECTED → IMPLEMENTED|EXPIRED`. |## Execution and security objects
 
-## Objetos de execução e segurança
-
-| Objeto | Campos adicionais obrigatórios | Estados e ciclo de vida |
+| Object | Additional required fields | States and life cycle |
 | --- | --- | --- |
 | `ToolCall` | `tool_id`, `capability`, `input_hash`, `idempotency_key`, `external_ref` | `PROPOSED → AUTHORIZED → QUEUED → RUNNING → SUCCEEDED|FAILED|CANCELLED|UNKNOWN`. |
-| `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevalece. |
-| `Capability` | `capability_id`, `entity_id`, `name`, `kind`, `enabled`, `trusted`, `version` | catálogo persistente e versionado; descreve disponibilidade, não autorização. VS-007 ativa apenas capacidades internas. |
-| `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007.1 exige uma request para toda a intenção externa reconhecida, mesmo quando a Task de origem é histórica; não possui provider nem execução. |
-| `CapabilityResult` | `result_id`, `entity_id`, `request_ref`, `executor_id`, `status`, `summary`, `created_at` | imutável; VS-008 só produz `DRY_RUN|NOT_IMPLEMENTED` através de `NOOP_EXECUTOR`. Não prova efeito externo. |
-| `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; não recebe autoridade fora do manifesto. |
-| `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; apenas Kernel executa. |
-| `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; orienta Goals, não executa. |
-| `ConstitutionalAssessment` | `subject`, `articles_checked[]`, `result`, `conflicts[]`, `evidence_refs[]` | `PASS|FAIL|REVIEW`; é anexado a decisão/política de risco elevado. |
-| `VaultItem` | `provider_ref`, `purpose`, `allowed_tool_ids[]`, `rotation_due_at` | `ACTIVE → ROTATING → REVOKED|EXPIRED`; valor nunca entra no domínio. |
+| `Permission` | `principal`, `action`, `resource_scope`, `effect`, `conditions`, `expires_at` | `ACTIVE → REVOKED|EXPIRED`; `DENY` prevails. |
+| `Capability` | `capability_id`, `entity_id`, `name`, `kind`, `enabled`, `trusted`, `version` | persistent and versioned catalog; describes availability, not authorization. VS-007 activates internal capabilities only. |
+| `CapabilityRequest` | `request_id`, `entity_id`, `task_ref`, `capability_ref`, `reason`, `status` | `REJECTED|UNAVAILABLE|APPROVED`. VS-007.1 requires a request for all recognized external intent, even when the originating Task is historical; It has no provider or execution. |
+| `CapabilityResult` | `result_id`, `entity_id`, `request_ref`, `executor_id`, `status`, `summary`, `created_at` | immutable; VS-008 only produces `DRY_RUN|NOT_IMPLEMENTED` through `NOOP_EXECUTOR`. Does not prove external effect. |
+| `CapabilityProvider` | `capability`, `application`, `tool_ref`, `availability`, `cost_model`, `constraints[]` | `AVAILABLE|DEGRADED|DISABLED`; receives no authority outside the manifesto. |
+| `KernelCommand` | `issuer`, `command_type`, `payload_ref`, `idempotency_key`, `policy_refs[]` | `ACCEPTED|REJECTED → RUNNING → COMPLETED|FAILED`; only Kernel executes. |
+| `Mission` | `purpose`, `success_definition`, `boundaries[]`, `goal_refs[]`, `review_at` | `DRAFT → ACTIVE|PAUSED → RETIRED`; guides Goals, does not execute. |
+| `ConstitutionalAssessment` | `subject`, `articles_checked[]`, `result`, `conflicts[]`, `evidence_refs[]` | `PASS|FAIL|REVIEW`; is attached to high risk decision/policy. |
+| `VaultItem` | `provider_ref`, `purpose`, `allowed_tool_ids[]`, `rotation_due_at` | `ACTIVE → ROTATING → REVOKED|EXPIRED`; value never enters the domain. |
 | `LearningProposal` | `type`, `change_set`, `evaluation_plan`, `rollback_plan` | `PROPOSED → APPROVED → TESTING → DEPLOYED|REJECTED|ROLLED_BACK`. |
 
-## Interfaces e regras obrigatórias
+## Mandatory interfaces and rules
 
 ```text
 Domain.validate(object) -> ValidationResult
 Domain.transition(object_ref, target_state, evidence) -> DomainEvent
 Domain.link(source_ref, target_ref, relation, provenance) -> MemoryLink|Edge
-```
+```1. Each transition MUST validate preconditions, authorization, and optimistic versioning.
+2. References replace duplication of sensitive objects; relationships have provenance.
+3. `Observation` is not `Knowledge`; `Thought` is not `Decision`; `Decision` is not `Action`.
+4. There are no states implicit in text or “free” fields for permissions, effects or lifecycle.
 
-1. Cada transição DEVE validar pré-condições, autorização e versão otimista.
-2. Referências substituem duplicação de objetos sensíveis; relações têm proveniência.
-3. `Observation` não é `Knowledge`; `Thought` não é `Decision`; `Decision` não é `Action`.
-4. Não existem estados implícitos em texto nem campos “livres” para permissões, efeitos ou ciclo de vida.
+## Limit cases, error and justification
 
-## Casos limite, erro e justificação
+Broken references make the object invalid for execution, but are not cleared from the audit. Version conflicts explicitly fail and require reloading. This separation of objects prevents a single message from being at the same time fact, plan, authorization and execution.
 
-Referências quebradas tornam o objeto inválido para execução, mas não são apagadas da auditoria. Conflitos de versão falham explicitamente e exigem recarregamento. Esta separação de objetos impede que uma única mensagem seja ao mesmo tempo facto, plano, autorização e execução.
+## Future expansions
 
-## Expansões futuras
-
-Tipos multimodais, entidades jurídicas, fluxos de aprovação multiparte, ontologias por domínio e migrações de esquema declarativas.
+Multimodal types, legal entities, multiparty approval flows, per-domain ontologies, and declarative schema migrations.

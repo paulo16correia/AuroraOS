@@ -1,25 +1,25 @@
-# ADR-013 — SDK estável de capabilities
+# ADR-013 — Stable capabilities SDK
 
-**Estado:** Aceite  
-**Data:** 2026-07-18  
-**Decisão:** VS-013 — Capability SDK
+**Status:** Accepted
+**Date:** 2026-07-18
+**Decision:** VS-013 — Capability SDK
 
-## Contexto
+## Context
 
-VS-012 provou uma capability real, mas o Dispatcher ainda tinha conhecimento especial do executor de email. Repetir esse padrão para cada integração faria crescer o Kernel indefinidamente.
+VS-012 proved a real capability, but the Dispatcher still had special knowledge of the mail executor. Repeating this pattern for each integration would grow the Kernel indefinitely.
 
-## Decisão
+## Decision
 
-Definir `CapabilityExecutor` com `prepare`, `execute` e `recover`, e introduzir `CapabilityExecutorRegistry`. Migrar `EmailSendExecutor` para esse contrato. O registry é construído na composição do runtime, não pelo ciclo cognitivo.
+Set `CapabilityExecutor` with `prepare`, `execute` and `recover`, and enter `CapabilityExecutorRegistry`. Migrate `EmailSendExecutor` to this contract. The registry is built in the runtime composition, not by the cognitive cycle.
 
-## Consequências
+## Consequences
 
-- Adicionar uma capability passa a ser registar um executor compatível.
-- A recuperação torna-se uma responsabilidade explícita de cada integração.
-- O Kernel mantém ownership de estado, eventos, aprovação e idempotência.
+- Adding a capability becomes registering a compatible executor.
+- Recovery becomes an explicit responsibility of each integration.
+- The Kernel maintains ownership of state, events, approval and idempotence.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-1. **Um executor genérico com condicionais por capability** — concentra complexidade e acopla o Kernel a integrações.
-2. **Plugins com acesso direto ao repositório** — viola ownership e auditabilidade.
-3. **Executores sem recuperação definida** — torna falhas e reinícios inseguros.
+1. **A generic executor with conditionals per capability** — concentrates complexity and couples the Kernel to integrations.
+2. **Plugins with direct access to the repository** — violates ownership and auditability.
+3. **Executors without defined recovery** — makes failures and restarts unsafe.

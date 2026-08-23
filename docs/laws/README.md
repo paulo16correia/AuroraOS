@@ -1,16 +1,14 @@
-# Leis da Aurora OS
+# Laws of Aurora OS
 
-As Leis são invariantes de arquitetura. Aplicam-se a todas as RFCs, serviços, conectores e versões do modelo. Uma implementação que viole uma Lei é não conforme, mesmo que tenha passado testes funcionais.
+Laws are architectural invariants. Applies to all RFCs, services, connectors, and model versions. An implementation that violates a Law is non-compliant, even if it has passed functional tests.
 
 ```text
-Constituição → Leis → Políticas → Decisões → Ações
-```
+Constitution → Laws → Policies → Decisions → Actions
+```- The Constitution defines lasting values ​​and limits.
+- Laws define verifiable structural invariants.
+- Policies implement Laws by context and user.
+- No policy can allow a violation of Law.
 
-- A Constituição define valores e limites duradouros.
-- As Leis definem invariantes estruturais verificáveis.
-- As políticas concretizam as Leis por contexto e utilizador.
-- Nenhuma política pode permitir uma violação de Lei.
+Each Law must be enforced by at least one architectural control, compliance test and audit log.
 
-Cada Lei deve ser aplicada por pelo menos um controlo de arquitetura, teste de conformidade e registo de auditoria.
-
-- [LAW-008 — Integridade da identidade pelo Self Model](LAW-008-self-model-identity-integrity.md)
+- [LAW-008 — Identity Integrity by Self Model](LAW-008-self-model-identity-integrity.md)

@@ -1,44 +1,32 @@
-# ADR-009 — Fronteira de proposta linguística
+# ADR-009 — LLM proposal boundary
 
-**Estado:** Aceite  
-**Data:** 2026-07-18  
-**Decisão:** VS-009 — LLM Adapter
+**Status:** Accepted (MCP-first migration)
+**Decision:** VS-009 — LLM Adapter
 
-## Contexto
+## Context
 
-A Aurora possui continuidade, memória, objetivos, planos, tarefas, avaliações de capability e executor inerte. Falta um motor de linguagem que possa ser trocado entre fornecedores sem transformar o fornecedor na fonte de verdade ou permitir que este altere o estado cognitivo.
+Aurora has continuity, memory, goals, plans, tasks, capability assessment, and controlled execution. Its former language-provider adapter described the Kernel creating a request and calling an LLM provider. That direction conflicts with the MCP-first architecture.
 
-## Decisão
+## Decision
 
-Introduzir os contratos imutáveis `LanguageModelRequest` e `LanguageModelProposal`, a porta `LanguageModelProvider` e a fronteira `KernelProposalValidator`.
+Replace the outbound provider boundary with an MCP server boundary. A compatible LLM is an external MCP client. It understands natural language, manages the conversation, decides which exposed capability to call, asks clarifying questions, and writes the user-facing answer. Aurora exposes governed capabilities through MCP and remains the persistent cognitive entity.
 
 ```text
-Kernel constrói Request → Provider devolve Proposal → Kernel valida → Kernel cria Thought
+User → LLM client → MCP → Aurora Kernel → MCP result → LLM client → User
 ```
 
-O Kernel é o único escritor do repositório e o único publicador de eventos. Providers são adaptadores puros: não recebem dependências de persistência, executores ou capacidades. A implementação padrão é determinística. `OpenAIResponsesProvider` existe apenas como adaptador opt-in e obtém a chave exclusivamente de `OPENAI_API_KEY` no processo.
+The Kernel remains the only writer to its repository and the only publisher of Aurora events. MCP transport context is untrusted until validated. Every mutation, approval, policy decision, capability execution, and audit record follows the existing Kernel contracts.
 
-## Consequências
+## Consequences
 
-### Positivas
+- Aurora is compatible with hosted and local LLMs without coupling cognition to a model vendor.
+- No LLM SDK, API key, model request, or model proposal is required inside the Kernel.
+- Tool schemas remain capability contracts, not a substitute for policy or approval.
+- Deterministic replay uses recorded MCP ingress and Kernel test doubles.
+- VS-000–VS-008 state ownership and execution invariants remain in force; their language-provider references are interpreted as the external MCP client boundary.
 
-- O fornecedor é substituível sem mudar a ontologia ou a persistência da Aurora.
-- Cada proposta tem identidade e correlação auditáveis.
-- Falhas de fornecedor degradam para resposta segura, não para estado parcialmente alterado.
-- Replay e testes permanecem determinísticos por defeito.
+## Rejected alternatives
 
-### Custos
-
-- Há uma etapa adicional e objetos auditáveis antes do `Thought`.
-- A aceitação de contexto por fornecedores externos requer governação explícita.
-- Providers que devolvam texto livre podem ser rejeitados ou limitados pelo Kernel.
-
-## Alternativas rejeitadas
-
-1. **Chamar SDKs de LLM diretamente no Kernel** — acopla a lógica cognitiva ao fornecedor e torna auditoria e testes frágeis.
-2. **Permitir que a LLM escreva Memory/Goal/Plan** — viola ownership de estado, idempotência e a Constituição.
-3. **Usar apenas um prompt persistido como personalidade** — mistura identidade, estado e comportamento num artefacto não governado.
-
-## Migração e compatibilidade
-
-`DeterministicReasoningProvider` é removido. Os fluxos existentes passam pelo provider determinístico sob a nova interface. O comportamento de VS-000–VS-008 permanece coberto pelos testes de regressão.
+1. **Keep a direct LLM SDK in the Kernel** — reverses the required boundary and couples Aurora to a vendor.
+2. **Let the LLM write Memory, Goal, or Plan** — violates state ownership, idempotence, and the Constitution.
+3. **Make MCP a thin LLM-wrapper API** — removes persistent cognition from Aurora and conflicts with its role as a Cognitive Operating System.

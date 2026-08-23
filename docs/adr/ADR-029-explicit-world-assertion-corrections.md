@@ -1,34 +1,34 @@
-# ADR-029 - Correcoes criam assertions novas e preservam disputas
+# ADR-029 - Corrections create new assertions and preserve disputes
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Contexto
+## Context
 
-O VS-030 permite contestar uma `WorldAssertion`, mas uma disputa apenas remove
-confianca operacional; nao determina o facto correto. O sistema deve aceitar
-uma correcao posterior sem tornar a evidencia antiga invisivel ou sobrescrita.
+The VS-030 allows you to dispute a `WorldAssertion`, but a dispute only removes
+operational confidence; does not determine the correct fact. The system must accept
+a subsequent correction without making the old evidence invisible or overwritten.
 
-## Decisao
+## Decision
 
-Uma correcao explicita do utilizador cria uma nova `WorldAssertion(CURRENT)`.
-Esta conserva a evidencia da correcao e referencia a assertion `DISPUTED`
-anterior em `supersedes_assertion_ref`. A assertion original permanece imutavel
-e disputada.
+An explicit user correction creates a new `WorldAssertion(CURRENT)`.
+This preserves the evidence of the correction and references the assertion `DISPUTED`
+previous in `supersedes_assertion_ref`. The original assertion remains immutable
+and disputed.
 
-A correcao exige uma unica assertion `DISPUTED` elegivel para o sujeito e
-predicado. Ambiguidade, ausencia de disputa ou conflito com uma relacao atual
-para outro objeto bloqueiam a escrita.
+The fix requires a single `DISPUTED` assertion eligible for the subject and
+predicate. Ambiguity, lack of dispute or conflict with a current relationship
+to another object blocks writing.
 
-## Consequencias
+## Consequences
 
-- A auditoria mantem facto original, contestacao e facto substituto.
-- Queries operacionais recuperam apenas a relacao `CURRENT` nova.
-- O Kernel nao deduz negacoes, exclusividade de projetos ou hierarquia entre
-  fontes.
+- The audit maintains original fact, contestation and substitute fact.
+- Operational queries only retrieve the new `CURRENT` relationship.
+- The Kernel does not deduce denials, project exclusivity or hierarchy between
+  sources.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-- **Mudar a assertion disputada para um novo facto atual:** perde proveniencia.
-- **Resolver qualquer disputa com uma frase positiva:** aceita ambiguidade e
-  permite que texto incidental reescreva historia.
+- **Change the disputed assertion to a new current fact:** loses provenance.
+- **Resolve any dispute with a positive sentence:** accepts ambiguity and
+  allows incidental text to rewrite history.

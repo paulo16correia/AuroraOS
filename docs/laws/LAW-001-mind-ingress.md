@@ -1,26 +1,25 @@
-# LAW-001 — Nada entra diretamente na Mind
+# LAW-001 — Nothing enters Mind directly
 
-## Enunciado
+## Statement
 
-Nenhum dado externo, resultado de modelo, importação, texto de utilizador ou saída de ferramenta pode criar ou alterar estado canónico da Mind sem percorrer Perceção, classificação, avaliação de proveniência e `MindChangeSet` validado.
+No external data, model output, import, user text, or tool output can create or change canonical Mind state without traversing Perception, Classification, Provenance Assessment, and validated `MindChangeSet`.
 
-## Aplicação
+## Application
 
 ```text
-origem → perceção → classificação → observação/candidato → avaliação → MindChangeSet → Mind
+source → perception → classification → observation/candidate → evaluation → MindChangeSet → Mind
 ```
 
-## Controlo verificável
+## Verifiable control
 
-- A API de escrita da Mind aceita apenas `MindChangeSet` com `source_refs` e decisão de política.
-- Connectores e modelos não recebem credencial de escrita no armazenamento canónico.
-- Testes devem rejeitar uma `Memory`, `Belief`, `Preference` ou `WorldAssertion` sem proveniência.
+- Mind writing API only accepts `MindChangeSet` with `source_refs` and policy decision.
+- Connectors and models do not receive write credentials to canonical storage.
+- Tests must reject a `Memory`, `Belief`, `Preference` or `WorldAssertion` without provenance.
 
-## Exceções
+## Exceptions
 
-Não existem exceções de produto. Bootstrap administrativo usa o mesmo fluxo, com origem `OPERATOR` e auditoria reforçada.
+There are no product exceptions. Administrative Bootstrap uses the same flow, with `OPERATOR` origin and hardened auditing.
 
-## Justificação
+## Justification
 
-Impede memória lixo, injeção por conteúdo externo e consolidação de alucinações como estado permanente.
-
+Prevents junk memory, injection by external content and consolidation of hallucinations as a permanent state.

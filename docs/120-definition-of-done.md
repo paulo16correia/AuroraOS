@@ -1,25 +1,24 @@
 # Aurora Platform — 120: Definition of Done
 
-**Tipo:** gate de entrega · **Depende de:** documentos 100, 105 e 110
+**Type:** delivery gate · **Depends on:** documents 100, 105 and 110
 
-## Regra
+## Rule
 
-Um módulo, capability ou Application não está concluído quando “funciona localmente”. Está concluído quando cumpre todos os critérios aplicáveis abaixo.
+A module, capability or Application is not completed when it “works locally”. It is complete when it meets all applicable criteria below.
 
-## Checklist obrigatória
+## Mandatory checklist
 
-- [ ] Responsabilidade, dono de estado e RFC/ADR de origem identificados.
-- [ ] Contratos de entrada/saída, estados e erros tipados/versionados.
-- [ ] Política, permissões e classificação de dados aplicadas por defeito.
-- [ ] Eventos produzidos/consumidos documentados; consumidor/produtor idempotente.
-- [ ] Logs, métricas, health check, auditoria e `correlation_id` implementados.
-- [ ] Testes unitários, de contrato, integração e casos de falha/recovery passam.
-- [ ] Leis e Constitution avaliadas; não existe bypass conhecido.
-- [ ] Migração, rollback e retenção definidos para estado persistente.
-- [ ] Documentação de operador e utilizador atualizada; revisão de código aprovada.
-- [ ] Para efeitos externos: sandbox, aprovação, `UNKNOWN`/reconciliação e kill switch demonstrados.
+- [ ] Responsibility, state owner and source RFC/ADR identified.
+- [ ] Input/output contracts, states and typed/versioned errors.
+- [ ] Policy, permissions and data classification applied by default.
+- [ ] Documented produced/consumed events; idempotent consumer/producer.
+- [ ] Logs, metrics, health check, audit and `correlation_id` implemented.
+- [ ] Unit, contract, integration and failure/recovery tests pass.
+- [ ] Laws and Constitution evaluated; There is no known bypass.
+- [ ] Migration, rollback and retention set to persistent state.
+- [ ] Updated operator and user documentation; approved code review.
+- [ ] For external effects: sandbox, approval, `UNKNOWN`/reconciliation and kill switch demonstrated.
 
-## Evidência
+## Evidence
 
-Cada item concluído referencia testes, dashboards, logs de deploy ou documentação. Ausência de evidência deixa o item aberto; uma exceção só é válida com ADR/risco aceite e data de expiração.
-
+Each completed item references tests, dashboards, deployment logs or documentation. Absence of evidence leaves the item open; an exception is only valid with ADR/risk accepted and expiration date.

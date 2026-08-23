@@ -1,36 +1,36 @@
 # Aurora Platform — RFC 090: Architecture Review Gate
 
-**Estado:** Obrigatório antes de implementação de produto · **Depende de:** RFC 000–060
+**State:** Mandatory before product implementation · **Depends on:** RFC 000–060
 
-## Objetivo
+## Objective
 
-Definir a revisão que congela a arquitetura suficientemente para iniciar código. Não é uma declaração de perfeição; é uma decisão informada de que as interfaces, invariantes e responsabilidades são estáveis o bastante para implementar e evoluir com ADRs.
+Set the revision that freezes the architecture sufficiently to start code. It is not a declaration of perfection; it is an informed decision that the interfaces, invariants, and responsibilities are stable enough to implement and evolve with ADRs.
 
-## Processo
+## Process
 
 ```text
-inventário de RFCs → matriz de responsabilidades → análise de dependências
+RFC inventory → responsibility matrix → dependency analysis
         │                         │                         │
         ▼                         ▼                         ▼
- testes de Leis/Constituição → ameaças e dados → interfaces/eventos
+Law/Constitution tests → threats and data → interfaces/events
         │                         │                         │
-        └──────────────→ decisões/ADRs e riscos ←───────────┘
+└──────────────→ decisions/ADRs and risks ←───────────┘
                                       │
                                       ▼
                          ACCEPT | ACCEPT WITH CONDITIONS | REWORK
 ```
 
-## Checklist por componente
+## Checklist per component
 
-1. O que representa e qual é a sua única responsabilidade?
-2. Quem é dono do estado, quem o pode alterar e como nasce/termina?
-3. Qual é a interface pública e quais os contratos de entrada/saída?
-4. Que eventos produz/consome e quais as garantias de idempotência?
-5. Que Leis, artigos constitucionais e classificações de dados aplica?
-6. Existe sobreposição, ciclo de dependência, bypass do Kernel ou acoplamento a fornecedor?
-7. Como falha, recupera, é observado e testado?
+1. What do you stand for and what is your sole responsibility?
+2. Who owns the state, who can change it and how does it come into being/end?
+3. What is the public interface and what are the input/output contracts?
+4. What events does it produce/consume and what are the guarantees of idempotence?
+5. What laws, constitutional articles and data classifications do you apply?
+6. Is there overlap, dependency cycle, Kernel bypass or vendor coupling?
+7. How does it fail, recover, be observed and tested?
 
-## Estruturas e interfaces
+## Structures and interfaces
 
 ```text
 ArchitectureReview
@@ -41,13 +41,12 @@ Review.run(scope) -> ArchitectureReview
 Review.blockImplementation(finding) -> GateStatus
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Nenhum módulo de escrita externa entra em implementação sem revisão `ACCEPT` ou condição explicitamente aceite.
-2. Achados críticos de segurança, dono de estado indefinido ou violação de Lei bloqueiam o gate.
-3. O output é uma baseline versionada; alterações posteriores usam ADR e testes de regressão.
+1. No external writing module goes into implementation without revision `ACCEPT` or condition explicitly accepted.
+2. Critical security findings, undefined state owner or violation of Law block the gate.
+3. The output is a versioned baseline; later changes use ADR and regression testing.
 
-## Justificação e expansões
+## Justification and expansions
 
-Esta fase impede que a documentação vire apenas inspiração. A revisão transforma RFCs em contratos de implementação e revela sobreposições antes de elas se tornarem código. Futuramente pode incluir revisão independente e certificação de plugins.
-
+This phase prevents documentation from becoming just inspiration. Review turns RFCs into implementation contracts and reveals overlaps before they become code. In the future, it may include independent review and certification of plugins.

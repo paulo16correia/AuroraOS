@@ -1,27 +1,26 @@
 # Aurora Platform — 110: Coding Standard v1.0
 
-**Tipo:** standard de engenharia · **Depende de:** RFC 040, 050, 090, documento 100
+**Type:** engineering standard · **Depends on:** RFC 040, 050, 090, document 100
 
-## Princípios
+## Principles
 
-Código implementa contratos; não cria semântica. Nomes, tipos, eventos, erros e logs devem permitir encontrar a RFC/ADR que justifica comportamento.
+Code implements contracts; does not create semantics. Names, types, events, errors and logs should allow you to find the RFC/ADR that justifies behavior.
 
-## Regras obrigatórias
+## Mandatory rules
 
-- Linguagem de implementação inicial: Python com tipagem estática rigorosa; interfaces e modelos são tipados.
-- Estrutura por domínio e camada: `kernel/`, `mind/`, `applications/`, `contracts/`, `adapters/`, `tests/`; nunca por “utils” genérico.
-- Eventos usam passado: `MindChangeApplied`, `DecisionCommitted`, `ActionObserved`; comandos usam imperativo: `CreateSnapshot`, `ResolveCapability`.
-- APIs e eventos usam `snake_case` em payload; tipos e classes usam `PascalCase`; identificadores têm sufixo `_id`/`_ref`.
-- Erros são tipados com `code`, `retryable`, `correlation_id` e mensagem segura. Nunca usar exceção genérica como contrato.
-- Logs são estruturados, redigidos e correlacionados; não registam prompts integrais, credenciais ou dados secretos.
-- Comentários explicam decisão/limite não óbvio e ligam RFC/ADR; não descrevem literalmente código.
-- Interfaces públicas, schemas e migrations são versionados. Alterações incompatíveis exigem ADR/migração.
+- Initial implementation language: Python with strict static typing; Interfaces and models are typed.
+- Structure by domain and layer: `kernel/`, `mind/`, `applications/`, `contracts/`, `adapters/`, `tests/`; never by generic “utils”.
+- Events use past: `MindChangeApplied`, `DecisionCommitted`, `ActionObserved`; commands use imperative: `CreateSnapshot`, `ResolveCapability`.
+- APIs and events use `snake_case` in payload; types and classes use `PascalCase`; identifiers have suffix `_id`/`_ref`.
+- Errors are typed with `code`, `retryable`, `correlation_id` and safe message. Never use generic exception as a contract.
+- Logs are structured, written and correlated; do not record full prompts, credentials, or secret data.
+- Comments explain non-obvious decision/limit and link RFC/ADR; they do not literally describe code.
+- Public interfaces, schemas and migrations are versioned. Incompatible changes require ADR/migration.
 
-## Proibições
+## Prohibitions
 
-- Acesso direto entre camadas, `Any` como fuga de contrato, estado global mutável, chamadas de rede em código de domínio, segredos em configuração serializada e retries cegos de ações externas.
+- Direct cross-layer access, `Any` as contract escape, mutable global state, network calls in domain code, secrets in serialized configuration, and blind retries of external actions.
 
-## Revisão de código
+## Code review
 
-Cada revisão verifica: responsabilidade única, dono do estado, validação de transição, evento publicado, idempotência, política aplicada, observabilidade, teste e compatibilidade.
-
+Each review checks: single responsibility, state owner, transition validation, published event, idempotency, applied policy, observability, testing, and compatibility.

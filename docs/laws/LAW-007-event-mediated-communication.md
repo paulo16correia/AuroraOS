@@ -1,20 +1,19 @@
-# LAW-007 — Comunicação mediada por eventos
+# LAW-007 — Event-Mediated Communication
 
-## Enunciado
+## Statement
 
-Os componentes da Platform comunicam mudanças de estado e reações assíncronas através do Event Bus. Chamadas diretas só são permitidas para consultas síncronas publicadas por contrato e não podem criar efeitos em cascata ocultos.
+Platform components communicate state changes and asynchronous reactions via the Event Bus. Direct calls are only allowed for synchronous queries published by contract and cannot create hidden cascading effects.
 
-## Controlo verificável
+## Verifiable control
 
-- Cada produtor declara eventos; cada consumidor declara subscrições e versão de esquema.
-- Eventos possuem `event_id`, `correlation_id`, produtor, data, classificação e chave de idempotência quando aplicável.
-- Consumidores são idempotentes e registam entrega/processamento.
+- Each producer declares events; each consumer declares subscriptions and schema version.
+- Events have `event_id`, `correlation_id`, producer, date, classification and idempotency key when applicable.
+- Consumers are idempotent and register delivery/processing.
 
-## Exceções
+## Exceptions
 
-Consultas de leitura restrita, verificação de saúde e comandos do Kernel por interface autenticada. Mesmo nesses casos, mudanças resultantes publicam eventos.
+Restricted read queries, health checks and Kernel commands via authenticated interface. Even in these cases, resulting changes publish events.
 
-## Justificação
+## Justification
 
-O barramento reduz acoplamento, torna reações observáveis e permite que UI, auditoria, reflexão e outros consumidores reajam sem dependências escondidas.
-
+The bus reduces coupling, makes reactions observable, and allows UI, audit, reflection, and other consumers to react without hidden dependencies.

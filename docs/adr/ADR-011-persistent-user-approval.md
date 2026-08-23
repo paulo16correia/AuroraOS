@@ -1,27 +1,27 @@
-# ADR-011 — Aprovação explícita e persistente do utilizador
+# ADR-011 — Explicit and persistent user approval
 
-**Estado:** Aceite  
-**Data:** 2026-07-18  
-**Decisão:** VS-011 — Persistent User Approval
+**Status:** Accepted
+**Date:** 2026-07-18
+**Decision:** VS-011 — Persistent User Approval
 
-## Contexto
+## Context
 
-VS-010 consegue preparar operações por capability, mas uma preparação não é autorização. Sem um objeto persistente de aprovação, um reinício poderia perder o estado de espera, repetir o pedido ou permitir que texto de conversa fosse interpretado fora de contexto.
+VS-010 can prepare operations by capability, but preparation is not authorization. Without a persistent approval object, a restart could lose the wait state, repeat the request, or allow conversational text to be interpreted out of context.
 
-## Decisão
+## Decision
 
-Adicionar `ApprovalRequest` e `Approval`. O Kernel cria a request apenas depois de uma preparação pendente, e resolve a confirmação do utilizador apenas quando há uma única request PENDING para a Entity. A aprovação é persistida com utilizador, correlação e instante.
+Add `ApprovalRequest` and `Approval`. The Kernel creates the request only after a pending preparation, and resolves the user's confirmation only when there is a single PENDING request for the Entity. Approval is persisted with user, correlation and instant.
 
-EMAIL_SEND passa a estar disponível apenas para **preparação e aprovação**. Não possui transporte externo; `Approval(APPROVED)` não aciona execução.
+EMAIL_SEND is now only available for **preparation and approval**. There is no external transport; `Approval(APPROVED)` does not trigger execution.
 
-## Consequências
+## Consequences
 
-- A autorização sobrevive a shutdown/restauro e é auditável.
-- VS-012 pode exigir uma Approval válida sem redesenhar o ciclo cognitivo.
-- As capabilities externas continuam incapazes de produzir efeitos nesta versão.
+- Authorization survives shutdown/restore and is auditable.
+- VS-012 can require a valid Approval without redesigning the cognitive cycle.
+- External capabilities remain unable to produce effects in this version.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-1. **Guardar "sim" como mensagem de conversa** — não contém ligação segura à operação nem controlo de ciclo de vida.
-2. **Executar logo após aprovação** — mistura autorização com efeito externo antes do executor real estar implementado.
-3. **Deixar a LLM decidir o que foi aprovado** — viola ownership de estado e permite ambiguidade.
+1. **Save "yes" as chat message** — contains no secure connection to operation or lifecycle control.
+2. **Execute soon after approval** — mixes authorization with external effect before the actual executor is implemented.
+3. **Letting LLM decide what was approved** — violates state ownership and allows ambiguity.

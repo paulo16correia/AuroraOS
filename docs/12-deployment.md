@@ -1,27 +1,27 @@
-# Aurora OS — RFC 12: Implementação, operação e continuidade
+# Aurora OS — RFC 12: Implementation, operation and continuity
 
-**Estado:** Normativo · **Depende de:** RFC 09–11
+**State:** Normative · **Depends on:** RFC 09–11
 
-## Objetivo
+## Objective
 
-Definir como operar a Aurora numa VPS de forma recuperável e observável. A primeira implantação privilegia simplicidade, isolamento e restauro testado, não complexidade prematura.
+Define how to operate Aurora on a VPS in a retrievable and observable way. The first implementation favors simplicity, isolation and tested restoration, not premature complexity.
 
-## Arquitetura de referência
+## Reference architecture
 
 ```text
 Internet → proxy TLS/WAF → API/UI
                             │
             ┌───────────────┼────────────────────┐
             ▼               ▼                    ▼
-       núcleo/worker   PostgreSQL+índice      cofre de segredos
+PostgreSQL core/worker+secret vault index
             │               │                    │
             ▼               ▼                    ▼
-        conectores       backups cifrados     métricas/logs/auditoria
+connectors encrypted backups metrics/logs/audit
 ```
 
-Os serviços são contentorizados e executados com utilizadores não privilegiados, redes segmentadas e volumes persistentes mínimos. O processo de ferramenta deve ter limites mais restritos que o núcleo.
+Services are containerized and run with unprivileged users, segmented networks, and minimal persistent volumes. The tool process must have tighter limits than the core.
 
-## Estruturas de dados operacionais
+## Operational data structures
 
 ```text
 DeploymentManifest
@@ -47,37 +47,36 @@ Backup.restoreTest(snapshot_id, isolated_target) -> RestoreReport
 Health.read() -> HealthCheck[]
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Produção DEVE usar TLS, DNS controlado, atualizações de segurança e acesso administrativo com autenticação forte.
-2. Cada release DEVE fixar versões de imagem, ter migração reversível ou estratégia de compatibilidade e passar verificações antes de receber tráfego.
-3. Backups cifrados DEVEM incluir dados, configurações necessárias e referência ao esquema; restauros DEVEM ser testados periodicamente num ambiente isolado.
-4. Métricas, logs e alertas DEVEM ser redigidos; logs não substituem o diário de auditoria.
-5. Escalar recursos ou adicionar serviços só deve acontecer com uma necessidade medida: carga, disponibilidade, isolamento ou recuperação.
+1. Production MUST use TLS, controlled DNS, security updates, and administrative access with strong authentication.
+2. Each release MUST fix image versions, have a reversible migration or compatibility strategy, and pass checks before receiving traffic.
+3. Encrypted backups MUST include data, necessary configurations and schema reference; Restorations MUST be tested periodically in an isolated environment.
+4. Metrics, logs and alerts MUST be written; logs do not replace the audit journal.
+5. Scaling resources or adding services should only happen with a measured need: load, availability, isolation or recovery.
 
-## Fluxo de release
+## Release flow
 
 ```text
-artefacto assinado → validação → backup pré-release → migração compatível
+signed artifact → validation → pre-release backup → compatible migration
        │                                                   │
        ▼                                                   ▼
-ambiente de teste → verificações de saúde → ativação gradual → observação
+test environment → health checks → gradual activation → observation
                                                               │
-                                              falha ────────┴→ rollback/incidente
+                                              failure ────────┴→ rollback/incidente
 ```
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Migração interrompida:** bloquear versão nova, usar marcador de migração e seguir procedimento de recuperação; nunca reexecutar às cegas.
-- **Disco quase cheio:** parar ingestão não essencial, alertar e preservar base/auditoria; não apagar dados arbitrariamente.
-- **Falha total da VPS:** restaurar snapshot verificado, rodar segredos se necessário e reconciliar chamadas externas pendentes.
-- **Relógio incorreto:** bloquear operações que dependem de expiração/assinatura até sincronização segura.
+- **Migration interrupted:** block new version, use migration marker and follow recovery procedure; never rerun blindly.
+- **Disk almost full:** stop non-essential intake, alert and preserve base/audit; Do not erase data arbitrarily.
+- **Complete VPS failure:** restore verified snapshot, rotate secrets if necessary and reconcile outstanding external calls.
+- **Incorrect clock:** block operations that depend on expiration/subscription until secure synchronization.
 
-## Justificação
+## Justification
 
-Uma VPS é adequada para a fase inicial porque reduz custo e superfície operacional. A disciplina de imagens imutáveis, cópias verificadas e procedimentos de incidente torna possível crescer sem perder controlo.
+A VPS is suitable for the initial phase because it reduces cost and operational surface. The discipline of immutable images, verified copies, and incident procedures makes it possible to grow without losing control.
 
-## Expansões futuras
+## Future expansions
 
-Alta disponibilidade regional, segregação de dados, infraestrutura como código, recuperação entre regiões, gestão de configuração centralizada e testes de caos.
-
+High regional availability, data segregation, infrastructure as code, cross-region recovery, centralized configuration management, and chaos testing.

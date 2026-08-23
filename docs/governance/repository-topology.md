@@ -1,29 +1,29 @@
-# Aurora Platform — Topologia de repositórios
+# Aurora Platform — Repository topology
 
-## Decisão
+## Decision
 
-Separar especificação, Kernel e Applications para impedir que implementação ou conectores alterem silenciosamente a arquitetura.
+Separate specification, Kernel and Applications to prevent implementation or connectors from silently changing the architecture.
 
 ```text
 aurora-spec
-  RFCs, Leis, Constituição, ADRs, testes de conformidade e baseline de contratos
+RFCs, Laws, Constitution, ADRs, compliance tests and contract baseline
 
 aurora-kernel
   Aurora Kernel, Mind Manager, State Manager, Event Bus, Policy, auditoria,
-  contratos publicados, migrations e implementação de referência
+published contracts, migrations and reference implementation
 
 aurora-apps
-  Applications/providers: email, Discord, browser, GitHub, calendário, etc.
-  Cada provider depende apenas do SDK/contratos publicados pelo Kernel
+Applications/providers: email, Discord, browser, GitHub, calendar, etc.
+Each provider depends only on the SDK/contracts published by the Kernel
 ```
 
-## Regras de versionamento
+## Versioning rules
 
-- `aurora-spec` publica versões de baseline e contratos; é fonte normativa.
-- `aurora-kernel` declara a versão mínima/máxima de spec suportada.
-- `aurora-apps` declara a versão de SDK/Capability e não importa módulos internos da Mind.
-- Alteração incompatível percorre `ADR → spec → kernel SDK → apps`, com testes de compatibilidade.
+- `aurora-spec` publishes baseline versions and contracts; is a normative source.
+- `aurora-kernel` declares the minimum/maximum supported spec version.
+- `aurora-apps` declares the SDK/Capability version and does not import Mind's internal modules.
+- Incompatible change runs through `ADR → spec → kernel SDK → apps`, with compatibility tests.
 
-## Estado atual
+## Current status
 
-Este repositório é o `aurora-spec`: os RFCs e a documentação normativa vivem na raiz, enquanto os documentos agrupados vivem em diretórios próprios (`adr/`, `laws/`, `governance/`, `reviews/` e `execution-traces/`). O `aurora-kernel` é mantido como repositório independente. Esta organização é estrutural e não altera a baseline congelada.
+This repository is `aurora-spec`: the RFCs and normative documentation live in the root, while the grouped documents live in their own directories (`adr/`, `laws/`, `governance/`, `reviews/` and `execution-traces/`). `aurora-kernel` is maintained as an independent repository. This organization is structural and does not change the frozen baseline.

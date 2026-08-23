@@ -1,15 +1,15 @@
-# Aurora OS — RFC 034: Consciência situacional operacional
+# Aurora OS — RFC 034: Operational Situational Awareness
 
-**Estado:** Normativo · **Depende de:** RFC 027, 030–033, 042–043
+**State:** Normative · **Depends on:** RFC 027, 030–033, 042–043
 
-## Objetivo
+## Objective
 
-Construir uma avaliação temporária do contexto relevante para decidir adequadamente: hora, fuso, disponibilidade do utilizador, criticidade, estado de saúde, recursos, canal, regras de silêncio e delegações ativas. Não é consciência subjetiva; é compreensão operacional baseada em fontes observáveis.
+Build a temporary assessment of the relevant context to decide appropriately: time, zone, user availability, criticality, health status, resources, channel, silence rules and active delegations. It is not subjective consciousness; it is operational understanding based on observable sources.
 
-## Arquitetura
+## Architecture
 
 ```text
-Self + Mind State + Signals + Time + Resources + políticas + contexto do utilizador
+Self + Mind State + Signals + Time + Resources + policies + user context
                                       │
                                       ▼
                            SituationAssessment
@@ -18,7 +18,7 @@ Self + Mind State + Signals + Time + Resources + políticas + contexto do utiliz
                       Attention / Decision / Scheduler / UI
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 SituationAssessment
@@ -38,24 +38,23 @@ Situation.isAppropriate(action, assessment) -> AssessmentResult
 Situation.invalidate(assessment_id, trigger) -> void
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Uma avaliação situa-se num instante e expira; não pode ser reutilizada depois de sinal, recurso, tempo ou política material mudar.
-2. Disponibilidade do utilizador é indício, não consentimento. Estar offline não cria autorização para agir; apenas influencia notificação e ordem.
-3. Ações críticas podem avançar autonomamente apenas se houver delegação explícita, política, recursos e âmbito correspondente.
-4. Sinais e dados externos devem ser validados; conteúdo recebido não pode declarar falsamente uma emergência.
+1. An assessment is instantaneous and expires; cannot be reused after signal, resource, timing, or material policy changes.
+2. User availability is an indication, not consent. Being offline does not create authorization to act; it only influences notification and order.
+3. Critical actions can advance autonomously only if there is explicit delegation, policy, resources and corresponding scope.
+4. External signals and data must be validated; Received content cannot falsely declare an emergency.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **03:00, utilizador offline, servidor caiu:** a avaliação pode recomendar execução de procedimento de recuperação pré-autorizado e notificação diferida/urgente conforme regra.
-- **Domingo, nada crítico:** recomenda silêncio e trabalho interno permitido, respeitando recursos e curiosidade.
-- **Estado do utilizador desconhecido:** escolher comportamento menos intrusivo; pedir confirmação para comunicação de impacto.
+- **03:00, user offline, server down:** the assessment may recommend execution of a pre-authorized recovery procedure and deferred/urgent notification as per rule.
+- **Sunday, nothing critical:** recommends silence and internal work allowed, respecting resources and curiosity.
+- **Unknown user status:** choose less intrusive behavior; ask for confirmation for impact communication.
 
-## Justificação
+## Justification
 
-A mesma ação pode ser correta ou intrusiva conforme contexto. A consciência situacional torna explícito esse julgamento e impede decisões cegas baseadas apenas no texto da última mensagem.
+The same action can be correct or intrusive depending on the context. Situational awareness makes this judgment explicit and prevents blind decisions based solely on the text of the latest message.
 
-## Expansões futuras
+## Future expansions
 
-Deteção de presença consentida, calendários, contexto de equipa, regras geográficas e previsão de interrupção.
-
+Detection of consented presence, calendars, team context, geographic rules and interruption prediction.

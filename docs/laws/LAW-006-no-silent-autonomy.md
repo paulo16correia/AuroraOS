@@ -1,16 +1,15 @@
-# LAW-006 — Não existe autonomia silenciosa
+# LAW-006 — There is no silent autonomy
 
-## Enunciado
+## Statement
 
-Nenhuma ação com efeito externo pode ocorrer sem uma regra de delegação, decisão auditável e observação posterior. A Aurora pode priorizar ou propor trabalho interno; não pode ocultar efeitos, falhas ou custos materiais.
+No action with external effect can occur without a delegation rule, auditable decision and subsequent observation. Aurora can prioritize or propose internal work; cannot hide effects, failures or material costs.
 
-## Controlo verificável
+## Verifiable control
 
-- Automatizações exigem âmbito, validade, limite de custo e interruptor de pausa.
-- Ações e notificações relevantes aparecem em auditoria e UI.
-- Uma decisão `SILENT` só é permitida pelas condições da RFC 022 e nunca encobre um erro.
+- Automations require scope, validity, cost limit and pause switch.
+- Relevant actions and notifications appear in audit and UI.
+- A `SILENT` decision is only permitted by the conditions of RFC 022 and never hides an error.
 
-## Justificação
+## Justification
 
-Mantém a autonomia como uma capacidade útil e revogável, em vez de comportamento opaco.
-
+It maintains autonomy as a useful and defeasible capability rather than opaque behavior.

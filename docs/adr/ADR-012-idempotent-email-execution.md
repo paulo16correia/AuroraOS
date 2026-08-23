@@ -1,27 +1,27 @@
-# ADR-012 — Execução idempotente de EMAIL_SEND
+# ADR-012 — Idempotent execution of EMAIL_SEND
 
-**Estado:** Aceite  
-**Data:** 2026-07-18  
-**Decisão:** VS-012 — Idempotent Email Execution
+**Status:** Accepted
+**Date:** 2026-07-18
+**Decision:** VS-012 — Idempotent Email Execution
 
-## Contexto
+## Context
 
-Após VS-011, a Aurora consegue preparar e obter aprovação persistente. Falta transformar essa autorização numa capacidade externa real sem repetir envios em caso de falha, timeout ou reinício.
+After VS-011, Aurora is able to prepare and obtain persistent approval. It remains to transform this authorization into a real external capacity without repeating sends in case of failure, timeout or restart.
 
-## Decisão
+## Decision
 
-Implementar `EmailDraft`, `ExecutionRecord`, `SmtpEmailProvider` e o caminho `Approval(APPROVED) → Executor.execute_approved`. O record entra em `EXECUTING` antes de qualquer I/O. Nenhum record `EXECUTING` recuperado é reenviado automaticamente; é tratado como `UNKNOWN` até reconciliação.
+Implement `EmailDraft`, `ExecutionRecord`, `SmtpEmailProvider` and the `Approval(APPROVED) → Executor.execute_approved` path. The record goes into `EXECUTING` before any I/O. No recovered `EXECUTING` records are automatically resent; is treated as `UNKNOWN` until reconciliation.
 
-O provider SMTP é configurado exclusivamente por variáveis de ambiente. Sem configuração completa, falha localmente e de forma auditável.
+The SMTP provider is configured exclusively through environment variables. Without full configuration, it fails locally and auditably.
 
-## Consequências
+## Consequences
 
-- A Aurora executa uma capacidade externa real sob aprovação e com auditoria completa.
-- Idempotência é garantida no Kernel para operações concluídas ou ambíguas; o header de chave permite colaboração com providers que a suportem.
-- O problema de entrega ambígua é preferido a um reenvio potencialmente duplicado.
+- Aurora executes a real external capability under approval and with full audit.
+- Idempotence is guaranteed in the Kernel for completed or ambiguous operations; The key header allows collaboration with providers that support it.
+- The ambiguous delivery problem is preferred to a potentially duplicate resubmission.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-1. **Repetir automaticamente após crash** — pode duplicar um email já aceite pelo servidor.
-2. **Guardar segredos SMTP na base de dados** — viola o modelo de segurança.
-3. **Inferir destinatário e conteúdo livremente pela LLM** — não oferece uma fronteira verificável para uma ação externa.
+1. **Automatically repeat after crash** — can duplicate an email already accepted by the server.
+2. **Saving SMTP secrets in the database** — violates the security model.
+3. **Infer recipient and content freely by LLM** — does not provide a verifiable boundary for external action.

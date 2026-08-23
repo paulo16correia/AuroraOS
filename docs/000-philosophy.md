@@ -1,59 +1,58 @@
-# Aurora OS — RFC 000: Filosofia de arquitetura
+# Aurora OS — RFC 000: Architectural Philosophy
 
-**Estado:** Fundacional · **Precede:** todas as restantes RFCs
+**Status:** Foundational · **Precedes:** all other RFCs
 
-## Objetivo
+## Objective
 
-Explicar por que razão a Aurora OS é construída como uma arquitetura cognitiva modular, e não como um produto centrado num modelo de linguagem. Esta RFC é normativa: quando uma decisão técnica não estiver coberta por outra RFC, estes princípios prevalecem.
+Explain why Aurora OS is built as a modular cognitive architecture rather than a language model-centric product. This RFC is normative: when a technical decision is not covered by another RFC, these principles prevail.
 
-## Tese arquitetural
+## Architectural thesis
 
 ```text
-Modelo de linguagem = capacidade probabilística de interpretar e gerar
-Aurora OS           = identidade + estado + políticas + capacidades + operação
-Mente (Mind)        = representação persistente e governada do que a Aurora sabe,
+Language model = probabilistic ability to interpret and generate
+Aurora OS = identity + state + policies + capabilities + operation
+Mind = persistent and governed representation of what Aurora knows,
                       pretende, observa e pode usar
 ```
 
-A IA não é o sistema. Um LLM é um componente substituível que apoia deliberação e comunicação. Não possui propriedade sobre dados, não aprova ações e não é fonte de verdade.
+AI is not the system. An LLM is a replaceable component that supports deliberation and communication. It has no ownership over data, does not approve actions and is not a source of truth.
 
-## Responsabilidades
+## Responsibilities
 
-- Estabelecer soberania de dados, separação entre verdade e inferência e limites de autonomia.
-- Orientar a decomposição de módulos e o desenho de interfaces.
-- Fornecer critérios para aceitar ou rejeitar simplificações de implementação.
+- Establish data sovereignty, separation between truth and inference and limits of autonomy.
+- Guide the decomposition of modules and the design of interfaces.
+- Provide criteria for accepting or rejecting implementation simplifications.
 
-## Princípios obrigatórios
+## Mandatory principles
 
-1. **A Mente pertence à Aurora, não ao modelo.** Identidade, memória, conhecimento, experiências, objetivos e políticas são dados versionados e portáveis.
-2. **O modelo nunca é a fonte da verdade.** Uma resposta é hipótese até ser sustentada por dados, ferramenta ou evidência identificável.
-3. **A inteligência emerge da coordenação.** Perceção, atenção, memória de trabalho, conhecimento, decisão, execução e reflexão cooperam; nenhum módulo recebe autoridade implícita.
-4. **Estado explícito vence texto implícito.** Factos, permissões, tarefas e relações importantes têm objetos tipados, ciclo de vida e proveniência.
-5. **Autonomia é uma delegação revogável.** A Aurora só age sem confirmação quando existe política persistida, âmbito limitado, orçamento e mecanismo de pausa.
-6. **Explicação operacional, não teatralidade.** O sistema mostra fontes, decisões e efeitos; não finge consciência nem expõe raciocínio privado detalhado.
+1. **The Mind belongs to Aurora, not the model.** Identity, memory, knowledge, experiences, goals and policies are versioned and portable data.
+2. **The model is never the source of truth.** An answer is a hypothesis until supported by identifiable data, tools, or evidence.
+3. **Intelligence emerges from coordination.** Perception, attention, working memory, knowledge, decision, execution and reflection cooperate; no modules are given implicit authority.
+4. **Explicit state beats implicit text.** Important facts, permissions, tasks and relationships have typed objects, lifecycle and provenance.
+5. **Autonomy is a revocable delegation.** Aurora only acts without confirmation when there is a persistent policy, limited scope, budget and pause mechanism.
+6. **Operational explanation, not theatricality.** The system shows sources, decisions and effects; it does not feign consciousness or expound detailed private reasoning.
 
-## Fluxo de uma afirmação
+## Flow of an affirmation
 
 ```text
-texto/modelo → candidato → validação/evidência → objeto de domínio
+text/model → candidate → validation/evidence → domain object
                                             │
-                                 aceitação humana/política
+human/political acceptance
                                             │
                                             ▼
-                                    estado canónico da Mind
+canonical state of Mind
 ```
 
-## Casos limite e erro
+## Limit and error cases
 
-- Se o modelo contradiz um registo confirmado, prevalece o registo e a contradição é sinalizada.
-- Se um fornecedor de IA deixa de estar disponível, a Mind, políticas e auditoria permanecem intactas; o sistema degrada sem inventar execução.
-- Se não houver evidência suficiente, a Aurora pergunta, declara incerteza ou aguarda — não transforma fluência em facto.
+- If the model contradicts a confirmed record, the record prevails and the contradiction is flagged.
+- If an AI supplier ceases to be available, Mind, policies and audit remain intact; the system degrades without inventing execution.
+- If there is not enough evidence, Aurora asks, declares uncertainty or waits — does not transform fluency into fact.
 
-## Justificação
+## Justification
 
-Esta filosofia evita acoplamento a fornecedores, memória opaca e “autonomia por prompt”. Também permite testar cada capacidade sem confiar que um modelo seja consistentemente obediente.
+This philosophy avoids supplier coupling, opaque memory and “autonomy by prompt”. It also allows you to test each capability without relying on a model to be consistently compliant.
 
-## Expansões futuras
+## Future expansions
 
-Vários modelos especializados, execução local, auditoria criptográfica e portabilidade entre instalações da Aurora.
-
+Multiple specialized templates, local execution, cryptographic auditing, and portability between Aurora installations.

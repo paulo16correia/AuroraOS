@@ -1,22 +1,22 @@
-# Aurora OS — RFC 025: Deliberação interna e síntese explicável
+# Aurora OS — RFC 025: Internal deliberation and explainable synthesis
 
-**Estado:** Normativo · **Depende de:** RFC 021–024
+**State:** Normative · **Depends on:** RFC 021–024
 
-## Objetivo
+## Objective
 
-Definir o estado interno de deliberação sem confundir telemetria de execução, cadeia de raciocínio privada ou comunicação ao utilizador. A Aurora deve conseguir coordenar passos internos e explicar decisões de forma verificável, sem alegar consciência.
+Define the internal state of deliberation without confusing execution telemetry, private chain of reasoning or user communication. Aurora must be able to coordinate internal steps and explain decisions in a verifiable way, without claiming conscience.
 
-## Arquitetura
+## Architecture
 
 ```text
 ContextFrame → DeliberationState → Thought → Decision
                     │                 │          │
                     ▼                 ▼          ▼
-              estado interno      síntese       explicação operacional
-              protegido           auditável     para utilizador
+internal state synthesis operational explanation
+protected auditable for user
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 DeliberationState
@@ -29,9 +29,7 @@ Thought
   id, cycle_id, intent, objective_ref, evidence_refs[]
   assumptions[], options[], uncertainty[], recommended_option
   user_explanation, status: DRAFT|VALIDATED|REJECTED|SUPERSEDED
-```
-
-`trace_ref` é material técnico protegido, com retenção limitada e acesso operacional estrito. `user_explanation` contém motivo, fontes e próximo efeito; não é uma transcrição de raciocínio detalhado.
+````trace_ref` is protected technical material with limited retention and strict operational access. `user_explanation` contains motif, fonts and next effect; it is not a transcript of detailed reasoning.
 
 ## Interfaces
 
@@ -42,24 +40,23 @@ Deliberation.summarise(id) -> Thought
 Deliberation.close(id, disposition) -> void
 ```
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Deliberação interna DEVE estar ligada a ciclo e prazo; não existe processo mental global sem proprietário.
-2. Afirmações sem evidência permanecem hipóteses e têm confiança explícita.
-3. O sistema NÃO DEVE afirmar “estou a pensar” como evidência de trabalho; só estados reais de `WorkItem` podem ser comunicados.
-4. Dados sensíveis no trace devem ser minimizados, cifrados e excluídos de exportações normais.
+1. Internal deliberation MUST be linked to cycle and deadline; There is no ownerless global mental process.
+2. Claims without evidence remain hypotheses and have explicit confidence.
+3. The system MUST NOT state “I am thinking” as evidence of work; only real states of `WorkItem` can be communicated.
+4. Sensitive data in the trace must be minimized, encrypted, and excluded from normal exports.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Deliberação inconclusiva:** produzir `ASK`/`WAIT`, com perguntas concretas.
-- **Trace indisponível:** manter decisão apenas se as fontes e política forem recuperáveis; caso contrário invalidar.
-- **Pedido de cadeia interna:** fornecer explicação operacional e evidência, não trace privado.
+- **Inconclusive deliberation:** produce `ASK`/`WAIT`, with concrete questions.
+- **Trace unavailable:** keep decision only if sources and policy are recoverable; otherwise invalidate.
+- **Internal chain request:** provide operational explanation and evidence, not private trace.
 
-## Justificação
+## Justification
 
-Separar deliberação de explicação reduz riscos de privacidade e evita desenhar o produto em torno de raciocínios não determinísticos, preservando ainda observabilidade útil.
+Separating deliberation from explanation reduces privacy risks and avoids designing the product around non-deterministic reasoning, while still preserving useful observability.
 
-## Expansões futuras
+## Future expansions
 
-Verificação formal de afirmações, revisores especializados e relatórios de decisão por domínio.
-
+Formal verification of assertions, expert reviewers, and domain decision reports.

@@ -1,36 +1,36 @@
-# ADR-022 — Compensação conservadora de workflows
+# ADR-022 — Conservative workflow compensation
 
-**Estado:** Aceite  
-**Data:** 2026-07-19
+**Status:** Accepted
+**Date:** 2026-07-19
 
-## Contexto
+## Context
 
-Um plano pode preparar várias capacidades externas. Uma falha numa delas pode
-tornar inválida a finalidade de outra — por exemplo, enviar uma confirmação de
-uma reunião que não foi criada.
+A plan can prepare several external capabilities. A failure in one of them can
+render the purpose of another invalid — for example, sending a confirmation of
+a meeting that has not been created.
 
-## Decisão
+## Decision
 
-Introduzir `WorkflowCompensation` como decisão persistida e propriedade do
-Kernel. Quando uma capability falha ou fica em estado desconhecido, o Kernel:
+Introduce `WorkflowCompensation` as a persisted decision and property of the
+Kernel. When a capability fails or is in an unknown state, the Kernel:
 
-1. localiza os pedidos irmãos pertencentes ao mesmo `Plan`;
-2. cancela somente as aprovações ainda pendentes;
-3. cancela as Tasks de espera correspondentes;
-4. não executa rollback externo; e
-5. pede nova informação quando já não existirem ramos seguros a cancelar.
+1. finds sibling requests belonging to the same `Plan`;
+2. only cancel approvals still pending;
+3. cancels the corresponding waiting Tasks;
+4. does not perform external rollback; and
+5. Request new information when there are no longer any safe branches to cancel.
 
-## Consequências
+## Consequences
 
-- Evita efeitos externos incoerentes sem esconder a falha.
-- Mantém idempotência após reinício ou replay.
-- Não resolve sagas com rollback real; isso exige compensadores explícitos por
-  capability e fica fora do VS-023.
+- Avoid inconsistent external effects without hiding the flaw.
+- Maintains idempotence after restart or replay.
+- Does not resolve sagas with real rollback; This requires explicit tradeoffs for
+  capability and is outside the VS-023.
 
-## Alternativas rejeitadas
+## Rejected alternatives
 
-- **Executar o email apesar da falha:** pode comunicar um estado falso.
-- **Reverter automaticamente todos os efeitos:** inseguro; nem todas as APIs
-  permitem inversão fiável e algumas ações não são reversíveis.
-- **Deixar ambas as aprovações pendentes:** obriga o utilizador a descobrir a
-  inconsistência e permite execução acidental.
+- **Run email despite failure:** may report false status.
+- **Automatically reverse all effects:** unsafe; not all APIs
+  they allow reliable inversion and some actions are not reversible.
+- **Leave both approvals pending:** forces the user to discover the
+  inconsistency and allows accidental execution.

@@ -1,39 +1,39 @@
-# Aurora OS — RFC 02: Núcleo cognitivo
+# Aurora OS — RFC 02: Cognitive Core
 
-**Estado:** Normativo · **Depende de:** RFC 00–01
+**State:** Normative · **Depends on:** RFC 00–01
 
-## Objetivo
+## Objective
 
-Definir o orquestrador que transforma eventos em respostas, planos ou pedidos de ação. O núcleo coordena componentes; não é uma conversa de modelo nem um local para regras de acesso.
+Define the orchestrator that transforms events into responses, plans, or action requests. The nucleus coordinates components; It is not a template conversation nor a place for access rules.
 
-## Responsabilidades
+## Responsibilities
 
-- Normalizar intenção, construir contexto mínimo e iniciar uma unidade de trabalho.
-- Decidir entre responder, perguntar, criar objetivo, preparar ação ou recusar.
-- Garantir persistência, correlação, idempotência e reflexão posterior.
+- Normalize intent, build minimal context and start a unit of work.
+- Decide whether to respond, ask, create objective, prepare action or refuse.
+- Ensure persistence, correlation, idempotence and subsequent reflection.
 
-## Arquitetura e fluxo
+## Architecture and flow
 
 ```text
 Evento autenticado
       │
       ▼
-Perceção → triagem de risco → construção de contexto
+Perception → risk screening → context construction
       │                              │
       ▼                              ▼
-interpretação ─────────────→ Thought (proposta)
+interpretation ─────────────→ Thought (proposal)
                                      │
                      ┌───────────────┼───────────────┐
                      ▼               ▼               ▼
-                 resposta       planeador       gestor de ferramentas
+response planner tool manager
                      │               │               │
                      └──────→ persistir/reflectir ←──┘
                                       │
                                       ▼
-                                saída ao canal
+exit to channel
 ```
 
-## Estruturas de dados
+## Data structures
 
 ```text
 WorkItem
@@ -53,9 +53,7 @@ Thought
 ResponsePlan
   audience, channel, language, content_outline
   citations[], disclose_actions[], needs_user_input: boolean
-```
-
-`model_trace_ref` aponta para telemetria protegida; não contém nem expõe raciocínio detalhado ao utilizador. `user_explanation` é uma explicação curta, factual e auditável.
+````model_trace_ref` points to protected telemetry; does not contain or expose detailed reasoning to the user. `user_explanation` is a short, factual, and auditable explanation.
 
 ## Interfaces
 
@@ -65,30 +63,29 @@ ContextBuilder.build(work_item, budget) -> ContextBundle
 Deliberator.propose(context) -> Thought
 PolicyEngine.evaluate(thought) -> PolicyDecision[]
 Kernel.cancel(work_item_id, actor) -> status
-```
+````
 
-`ContextBundle` contém apenas referências autorizadas, resumo, classificação máxima permitida, orçamento de tokens/custo e tempo limite.
+ContextBundle` contains only authorized references, summary, maximum rating allowed, token/cost budget, and timeout.
 
-## Regras obrigatórias
+## Mandatory rules
 
-1. Cada evento DEVE gerar no máximo um `WorkItem` ativo por chave de idempotência.
-2. O núcleo DEVE validar todos os campos de `Thought` antes de executar uma proposta.
-3. `Thought` NÃO é uma autorização; qualquer ferramenta exige decisão de política independente.
-4. O contexto DEVE ser mínimo, temporalmente limitado e rastreável por referências, não por cópias indiscriminadas.
-5. A resposta ao utilizador DEVE indicar falha, incerteza relevante ou necessidade de aprovação.
+1. Each event MUST generate a maximum of one active `WorkItem` per idempotence key.
+2. The core MUST validate all fields of `Thought` before executing a proposal.
+3. `Thought` is NOT an authorization; any tool requires independent policy decision.
+4. The context MUST be minimal, temporally limited and traceable by references, not by indiscriminate copies.
+5. The response to the user MUST indicate failure, material uncertainty or need for approval.
 
-## Casos limite e erro
+## Limit and error cases
 
-- **Pedido ambíguo:** produzir `ASK`, sem criar memória factual nem ação.
-- **Modelo indisponível:** reencaminhar para modelo alternativo autorizado ou devolver falha transitória; nunca inventar resultado.
-- **Evento repetido:** devolver resultado já concluído ou estado atual, sem repetir efeitos.
-- **Cancelamento durante ferramenta:** pedir cancelamento ao conector; marcar resultado como `CANCELLED` ou `UNKNOWN` até reconciliação.
+- **Ambiguous request:** produce `ASK`, without creating factual memory or action.
+- **Model unavailable:** forward to authorized alternative model or return transient failure; never invent results.
+- **Repeated event:** return already completed result or current state, without repeating effects.
+- **Cancellation during tool:** ask the connector for cancellation; mark result as `CANCELLED` or `UNKNOWN` until reconciliation.
 
-## Justificação
+## Justification
 
-O objeto `Thought` cria uma fronteira verificável entre interpretação probabilística e execução determinística. Uma unidade de trabalho persistente permite recuperar de reinícios e impedir duplicação.
+The `Thought` object creates a verifiable boundary between probabilistic interpretation and deterministic execution. A persistent unit of work allows you to recover from restarts and prevent duplication.
 
-## Expansões futuras
+## Future expansions
 
-Deliberação por múltiplos modelos, simulação de plano, prioridades concorrentes, memória de trabalho multimodal e avaliação contínua de qualidade.
-
+Multi-model deliberation, plan simulation, competing priorities, multimodal working memory and continuous quality assessment.
