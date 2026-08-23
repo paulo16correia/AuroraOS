@@ -151,9 +151,14 @@ public sealed class RecordingAuditStore : IAuditStore
         Task.FromResult(new AuditVerification(true, null));
 }
 
-/// <summary>In-memory idempotency store implementing the real disposition semantics, for kernel tests.</summary>
+/// <summary>
+/// In-memory idempotency store implementing the real disposition semantics, for kernel tests.
+/// Rows carry no timestamps, so staleness reconciliation is covered against the SQLite store.
+/// </summary>
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
+    public Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct) => Task.FromResult(0);
+
     private sealed record Row(string RequestHash, string State, string? ResultJson);
 
     private readonly Dictionary<(string Client, string Key), Row> _rows = [];

@@ -33,6 +33,17 @@ if (!auditVerification.Ok)
         $"Audit chain integrity verification failed at sequence {auditVerification.BrokenSequence}; refusing to start.");
 }
 
+// A process that died mid-effect leaves reservations in EXECUTING, which is deliberately not
+// retryable. Move the stale ones to UNKNOWN before serving, so those keys stop being wedged
+// and an operator can see them (design/0007).
+var reconciled = await app.Services.GetRequiredService<IIdempotencyStore>()
+    .ReconcileStaleAsync(options.ExecutingStaleAfter, CancellationToken.None);
+if (reconciled > 0)
+{
+    Console.WriteLine(
+        $"[Aurora] Reconciled {reconciled} reservation(s) stuck in EXECUTING into UNKNOWN.");
+}
+
 // Security pipeline: loopback/Origin guard, then bearer auth, before the MCP endpoints.
 app.UseMiddleware<LoopbackGuardMiddleware>();
 app.UseMiddleware<BearerAuthMiddleware>();

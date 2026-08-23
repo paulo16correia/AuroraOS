@@ -54,4 +54,12 @@ public interface IIdempotencyStore
     /// A no-op, not an error, when the row is no longer ACCEPTED.
     /// </summary>
     Task AbandonAsync(Principal principal, string key, CancellationToken ct);
+
+    /// <summary>
+    /// Moves reservations left in EXECUTING for longer than <paramref name="staleAfter"/> to
+    /// UNKNOWN, and returns how many were moved (design/0007). A process that dies mid-effect
+    /// leaves EXECUTING behind; without this the key is wedged forever, because EXECUTING is
+    /// deliberately not retryable — the effect may have happened.
+    /// </summary>
+    Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct);
 }

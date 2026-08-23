@@ -142,6 +142,27 @@ public sealed class SqliteIdempotencyStore : IIdempotencyStore
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct)
+    {
+        // Compared against updated_at_utc, which MarkExecutingAsync stamps when the row enters
+        // EXECUTING, so the window is measured from the start of the effect, not of the request.
+        var cutoff = _clock.UtcNow.Subtract(staleAfter).ToString("O", CultureInfo.InvariantCulture);
+
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE idempotency
+               SET state = @unknown, updated_at_utc = @now
+             WHERE state = @executing AND updated_at_utc < @cutoff;
+            """;
+        command.Parameters.AddWithValue("@unknown", IdempotencyState.Unknown);
+        command.Parameters.AddWithValue("@executing", IdempotencyState.Executing);
+        command.Parameters.AddWithValue("@cutoff", cutoff);
+        command.Parameters.AddWithValue("@now", _clock.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+
+        return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     private static IdempotencyBegin Resolve(string storedRequestHash, string storedState, string? storedResultJson, string requestHash)
     {
         if (!string.Equals(storedRequestHash, requestHash, StringComparison.Ordinal))

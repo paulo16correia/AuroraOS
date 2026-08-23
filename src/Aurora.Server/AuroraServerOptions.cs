@@ -19,6 +19,12 @@ public sealed class AuroraServerOptions
     /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (design/0003).</summary>
     public required string SandboxRoot { get; init; }
 
+    /// <summary>
+    /// How long a reservation may sit in EXECUTING before startup reconciliation calls it
+    /// indeterminate. Long enough that a slow-but-live execution is never stolen from itself.
+    /// </summary>
+    public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
+
     /// <summary>File holding the HMAC key that signs the audit chain (design/0005).</summary>
     public required string AuditKeyPath { get; init; }
 
