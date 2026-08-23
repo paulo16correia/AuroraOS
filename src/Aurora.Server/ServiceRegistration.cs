@@ -1,5 +1,6 @@
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Events;
 using Aurora.Adapters.Files;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -32,6 +33,10 @@ public static class ServiceRegistration
             new AuditAnchorFile(options.AuditAnchorPath)));
         services.AddSingleton<IIdempotencyStore, SqliteIdempotencyStore>();
         services.AddSingleton<IApprovalStore, SqliteApprovalStore>();
+
+        // Event Bus (RFC 050, step 3 of the frozen implementation order).
+        services.AddSingleton<IOutbox, SqliteOutbox>();
+        services.AddSingleton<IEventBus, SqliteEventBus>();
         services.AddSingleton(ConsentSessionOptions.Default);
         services.AddSingleton<IConsentSessionStore, SqliteConsentSessionStore>();
         services.AddSingleton<INoteStore, SqliteNoteStore>();

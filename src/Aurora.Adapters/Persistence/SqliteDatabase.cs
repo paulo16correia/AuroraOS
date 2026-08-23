@@ -64,6 +64,55 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS domain_event (
+          sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT NOT NULL UNIQUE,
+          type TEXT NOT NULL,
+          schema_version INTEGER NOT NULL,
+          producer TEXT NOT NULL,
+          occurred_at_utc TEXT NOT NULL,
+          correlation_id TEXT NOT NULL,
+          causation_id TEXT NULL,
+          aggregate_ref TEXT NULL,
+          payload_json TEXT NULL,
+          payload_ref TEXT NULL,
+          sensitivity TEXT NOT NULL,
+          idempotency_key TEXT NULL,
+          integrity_hash TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_event_type ON domain_event(type, sequence);
+
+        CREATE TABLE IF NOT EXISTS subscription (
+          id TEXT PRIMARY KEY,
+          consumer TEXT NOT NULL,
+          event_types TEXT NOT NULL,
+          filter_ref TEXT NULL,
+          mode TEXT NOT NULL,
+          checkpoint INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          max_attempts INTEGER NOT NULL,
+          max_schema_version INTEGER NOT NULL,
+          diagnosis TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS delivery (
+          delivery_id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL,
+          subscription_id TEXT NOT NULL,
+          attempt INTEGER NOT NULL,
+          delivered_at_utc TEXT NULL,
+          status TEXT NOT NULL,
+          last_error TEXT NULL
+        );
+
+        -- Makes fan-out re-executable (RFC 050 rule 1): replaying publication after a crash
+        -- cannot create a second delivery for the same (event, subscription).
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_unique
+          ON delivery(event_id, subscription_id);
+
+        CREATE INDEX IF NOT EXISTS idx_delivery_status ON delivery(status);
+
         CREATE TABLE IF NOT EXISTS consent_session (
           session_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
