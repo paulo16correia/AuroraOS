@@ -15,6 +15,15 @@ public sealed class SandboxViolationException : Exception
 /// <summary>Result of a successful sandboxed write.</summary>
 public sealed record SandboxWriteResult(string Path, long Bytes, bool Overwritten);
 
+/// <summary>Content of a file read from inside the sandbox.</summary>
+public sealed record SandboxReadResult(string Path, string Content, long Bytes);
+
+/// <summary>Reads a file from inside the sandbox root, refusing to follow links out of it.</summary>
+public interface ISandboxFileReader
+{
+    Task<SandboxReadResult> ReadAsync(string relativePath, CancellationToken ct);
+}
+
 /// <summary>Writes a file inside a fixed sandbox root, atomically and without following links out.</summary>
 public interface ISandboxFileWriter
 {

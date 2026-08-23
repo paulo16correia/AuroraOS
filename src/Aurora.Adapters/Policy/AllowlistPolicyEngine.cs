@@ -14,6 +14,9 @@ namespace Aurora.Adapters.Policy;
 /// </summary>
 public sealed class AllowlistPolicyEngine : IPolicyEngine
 {
+    /// <summary>Bump this whenever the rules below change; live consent sessions then stop matching.</summary>
+    public string Version => "allowlist-v1";
+
     public PolicyDecision Evaluate(CapabilityDescriptor capability, JsonElement input, Principal principal)
     {
         if (capability.Risk == RiskLevel.Low && capability.Effects.Count == 0)

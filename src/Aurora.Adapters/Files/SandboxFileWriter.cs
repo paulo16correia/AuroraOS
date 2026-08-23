@@ -24,14 +24,8 @@ public sealed class SandboxFileWriter : ISandboxFileWriter
 {
     private readonly string _root;
 
-    public SandboxFileWriter(string sandboxRoot)
-    {
-        Directory.CreateDirectory(sandboxRoot);
-
-        // Resolve the root through any links once, so containment is judged against the real path.
-        var resolved = Directory.ResolveLinkTarget(sandboxRoot, returnFinalTarget: true);
-        _root = Path.GetFullPath(resolved?.FullName ?? sandboxRoot);
-    }
+    // Resolve the root through any links once, so containment is judged against the real path.
+    public SandboxFileWriter(string sandboxRoot) => _root = SandboxGuard.ResolveRoot(sandboxRoot);
 
     public async Task<SandboxWriteResult> WriteAsync(string relativePath, string content, CancellationToken ct)
     {
@@ -46,10 +40,10 @@ public sealed class SandboxFileWriter : ISandboxFileWriter
             ?? throw new SandboxViolationException("Path has no parent directory.");
 
         // Check what already exists before creating anything, so we never mkdir through a link...
-        EnsureNoLinkedComponents(full);
+        SandboxGuard.EnsureNoLinkedComponents(_root, full);
         Directory.CreateDirectory(directory);
         // ...and again afterwards, now that every component exists.
-        EnsureNoLinkedComponents(full);
+        SandboxGuard.EnsureNoLinkedComponents(_root, full);
 
         var overwritten = File.Exists(full);
         var bytes = Encoding.UTF8.GetBytes(content);
@@ -74,30 +68,6 @@ public sealed class SandboxFileWriter : ISandboxFileWriter
         }
 
         return new SandboxWriteResult(Path.GetRelativePath(_root, full), bytes.LongLength, overwritten);
-    }
-
-    /// <summary>
-    /// Walks root → target and refuses if any existing component is a symlink or reparse point.
-    /// The target itself is included: overwriting a link would write through it.
-    /// </summary>
-    private void EnsureNoLinkedComponents(string fullPath)
-    {
-        var relative = Path.GetRelativePath(_root, fullPath);
-        var current = _root;
-
-        foreach (var segment in relative.Split(Path.DirectorySeparatorChar))
-        {
-            current = Path.Combine(current, segment);
-
-            FileSystemInfo? info = Directory.Exists(current)
-                ? new DirectoryInfo(current)
-                : File.Exists(current) ? new FileInfo(current) : null;
-
-            if (info?.LinkTarget is not null)
-            {
-                throw new SandboxViolationException($"'{segment}' is a link; refusing to write through it.");
-            }
-        }
     }
 
     private static void TryDelete(string path)

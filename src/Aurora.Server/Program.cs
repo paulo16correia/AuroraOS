@@ -53,8 +53,16 @@ app.MapMcp("/mcp");
 // Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
 // NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
 // hand an untrusted reasoner a view of how often its requests are being refused.
-app.MapGet("/metrics", async (IAuroraMetrics metrics, IApprovalStore approvals, CancellationToken ct) =>
-    Results.Json(metrics.Snapshot(await approvals.CountPendingAsync(ct))));
+app.MapGet("/metrics", async (
+        IAuroraMetrics metrics, IApprovalStore approvals, IConsentSessionStore sessions, CancellationToken ct) =>
+    Results.Json(metrics.Snapshot(
+        await approvals.CountPendingAsync(ct), await sessions.CountActiveAsync(ct))));
+
+// Kill switch (docs/adr/0010). Revokes every consent session at once, including any left by an
+// earlier run, so an operator pressing it does not have to reason about restarts. Operator
+// surface, not an MCP tool: the agent must not be able to reason about its own leash.
+app.MapPost("/sessions/revoke", async (IConsentSessionStore sessions, CancellationToken ct) =>
+    Results.Json(new { revoked = await sessions.RevokeAllAsync(ct) }));
 
 app.Run();
 

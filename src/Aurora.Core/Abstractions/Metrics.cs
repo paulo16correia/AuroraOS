@@ -4,8 +4,8 @@ namespace Aurora.Core.Abstractions;
 /// A point-in-time reading of the operational counters (docs/adr/0008).
 /// </summary>
 /// <remarks>
-/// Counters are process-lifetime and reset on restart; only <see cref="PendingApprovals"/> is a
-/// true gauge read from storage. Labelled here rather than left for the reader to discover,
+/// Counters are process-lifetime and reset on restart; <see cref="PendingApprovals"/> and
+/// <see cref="ActiveSessions"/> are true gauges read from storage. Labelled here rather than left for the reader to discover,
 /// because a counter silently reset by a crash looks exactly like a quiet period.
 /// </remarks>
 public sealed record MetricsSnapshot(
@@ -17,7 +17,8 @@ public sealed record MetricsSnapshot(
     long ConsentDecisions,
     long ConsentLatencyTotalMs,
     long ConsentLatencyMaxMs,
-    int PendingApprovals)
+    int PendingApprovals,
+    int ActiveSessions)
 {
     /// <summary>Mean consent latency, or null when nothing has been decided yet.</summary>
     public double? ConsentLatencyMeanMs =>
@@ -38,5 +39,5 @@ public interface IAuroraMetrics
     /// <summary>Records how long a caller waited between requesting approval and it being decided.</summary>
     void ConsentDecided(TimeSpan latency);
 
-    MetricsSnapshot Snapshot(int pendingApprovals);
+    MetricsSnapshot Snapshot(int pendingApprovals, int activeSessions);
 }

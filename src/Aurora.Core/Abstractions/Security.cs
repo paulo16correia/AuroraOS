@@ -18,6 +18,13 @@ public interface ISchemaValidator
 public interface IPolicyEngine
 {
     PolicyDecision Evaluate(CapabilityDescriptor capability, JsonElement input, Principal principal);
+
+    /// <summary>
+    /// Identifies the current rule set. Consent sessions are bound to it, so changing the rules
+    /// must change this string — otherwise a grant issued under the old policy would survive a
+    /// tightening of the new one (docs/adr/0010).
+    /// </summary>
+    string Version => "v1";
 }
 
 /// <summary>

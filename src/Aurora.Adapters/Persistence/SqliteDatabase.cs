@@ -64,6 +64,22 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS consent_session (
+          session_id TEXT PRIMARY KEY,
+          principal_client_id TEXT NOT NULL,
+          principal_windows_user TEXT NOT NULL,
+          server_boot_id TEXT NOT NULL,
+          policy_version TEXT NOT NULL,
+          status TEXT NOT NULL,
+          actions_used INTEGER NOT NULL,
+          max_actions INTEGER NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          expires_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_live
+          ON consent_session(principal_client_id, server_boot_id, policy_version, status);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,

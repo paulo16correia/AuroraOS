@@ -85,9 +85,22 @@ public sealed class BackupTests
         // Shipping the key with the database would hand whoever steals the backup everything
         // needed to rewrite the chain and re-sign it.
         Assert.Empty(Directory.GetFiles(outDir, "*.key"));
-        Assert.DoesNotContain(
-            Directory.GetFiles(outDir),
-            f => File.Exists(f) && new FileInfo(f).Length == 32 && !f.EndsWith(".anchor", StringComparison.Ordinal));
+
+        // Compare content, not size: a SQLite WAL header is itself 32 bytes, so a size
+        // heuristic would flag a sidecar as if it were the key. Sidecars are SQLite's own
+        // bookkeeping rather than backup payload, and they appear and vanish while it tidies up,
+        // so they are excluded instead of raced against.
+        var payload = Directory.GetFiles(outDir)
+            .Where(f => !f.EndsWith("-wal", StringComparison.Ordinal)
+                     && !f.EndsWith("-shm", StringComparison.Ordinal)
+                     && !f.EndsWith("-journal", StringComparison.Ordinal))
+            .ToList();
+
+        Assert.NotEmpty(payload);
+        foreach (var file in payload)
+        {
+            Assert.NotEqual(Key, await File.ReadAllBytesAsync(file));
+        }
     }
 
     [Fact]

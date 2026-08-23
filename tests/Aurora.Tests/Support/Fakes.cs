@@ -48,6 +48,40 @@ public sealed class FakeValidator(bool isValid) : ISchemaValidator
         isValid ? SchemaValidationResult.Valid : new SchemaValidationResult(false, ["invalid"]);
 }
 
+/// <summary>
+/// A session store that never covers anything, for tests exercising the approval path alone.
+/// With it, <c>SessionAwareConsentGate</c> behaves exactly like the pre-session gate.
+/// </summary>
+public sealed class NoConsentSessionStore : IConsentSessionStore
+{
+    public Task<ConsentSession> OpenAsync(Principal principal, CancellationToken ct) =>
+        Task.FromResult(new ConsentSession(
+            "none", principal.ClientId, principal.WindowsUser, "boot", "pv",
+            ConsentSessionStatus.Active, 0, 0, "", ""));
+
+    public Task<ConsentSessionUse> TryUseAsync(Principal principal, CancellationToken ct) =>
+        Task.FromResult(new ConsentSessionUse(ConsentSessionUseOutcome.None));
+
+    public Task<int> RevokeAllAsync(CancellationToken ct) => Task.FromResult(0);
+
+    public Task<int> CountActiveAsync(CancellationToken ct) => Task.FromResult(0);
+}
+
+/// <summary>A server identity with a boot id the test controls, to simulate restarts.</summary>
+public sealed class FakeServerIdentity(string bootId) : IServerIdentity
+{
+    public string BootId { get; } = bootId;
+}
+
+/// <summary>A policy whose version the test controls, to simulate a rule change.</summary>
+public sealed class VersionedFakePolicy(bool allow, string version) : IPolicyEngine
+{
+    public string Version { get; } = version;
+
+    public PolicyDecision Evaluate(CapabilityDescriptor capability, JsonElement input, Principal principal) =>
+        allow ? PolicyDecision.Allow("test") : PolicyDecision.Deny("denied", "test");
+}
+
 public sealed class FakePolicy(bool allow) : IPolicyEngine
 {
     public PolicyDecision Evaluate(CapabilityDescriptor capability, JsonElement input, Principal principal) =>

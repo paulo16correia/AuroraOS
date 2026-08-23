@@ -274,7 +274,7 @@ public sealed class KernelTests
             JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["ok"] = "true" }));
 
         var approvals = new FakeApprovalStore();
-        var kernel = Build(capability, approvals: approvals, consent: new PersistentApprovalConsentGate(approvals));
+        var kernel = Build(capability, approvals: approvals, consent: new SessionAwareConsentGate(approvals, new NoConsentSessionStore()));
         var request = new ExecuteRequest(ActionId: "vault.write", Input: JsonDocument.Parse("{}").RootElement);
 
         var denied = await kernel.ExecuteAsync(request, Caller, CancellationToken.None);
@@ -362,7 +362,7 @@ public sealed class KernelTests
             "vault.write", JsonDocument.Parse("{}").RootElement, 0.9, ResolutionVia.Reasoner);
         var kernel = Build(
             capability, proposal: proposal, approvals: approvals,
-            consent: new PersistentApprovalConsentGate(approvals));
+            consent: new SessionAwareConsentGate(approvals, new NoConsentSessionStore()));
 
         var response = await kernel.ExecuteAsync(
             new ExecuteRequest(Objective: "write to the vault"), Caller, CancellationToken.None);

@@ -80,7 +80,7 @@ public sealed class AdapterTests
     [Fact]
     public async Task Consent_AutoGrantsLow()
     {
-        var outcome = await new PersistentApprovalConsentGate(new FakeApprovalStore())
+        var outcome = await new SessionAwareConsentGate(new FakeApprovalStore(), new NoConsentSessionStore())
             .EvaluateAsync(Descriptor(RiskLevel.Low), Parse("{}"), "scope-1", Caller, CancellationToken.None);
         Assert.True(outcome.Granted);
         Assert.Equal(ConsentDecision.AutoLow, outcome.Info.Decision);
@@ -89,7 +89,7 @@ public sealed class AdapterTests
     [Fact]
     public async Task Consent_RefusesMediumWithoutApprovalRequired()
     {
-        var outcome = await new PersistentApprovalConsentGate(new FakeApprovalStore())
+        var outcome = await new SessionAwareConsentGate(new FakeApprovalStore(), new NoConsentSessionStore())
             .EvaluateAsync(Descriptor(RiskLevel.Medium), Parse("{}"), "scope-1", Caller, CancellationToken.None);
         Assert.False(outcome.Granted);
         Assert.Equal(ConsentDecision.Denied, outcome.Info.Decision);
@@ -99,7 +99,7 @@ public sealed class AdapterTests
     public async Task Consent_ApprovalGated_RequestsThenGrantsOnceApproved()
     {
         var approvals = new FakeApprovalStore();
-        var gate = new PersistentApprovalConsentGate(approvals);
+        var gate = new SessionAwareConsentGate(approvals, new NoConsentSessionStore());
         var descriptor = ApprovalGatedDescriptor(RiskLevel.Medium);
 
         var first = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);
@@ -124,7 +124,7 @@ public sealed class AdapterTests
     public async Task Consent_ApprovalGated_StaysDeniedAfterRejection()
     {
         var approvals = new FakeApprovalStore();
-        var gate = new PersistentApprovalConsentGate(approvals);
+        var gate = new SessionAwareConsentGate(approvals, new NoConsentSessionStore());
         var descriptor = ApprovalGatedDescriptor(RiskLevel.Medium);
 
         var first = await gate.EvaluateAsync(descriptor, Parse("{}"), "scope-1", Caller, CancellationToken.None);

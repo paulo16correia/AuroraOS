@@ -38,6 +38,17 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         return await McpClient.CreateAsync(transport, cancellationToken: Timeout());
     }
 
+    /// <summary>
+    /// Clears any consent session before a session test. The factory is a class fixture, so a
+    /// session opened by a sibling test would otherwise already cover the first read here.
+    /// </summary>
+    private async Task ResetSessionsAsync()
+    {
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_factory.BearerToken}");
+        (await http.PostAsync("/sessions/revoke", content: null, Timeout())).EnsureSuccessStatusCode();
+    }
+
     private static string ToJson(CallToolResult result)
     {
         if (result.StructuredContent is { } structured)
@@ -413,5 +424,137 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Timeout()));
         Assert.True(doc.RootElement.GetProperty("executionsByOutcome").GetProperty("completed").GetInt64() >= 1);
         Assert.True(doc.RootElement.GetProperty("pendingApprovals").GetInt32() >= 1);
+    }
+
+    // ---- It.2 consent sessions, read-only reuse (docs/adr/0010) ----
+
+    [Fact]
+    public async Task Session_OpenedByApprovingARead_CoversFurtherReads()
+    {
+        await ResetSessionsAsync();
+        await using var client = await ConnectAsync();
+
+        Directory.CreateDirectory(_factory.SandboxRoot);
+        var first = $"s-{Guid.NewGuid():N}.txt";
+        var second = $"s-{Guid.NewGuid():N}.txt";
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, first), "one");
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, second), "two");
+
+        static Dictionary<string, object?> Read(string path) => new()
+        {
+            ["action_id"] = "files.read_sandbox",
+            ["input"] = new Dictionary<string, object?> { ["path"] = path },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", Read(first), cancellationToken: Timeout())));
+        Assert.Equal("approval_required", denied.RootElement.GetProperty("error").GetProperty("code").GetString());
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
+            cancellationToken: Timeout());
+
+        var granted = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", Read(first), cancellationToken: Timeout())));
+        Assert.Equal("completed", granted.RootElement.GetProperty("status").GetString());
+        Assert.Equal("one", granted.RootElement.GetProperty("result").GetProperty("content").GetString());
+
+        // A different file, never approved: the session covers it because reading changes nothing.
+        var reused = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", Read(second), cancellationToken: Timeout())));
+        Assert.Equal("completed", reused.RootElement.GetProperty("status").GetString());
+        Assert.Equal("session", reused.RootElement.GetProperty("consent").GetProperty("via").GetString());
+        Assert.Equal("two", reused.RootElement.GetProperty("result").GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Session_DoesNotCoverAWrite()
+    {
+        await ResetSessionsAsync();
+        await using var client = await ConnectAsync();
+
+        Directory.CreateDirectory(_factory.SandboxRoot);
+        var readable = $"s-{Guid.NewGuid():N}.txt";
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, readable), "content");
+
+        var readArgs = new Dictionary<string, object?>
+        {
+            ["action_id"] = "files.read_sandbox",
+            ["input"] = new Dictionary<string, object?> { ["path"] = readable },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", readArgs, cancellationToken: Timeout())));
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?>
+            {
+                ["approval_id"] = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(),
+                ["decision"] = "approved",
+            },
+            cancellationToken: Timeout());
+        await client.CallToolAsync("aurora_execute", readArgs, cancellationToken: Timeout());
+
+        // A session is live. A write must still be decided on its own.
+        var write = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "files.write_sandbox",
+                ["input"] = new Dictionary<string, object?>
+                {
+                    ["path"] = $"s-{Guid.NewGuid():N}.txt",
+                    ["content"] = "should need its own approval",
+                },
+            },
+            cancellationToken: Timeout())));
+
+        Assert.Equal("denied", write.RootElement.GetProperty("status").GetString());
+        Assert.Equal("approval_required", write.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task KillSwitch_RevokesSessionsAndRequiresTheBearerToken()
+    {
+        var unauthenticated = _factory.CreateClient();
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await unauthenticated.PostAsync("/sessions/revoke", content: null, Timeout())).StatusCode);
+
+        await ResetSessionsAsync();
+        await using var client = await ConnectAsync();
+        Directory.CreateDirectory(_factory.SandboxRoot);
+        var file = $"s-{Guid.NewGuid():N}.txt";
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, file), "content");
+
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "files.read_sandbox",
+            ["input"] = new Dictionary<string, object?> { ["path"] = file },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?>
+            {
+                ["approval_id"] = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(),
+                ["decision"] = "approved",
+            },
+            cancellationToken: Timeout());
+        await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout());
+
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_factory.BearerToken}");
+        var revoke = await http.PostAsync("/sessions/revoke", content: null, Timeout());
+        Assert.Equal(HttpStatusCode.OK, revoke.StatusCode);
+
+        // After the kill switch the same read needs a human again.
+        var after = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("denied", after.RootElement.GetProperty("status").GetString());
     }
 }

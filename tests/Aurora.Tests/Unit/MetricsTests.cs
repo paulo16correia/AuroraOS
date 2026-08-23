@@ -12,7 +12,7 @@ public sealed class MetricsTests
     [Fact]
     public void Snapshot_StartsEmpty()
     {
-        MetricsSnapshot snapshot = New().Snapshot(pendingApprovals: 0);
+        MetricsSnapshot snapshot = New().Snapshot(pendingApprovals: 0, activeSessions: 0);
 
         Assert.Empty(snapshot.ExecutionsByOutcome);
         Assert.Equal(0, snapshot.IdempotencyConflicts);
@@ -27,7 +27,7 @@ public sealed class MetricsTests
         metrics.ExecutionSettled("completed");
         metrics.ExecutionSettled("policy_denied");
 
-        MetricsSnapshot snapshot = metrics.Snapshot(0);
+        MetricsSnapshot snapshot = metrics.Snapshot(0, 0);
 
         Assert.Equal(2, snapshot.ExecutionsByOutcome["completed"]);
         Assert.Equal(1, snapshot.ExecutionsByOutcome["policy_denied"]);
@@ -40,7 +40,7 @@ public sealed class MetricsTests
         metrics.ConsentDecided(TimeSpan.FromMilliseconds(100));
         metrics.ConsentDecided(TimeSpan.FromMilliseconds(300));
 
-        MetricsSnapshot snapshot = metrics.Snapshot(0);
+        MetricsSnapshot snapshot = metrics.Snapshot(0, 0);
 
         Assert.Equal(2, snapshot.ConsentDecisions);
         Assert.Equal(200, snapshot.ConsentLatencyMeanMs);
@@ -54,7 +54,7 @@ public sealed class MetricsTests
         metrics.ConsentDecided(TimeSpan.FromMilliseconds(500));
         metrics.ConsentDecided(TimeSpan.FromMilliseconds(10));
 
-        Assert.Equal(500, metrics.Snapshot(0).ConsentLatencyMaxMs);
+        Assert.Equal(500, metrics.Snapshot(0, 0).ConsentLatencyMaxMs);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class MetricsTests
         var metrics = New();
         metrics.ConsentDecided(TimeSpan.FromMilliseconds(-5000));
 
-        Assert.Equal(0, metrics.Snapshot(0).ConsentLatencyTotalMs);
+        Assert.Equal(0, metrics.Snapshot(0, 0).ConsentLatencyTotalMs);
     }
 
     [Fact]
@@ -76,12 +76,13 @@ public sealed class MetricsTests
         metrics.ExecutionUnknown();
         metrics.AuditFailure();
 
-        MetricsSnapshot snapshot = metrics.Snapshot(7);
+        MetricsSnapshot snapshot = metrics.Snapshot(7, 3);
 
         Assert.Equal(1, snapshot.IdempotencyConflicts);
         Assert.Equal(2, snapshot.ExecutionsUnknown);
         Assert.Equal(1, snapshot.AuditFailures);
         Assert.Equal(7, snapshot.PendingApprovals);
+        Assert.Equal(3, snapshot.ActiveSessions);
     }
 
     [Fact]
@@ -95,7 +96,7 @@ public sealed class MetricsTests
             metrics.IdempotencyConflict();
         })));
 
-        MetricsSnapshot snapshot = metrics.Snapshot(0);
+        MetricsSnapshot snapshot = metrics.Snapshot(0, 0);
 
         Assert.Equal(200, snapshot.ExecutionsByOutcome["completed"]);
         Assert.Equal(200, snapshot.IdempotencyConflicts);

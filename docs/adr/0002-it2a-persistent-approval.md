@@ -94,7 +94,8 @@ because it is not retryable for the same input.
 the first capability with a real effect; the idempotency fix that allows a retry
 after approval.
 
-**Deferred (the full Consent Session, see design 0001):** a time-boxed session
+**Deferred at the time (now delivered read-only in `docs/adr/0010-it2c-consent-sessions.md`,
+which closes It.2):** a time-boxed session
 reusable across multiple actions; `session_id` bound to server boot and policy
 version; a dedicated desktop dialog with a passphrase (KDF, throttling,
 revocation); single-flight prompt serialisation; SSE heartbeats and abort on

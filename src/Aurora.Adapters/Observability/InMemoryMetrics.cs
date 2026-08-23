@@ -50,7 +50,7 @@ public sealed class InMemoryMetrics : IAuroraMetrics
         }
     }
 
-    public MetricsSnapshot Snapshot(int pendingApprovals) => new(
+    public MetricsSnapshot Snapshot(int pendingApprovals, int activeSessions) => new(
         _since,
         new Dictionary<string, long>(_executionsByOutcome, StringComparer.Ordinal),
         Interlocked.Read(ref _idempotencyConflicts),
@@ -59,5 +59,6 @@ public sealed class InMemoryMetrics : IAuroraMetrics
         Interlocked.Read(ref _consentDecisions),
         Interlocked.Read(ref _consentLatencyTotalMs),
         Interlocked.Read(ref _consentLatencyMaxMs),
-        pendingApprovals);
+        pendingApprovals,
+        activeSessions);
 }

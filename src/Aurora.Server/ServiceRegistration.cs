@@ -32,17 +32,20 @@ public static class ServiceRegistration
             new AuditAnchorFile(options.AuditAnchorPath)));
         services.AddSingleton<IIdempotencyStore, SqliteIdempotencyStore>();
         services.AddSingleton<IApprovalStore, SqliteApprovalStore>();
+        services.AddSingleton(ConsentSessionOptions.Default);
+        services.AddSingleton<IConsentSessionStore, SqliteConsentSessionStore>();
         services.AddSingleton<INoteStore, SqliteNoteStore>();
 
         // Runtime.
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IAuroraMetrics, InMemoryMetrics>();
         services.AddSingleton<IPrincipalAccessor, WindowsPrincipalAccessor>();
+        services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
 
         // Domain adapters.
         services.AddSingleton<ISchemaValidator, JsonSchemaValidator>();
         services.AddSingleton<IPolicyEngine, AllowlistPolicyEngine>();
-        services.AddSingleton<IConsentGate, PersistentApprovalConsentGate>();
+        services.AddSingleton<IConsentGate, SessionAwareConsentGate>();
         // Untrusted proposers, tried in order. The kernel commits, never the reasoner.
         services.AddHttpClient();
         services.AddSingleton<IReasoner>(sp =>
@@ -58,11 +61,13 @@ public static class ServiceRegistration
             return new CompositeReasoner(proposers);
         });
         services.AddSingleton<ISandboxFileWriter>(_ => new SandboxFileWriter(options.SandboxRoot));
+        services.AddSingleton<ISandboxFileReader>(_ => new SandboxFileReader(options.SandboxRoot));
         services.AddSingleton<ICapability, ClockNowCapability>();
         services.AddSingleton<ICapability, EchoSayCapability>();
         services.AddSingleton<ICapability, RememberNoteCapability>();
         services.AddSingleton<ICapability, RecallNotesCapability>();
         services.AddSingleton<ICapability, WriteSandboxFileCapability>();
+        services.AddSingleton<ICapability, ReadSandboxFileCapability>();
         services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 
