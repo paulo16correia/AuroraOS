@@ -26,7 +26,12 @@ public sealed class SqliteDatabase
           outcome TEXT NOT NULL,
           created_at_utc TEXT NOT NULL,
           previous_hash TEXT NOT NULL,
-          record_hash TEXT NOT NULL
+          record_hash TEXT NOT NULL,
+          risk TEXT NULL,
+          via TEXT NULL,
+          decision TEXT NULL,
+          policy_ids TEXT NULL,
+          reason TEXT NULL
         );
 
         CREATE TABLE IF NOT EXISTS idempotency (

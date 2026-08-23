@@ -48,6 +48,17 @@ public sealed class AuroraKernel
         _idempotency = idempotency;
     }
 
+    /// <summary>
+    /// Why the kernel decided as it did, attached to every audit record (design/0006).
+    /// Nullable throughout: a request rejected before resolution has no risk or via to report.
+    /// </summary>
+    private readonly record struct AuditFacts(
+        string? Risk = null,
+        string? Via = null,
+        string? Decision = null,
+        string? PolicyIds = null,
+        string? Reason = null);
+
     public CatalogResult Catalog(string? query) => new(_registry.List(query));
 
     public async Task<ExecuteResponse> ExecuteAsync(ExecuteRequest request, Principal principal, CancellationToken ct)
@@ -177,6 +188,9 @@ public sealed class AuroraKernel
         {
             return await TerminalAsync(
                 principal, actionId, inputHash, "policy_denied", key, reserved, IdempotencyState.Failed,
+                new AuditFacts(
+                    descriptor.Risk.ToString(), via, PolicyIds: string.Join(',', policy.PolicyIds),
+                    Reason: policy.Reason),
                 new ExecuteResponse(ExecuteStatus.Denied, resolved,
                     Error: new ExecuteError(ErrorCodes.PolicyDenied, policy.Reason ?? "Denied by policy."))).ConfigureAwait(false);
         }
@@ -197,11 +211,15 @@ public sealed class AuroraKernel
             // A retryable denial abandons the idempotency reservation instead of settling it as a
             // terminal failure, so a retry after the approval is decided starts fresh rather than
             // replaying this denial forever (It.2 design note, design/0002).
+            var deniedFacts = new AuditFacts(
+                descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds));
+
             return isRetryable
-                ? await AbandonedAsync(principal, actionId, inputHash, key, reserved, deniedResponse).ConfigureAwait(false)
+                ? await AbandonedAsync(
+                    principal, actionId, inputHash, key, reserved, deniedFacts, deniedResponse).ConfigureAwait(false)
                 : await TerminalAsync(
                     principal, actionId, inputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
-                    deniedResponse).ConfigureAwait(false);
+                    deniedFacts, deniedResponse).ConfigureAwait(false);
         }
 
         // 8. Claim the reservation for execution. If we no longer own it, fail closed.
@@ -223,19 +241,27 @@ public sealed class AuroraKernel
         {
             // The effect may have partially occurred; record an indeterminate outcome so a retry
             // neither replays a result nor reports a false in-progress. (Reconciliation is It.3.)
-            await SettleIndeterminateAsync(principal, actionId, inputHash, resolved, key, reserved).ConfigureAwait(false);
+            await SettleIndeterminateAsync(
+                principal, actionId, inputHash, resolved, key, reserved,
+                new AuditFacts(
+                    descriptor.Risk.ToString(), via, consent.Info.Decision,
+                    string.Join(',', policy.PolicyIds))).ConfigureAwait(false);
             throw;
         }
         catch (Exception)
         {
             return await TerminalAsync(
                 principal, actionId, inputHash, "failed", key, reserved, IdempotencyState.Failed,
+                new AuditFacts(
+                    descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds)),
                 new ExecuteResponse(ExecuteStatus.Failed, resolved, consent.Info,
                     Error: new ExecuteError(ErrorCodes.ExecutionFailed, "Execution failed."))).ConfigureAwait(false);
         }
 
         return await TerminalAsync(
             principal, actionId, inputHash, "completed", key, reserved, IdempotencyState.Completed,
+            new AuditFacts(
+                descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds)),
             new ExecuteResponse(ExecuteStatus.Completed, resolved, consent.Info, result)).ConfigureAwait(false);
     }
 
@@ -246,11 +272,11 @@ public sealed class AuroraKernel
     /// </summary>
     private async Task<ExecuteResponse> TerminalAsync(
         Principal principal, string actionId, string inputHash, string outcome,
-        string? key, bool reserved, string idempotencyState, ExecuteResponse response)
+        string? key, bool reserved, string idempotencyState, AuditFacts facts, ExecuteResponse response)
     {
         // Audit is the security record and must succeed (a failure here fails the call, fail-closed).
         var auditRef = await _audit.AppendAsync(
-            principal.ClientId, principal.WindowsUser, actionId, inputHash, outcome, CancellationToken.None).ConfigureAwait(false);
+            Entry(principal, actionId, inputHash, outcome, facts), CancellationToken.None).ConfigureAwait(false);
         var stamped = response with { AuditRef = [auditRef] };
 
         if (reserved && key is not null)
@@ -277,10 +303,11 @@ public sealed class AuroraKernel
     /// is decided starts a fresh reservation instead of forever replaying this denial.
     /// </summary>
     private async Task<ExecuteResponse> AbandonedAsync(
-        Principal principal, string actionId, string inputHash, string? key, bool reserved, ExecuteResponse response)
+        Principal principal, string actionId, string inputHash, string? key, bool reserved,
+        AuditFacts facts, ExecuteResponse response)
     {
         var auditRef = await _audit.AppendAsync(
-            principal.ClientId, principal.WindowsUser, actionId, inputHash, "requires_approval", CancellationToken.None)
+            Entry(principal, actionId, inputHash, "requires_approval", facts), CancellationToken.None)
             .ConfigureAwait(false);
         var stamped = response with { AuditRef = [auditRef] };
 
@@ -336,8 +363,12 @@ public sealed class AuroraKernel
             _ => "approval_not_found",
         };
         var auditRef = await _audit.AppendAsync(
-            principal.ClientId, principal.WindowsUser, result.Record?.ActionId ?? "approval.decide",
-            Hashing.Sha256Hex(request.ApprovalId), outcome, CancellationToken.None).ConfigureAwait(false);
+            new AuditEntry(
+                principal.ClientId, principal.WindowsUser,
+                result.Record?.ActionId ?? "approval.decide",
+                Hashing.Sha256Hex(request.ApprovalId), outcome,
+                Via: "approval", Decision: approve ? "approved" : "rejected"),
+            CancellationToken.None).ConfigureAwait(false);
 
         return result.Outcome switch
         {
@@ -358,7 +389,8 @@ public sealed class AuroraKernel
     /// masks the original cancellation with a bookkeeping fault.
     /// </summary>
     private async Task SettleIndeterminateAsync(
-        Principal principal, string actionId, string inputHash, ResolvedAction resolved, string? key, bool reserved)
+        Principal principal, string actionId, string inputHash, ResolvedAction resolved, string? key,
+        bool reserved, AuditFacts facts)
     {
         // Settle the reservation FIRST and independently — it is what prevents an eternal EXECUTING —
         // then record the audit entry. Neither failing may block the other, nor mask the cancellation.
@@ -380,13 +412,18 @@ public sealed class AuroraKernel
         try
         {
             await _audit.AppendAsync(
-                principal.ClientId, principal.WindowsUser, actionId, inputHash, "unknown", CancellationToken.None).ConfigureAwait(false);
+                Entry(principal, actionId, inputHash, "unknown", facts), CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
             // Best-effort; never mask the original cancellation with a bookkeeping fault.
         }
     }
+
+    private static AuditEntry Entry(
+        Principal principal, string actionId, string inputHash, string outcome, AuditFacts facts) =>
+        new(principal.ClientId, principal.WindowsUser, actionId, inputHash, outcome,
+            facts.Risk, facts.Via, facts.Decision, facts.PolicyIds, facts.Reason);
 
     private static ExecuteResponse Invalid(string code, string message, IReadOnlyList<string>? details = null) =>
         new(ExecuteStatus.Invalid, Error: new ExecuteError(code, message, details));

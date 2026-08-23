@@ -8,17 +8,28 @@ namespace Aurora.Core.Abstractions;
 /// </summary>
 public sealed record AuditVerification(bool Ok, long? BrokenSequence, string? Reason = null);
 
+/// <summary>
+/// One audit record. Beyond the bare outcome it carries *why* the kernel decided as it did
+/// (design/0006): with an untrusted reasoner able to pick the action since It.1, "what happened"
+/// is no longer enough to reconstruct a decision after the fact.
+/// </summary>
+public sealed record AuditEntry(
+    string PrincipalClientId,
+    string PrincipalWindowsUser,
+    string ActionId,
+    string InputHash,
+    string Outcome,
+    string? Risk = null,
+    string? Via = null,
+    string? Decision = null,
+    string? PolicyIds = null,
+    string? Reason = null);
+
 /// <summary>Append-only, hash-chained audit log. Integrity failure is fail-closed.</summary>
 public interface IAuditStore
 {
     /// <summary>Appends a record and returns its record_hash.</summary>
-    Task<string> AppendAsync(
-        string principalClientId,
-        string principalWindowsUser,
-        string actionId,
-        string inputHash,
-        string outcome,
-        CancellationToken ct);
+    Task<string> AppendAsync(AuditEntry entry, CancellationToken ct);
 
     /// <summary>Recomputes the chain and reports the first break, if any.</summary>
     Task<AuditVerification> VerifyChainAsync(CancellationToken ct);

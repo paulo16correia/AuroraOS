@@ -385,4 +385,55 @@ public sealed class KernelTests
         Assert.Equal(ExecuteStatus.Completed, response.Status);
         Assert.Equal(ResolutionVia.Keyword, response.Resolved!.Via);
     }
+
+    [Fact]
+    public async Task Audit_RecordsWhyNotJustWhat()
+    {
+        var audit = new RecordingAuditStore();
+        var capability = EchoCapability();
+        var kernel = Build(capability, audit: audit);
+
+        await kernel.ExecuteAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: JsonDocument.Parse("""{"message":"hi"}""").RootElement),
+            Caller,
+            CancellationToken.None);
+
+        AuditEntry entry = Assert.Single(audit.Entries);
+        Assert.Equal("completed", entry.Outcome);
+        Assert.Equal("Low", entry.Risk);
+        Assert.Equal(ResolutionVia.Explicit, entry.Via);
+        Assert.False(string.IsNullOrEmpty(entry.Decision));
+    }
+
+    [Fact]
+    public async Task Audit_PolicyDenial_CarriesThePolicyIdAndReason()
+    {
+        var audit = new RecordingAuditStore();
+        var kernel = Build(EchoCapability(), allow: false, audit: audit);
+
+        await kernel.ExecuteAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: JsonDocument.Parse("""{"message":"hi"}""").RootElement),
+            Caller,
+            CancellationToken.None);
+
+        AuditEntry entry = Assert.Single(audit.Entries);
+        Assert.Equal("policy_denied", entry.Outcome);
+        Assert.False(string.IsNullOrEmpty(entry.Reason));
+    }
+
+    [Fact]
+    public async Task Audit_ReasonerResolution_IsDistinguishableFromExplicit()
+    {
+        // The point of recording `via`: after the fact you must be able to tell whether a human
+        // named the action or an untrusted model picked it.
+        var audit = new RecordingAuditStore();
+        var capability = EchoCapability();
+        var proposal = new ReasonerProposal(
+            "echo.say", JsonDocument.Parse("""{"message":"hi"}""").RootElement, 0.9, ResolutionVia.Reasoner);
+
+        await Build(capability, proposal: proposal, audit: audit)
+            .ExecuteAsync(new ExecuteRequest(Objective: "greet"), Caller, CancellationToken.None);
+
+        Assert.Equal(ResolutionVia.Reasoner, Assert.Single(audit.Entries).Via);
+    }
 }

@@ -137,11 +137,13 @@ public sealed class RecordingAuditStore : IAuditStore
 {
     public List<string> Outcomes { get; } = [];
 
-    public Task<string> AppendAsync(
-        string principalClientId, string principalWindowsUser, string actionId, string inputHash, string outcome,
-        CancellationToken ct)
+    /// <summary>Full entries, so tests can assert on the decision context and not just the outcome.</summary>
+    public List<AuditEntry> Entries { get; } = [];
+
+    public Task<string> AppendAsync(AuditEntry entry, CancellationToken ct)
     {
-        Outcomes.Add(outcome);
+        Outcomes.Add(entry.Outcome);
+        Entries.Add(entry);
         return Task.FromResult($"audit-{Outcomes.Count}");
     }
 

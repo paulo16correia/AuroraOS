@@ -1,4 +1,5 @@
 using Aurora.Adapters.Persistence;
+using Aurora.Core.Abstractions;
 using Aurora.Tests.Support;
 using Xunit;
 
@@ -23,9 +24,9 @@ public sealed class AuditStoreTests
         using var db = new SqliteTestDb();
         var store = NewStore(db, out _);
 
-        var h1 = await store.AppendAsync("c1", "u1", "echo.say", "ih1", "completed", CancellationToken.None);
-        var h2 = await store.AppendAsync("c1", "u1", "clock.now", "ih2", "completed", CancellationToken.None);
-        var h3 = await store.AppendAsync("c1", "u1", "echo.say", "ih3", "denied", CancellationToken.None);
+        var h1 = await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
+        var h2 = await store.AppendAsync(new AuditEntry("c1", "u1", "clock.now", "ih2", "completed"), CancellationToken.None);
+        var h3 = await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih3", "denied"), CancellationToken.None);
 
         Assert.NotEqual(h1, h2);
         Assert.NotEqual(h2, h3);
@@ -41,8 +42,8 @@ public sealed class AuditStoreTests
     {
         using var db = new SqliteTestDb();
         var store = NewStore(db, out _);
-        await store.AppendAsync("c1", "u1", "echo.say", "ih1", "completed", CancellationToken.None);
-        await store.AppendAsync("c1", "u1", "echo.say", "ih2", "completed", CancellationToken.None);
+        await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
+        await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih2", "completed"), CancellationToken.None);
 
         // Silently alter the first record's outcome, leaving its record_hash stale.
         using (var connection = db.Factory.Open())
@@ -69,7 +70,7 @@ public sealed class AuditStoreTests
         var store = NewStore(db, out var anchorPath);
         for (var i = 1; i <= 3; i++)
         {
-            await store.AppendAsync("c1", "u1", "echo.say", $"ih{i}", "completed", CancellationToken.None);
+            await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", $"ih{i}", "completed"), CancellationToken.None);
         }
 
         // Drop the newest record. What remains is a perfectly self-consistent chain of two.
@@ -94,8 +95,8 @@ public sealed class AuditStoreTests
         var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
 
         var real = StoreWith(db, RandomKey(1), anchorPath);
-        await real.AppendAsync("c1", "u1", "echo.say", "ih1", "completed", CancellationToken.None);
-        await real.AppendAsync("c1", "u1", "echo.say", "ih2", "completed", CancellationToken.None);
+        await real.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
+        await real.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih2", "completed"), CancellationToken.None);
 
         // An attacker with full write access rebuilds the chain, but signs with the wrong key.
         var forged = StoreWith(db, RandomKey(2), anchorPath);
@@ -110,7 +111,7 @@ public sealed class AuditStoreTests
     {
         using var db = new SqliteTestDb();
         var store = NewStore(db, out var anchorPath);
-        await store.AppendAsync("c1", "u1", "echo.say", "ih1", "completed", CancellationToken.None);
+        await store.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
 
         File.WriteAllText(anchorPath, "1 " + new string('0', 64));
 
@@ -173,5 +174,32 @@ public sealed class AuditStoreTests
         Assert.Throws<InvalidOperationException>(() => AuditKeyFile.LoadOrCreate(path));
 
         File.Delete(path);
+    }
+
+    [Fact]
+    public async Task EnrichedFields_AreCoveredByTheSignature()
+    {
+        using var db = new SqliteTestDb();
+        var store = NewStore(db, out _);
+        await store.AppendAsync(
+            new AuditEntry("c1", "u1", "echo.say", "ih1", "completed",
+                Risk: "Low", Via: "reasoner", Decision: "auto_low", PolicyIds: "policy.low_readonly"),
+            CancellationToken.None);
+
+        Assert.True((await store.VerifyChainAsync(CancellationToken.None)).Ok);
+
+        // Rewrite only the decision context. If these fields were stored but not signed, the record
+        // would still verify and the "why" would be quietly forgeable.
+        using (var connection = db.Factory.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE audit_record SET decision = 'granted', via = 'explicit' WHERE sequence = 1;";
+            command.ExecuteNonQuery();
+        }
+
+        var verification = await store.VerifyChainAsync(CancellationToken.None);
+
+        Assert.False(verification.Ok);
+        Assert.Equal(1, verification.BrokenSequence);
     }
 }

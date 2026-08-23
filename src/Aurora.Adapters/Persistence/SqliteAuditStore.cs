@@ -22,6 +22,9 @@ public sealed class SqliteAuditStore : IAuditStore
     /// <summary>ASCII Unit Separator (U+001F) delimiting the hash pre-image fields.</summary>
     private const char UnitSeparator = (char)0x1F;
 
+    /// <summary>Pre-image layout tag, signed along with the fields it describes.</summary>
+    private const string PreimageVersion = "v2";
+
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
     private readonly SqliteConnectionFactory _factory;
@@ -40,13 +43,7 @@ public sealed class SqliteAuditStore : IAuditStore
         _gate = Gates.GetOrAdd(factory.DbPath, static _ => new SemaphoreSlim(1, 1));
     }
 
-    public async Task<string> AppendAsync(
-        string principalClientId,
-        string principalWindowsUser,
-        string actionId,
-        string inputHash,
-        string outcome,
-        CancellationToken ct)
+    public async Task<string> AppendAsync(AuditEntry entry, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -76,16 +73,7 @@ public sealed class SqliteAuditStore : IAuditStore
 
             var recordId = Guid.NewGuid().ToString("N");
             var createdAt = _clock.UtcNow.ToString("O", CultureInfo.InvariantCulture);
-            var recordHash = ComputeRecordHash(
-                previousHash,
-                nextSequence,
-                recordId,
-                principalClientId,
-                principalWindowsUser,
-                actionId,
-                inputHash,
-                outcome,
-                createdAt);
+            var recordHash = ComputeRecordHash(previousHash, nextSequence, recordId, entry, createdAt);
 
             await using (var insertCommand = connection.CreateCommand())
             {
@@ -93,20 +81,27 @@ public sealed class SqliteAuditStore : IAuditStore
                 insertCommand.CommandText = """
                     INSERT INTO audit_record
                         (sequence, record_id, principal_client_id, principal_windows_user,
-                         action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash)
+                         action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
+                         risk, via, decision, policy_ids, reason)
                     VALUES
-                        (@seq, @rid, @cid, @wu, @aid, @ih, @out, @ts, @prev, @rh);
+                        (@seq, @rid, @cid, @wu, @aid, @ih, @out, @ts, @prev, @rh,
+                         @risk, @via, @dec, @pol, @reason);
                     """;
                 insertCommand.Parameters.AddWithValue("@seq", nextSequence);
                 insertCommand.Parameters.AddWithValue("@rid", recordId);
-                insertCommand.Parameters.AddWithValue("@cid", principalClientId);
-                insertCommand.Parameters.AddWithValue("@wu", principalWindowsUser);
-                insertCommand.Parameters.AddWithValue("@aid", actionId);
-                insertCommand.Parameters.AddWithValue("@ih", inputHash);
-                insertCommand.Parameters.AddWithValue("@out", outcome);
+                insertCommand.Parameters.AddWithValue("@cid", entry.PrincipalClientId);
+                insertCommand.Parameters.AddWithValue("@wu", entry.PrincipalWindowsUser);
+                insertCommand.Parameters.AddWithValue("@aid", entry.ActionId);
+                insertCommand.Parameters.AddWithValue("@ih", entry.InputHash);
+                insertCommand.Parameters.AddWithValue("@out", entry.Outcome);
                 insertCommand.Parameters.AddWithValue("@ts", createdAt);
                 insertCommand.Parameters.AddWithValue("@prev", previousHash);
                 insertCommand.Parameters.AddWithValue("@rh", recordHash);
+                insertCommand.Parameters.AddWithValue("@risk", (object?)entry.Risk ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("@via", (object?)entry.Via ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("@dec", (object?)entry.Decision ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("@pol", (object?)entry.PolicyIds ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("@reason", (object?)entry.Reason ?? DBNull.Value);
                 await insertCommand.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -129,7 +124,8 @@ public sealed class SqliteAuditStore : IAuditStore
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT sequence, record_id, principal_client_id, principal_windows_user,
-                   action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash
+                   action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
+                   risk, via, decision, policy_ids, reason
             FROM audit_record
             ORDER BY sequence ASC;
             """;
@@ -152,6 +148,17 @@ public sealed class SqliteAuditStore : IAuditStore
             var createdAt = reader.GetString(7);
             var previousHash = reader.GetString(8);
             var recordHash = reader.GetString(9);
+            var entry = new AuditEntry(
+                principalClientId,
+                principalWindowsUser,
+                actionId,
+                inputHash,
+                outcome,
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetString(11),
+                reader.IsDBNull(12) ? null : reader.GetString(12),
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                reader.IsDBNull(14) ? null : reader.GetString(14));
 
             // (a) first row must chain from the empty hash; (b) every later row from its predecessor.
             var linkOk = isFirst
@@ -163,16 +170,7 @@ public sealed class SqliteAuditStore : IAuditStore
             }
 
             // (c) the stored hash must match a recomputation over the stored fields.
-            var expectedHash = ComputeRecordHash(
-                previousHash,
-                sequence,
-                recordId,
-                principalClientId,
-                principalWindowsUser,
-                actionId,
-                inputHash,
-                outcome,
-                createdAt);
+            var expectedHash = ComputeRecordHash(previousHash, sequence, recordId, entry, createdAt);
             if (!string.Equals(expectedHash, recordHash, StringComparison.Ordinal))
             {
                 return new AuditVerification(false, sequence);
@@ -208,30 +206,32 @@ public sealed class SqliteAuditStore : IAuditStore
         return new AuditVerification(true, null);
     }
 
+    /// <summary>
+    /// Signs the record. <see cref="PreimageVersion"/> is part of the pre-image so that a future
+    /// field addition is a recognisable format change rather than a silent verification failure.
+    /// </summary>
     private string ComputeRecordHash(
-        string previousHash,
-        long sequence,
-        string recordId,
-        string principalClientId,
-        string principalWindowsUser,
-        string actionId,
-        string inputHash,
-        string outcome,
-        string createdAt)
+        string previousHash, long sequence, string recordId, AuditEntry entry, string createdAt)
     {
         var preimage = string.Join(
             UnitSeparator,
             new[]
             {
+                PreimageVersion,
                 previousHash,
                 sequence.ToString(CultureInfo.InvariantCulture),
                 recordId,
-                principalClientId,
-                principalWindowsUser,
-                actionId,
-                inputHash,
-                outcome,
+                entry.PrincipalClientId,
+                entry.PrincipalWindowsUser,
+                entry.ActionId,
+                entry.InputHash,
+                entry.Outcome,
                 createdAt,
+                entry.Risk ?? string.Empty,
+                entry.Via ?? string.Empty,
+                entry.Decision ?? string.Empty,
+                entry.PolicyIds ?? string.Empty,
+                entry.Reason ?? string.Empty,
             });
         return Hashing.HmacSha256Hex(_key, preimage);
     }
