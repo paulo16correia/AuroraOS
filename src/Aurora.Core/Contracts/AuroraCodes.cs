@@ -23,6 +23,9 @@ public static class ErrorCodes
     public const string InvalidDecision = "invalid_decision";
     public const string ApprovalNotPending = "approval_not_pending";
     public const string ApprovalNotFound = "approval_not_found";
+    public const string PassphraseRequired = "passphrase_required";
+    public const string PassphraseInvalid = "passphrase_invalid";
+    public const string PassphraseLockedOut = "passphrase_locked_out";
 }
 
 /// <summary>Hard input limits enforced by the kernel before any effect.</summary>

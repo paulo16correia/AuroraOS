@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Aurora.Adapters.Consent;
+using Aurora.Adapters.Time;
 using Aurora.Tests.Support;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -556,5 +558,69 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         var after = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
         Assert.Equal("denied", after.RootElement.GetProperty("status").GetString());
+    }
+
+    // ---- operator passphrase over real MCP (docs/adr/0011) ----
+
+    [Fact]
+    public async Task AnEnrolledPassphrase_StopsTheAgentApprovingItsOwnRequest()
+    {
+        // Enrol against the running server's own verifier file. The authenticator reads state from
+        // disk on every call, so the guard engages without a restart.
+        var authenticator = new Pbkdf2PassphraseAuthenticator(
+            _factory.PassphrasePath, new SystemClock(), new PassphraseOptions(Iterations: 1_000));
+        authenticator.Enroll("operator-only-secret");
+
+        try
+        {
+            await using var client = await ConnectAsync();
+            var args = new Dictionary<string, object?>
+            {
+                ["action_id"] = "memory.remember",
+                ["input"] = new Dictionary<string, object?> { ["note"] = $"guarded {Guid.NewGuid():N}" },
+            };
+
+            var denied = JsonDocument.Parse(
+                ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+            var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+            // What the agent can do on its own: call the tool. What it cannot do: supply the secret.
+            var withoutSecret = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+                "aurora_approve",
+                new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
+                cancellationToken: Timeout())));
+
+            Assert.Equal("invalid", withoutSecret.RootElement.GetProperty("status").GetString());
+            Assert.Equal(
+                "passphrase_required",
+                withoutSecret.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+            // And the request really did not go through.
+            var stillDenied = JsonDocument.Parse(
+                ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+            Assert.Equal("denied", stillDenied.RootElement.GetProperty("status").GetString());
+
+            // With the operator's secret, the same call decides.
+            var withSecret = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+                "aurora_approve",
+                new Dictionary<string, object?>
+                {
+                    ["approval_id"] = approvalId,
+                    ["decision"] = "approved",
+                    ["passphrase"] = "operator-only-secret",
+                },
+                cancellationToken: Timeout())));
+
+            Assert.Equal("decided", withSecret.RootElement.GetProperty("status").GetString());
+
+            var completed = JsonDocument.Parse(
+                ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+            Assert.Equal("completed", completed.RootElement.GetProperty("status").GetString());
+        }
+        finally
+        {
+            // Shared class fixture: leave the guard off for the other tests.
+            authenticator.Revoke();
+        }
     }
 }

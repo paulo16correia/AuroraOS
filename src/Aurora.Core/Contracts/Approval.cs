@@ -59,7 +59,8 @@ public static class ApprovalDecision
 
 /// <summary>Input of <c>aurora_approve</c>. Unknown members are rejected.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public sealed record ApproveRequest(string? ApprovalId = null, string? Decision = null);
+public sealed record ApproveRequest(
+    string? ApprovalId = null, string? Decision = null, string? Passphrase = null);
 
 /// <summary>Terminal status of <c>aurora_approve</c>.</summary>
 public static class ApproveStatus

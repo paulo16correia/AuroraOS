@@ -67,6 +67,27 @@ public sealed class NoConsentSessionStore : IConsentSessionStore
     public Task<int> CountActiveAsync(CancellationToken ct) => Task.FromResult(0);
 }
 
+/// <summary>A passphrase guard the test controls; not enrolled by default, as most tests want.</summary>
+public sealed class FakePassphrase(bool enrolled = false, string? expected = null) : IPassphraseAuthenticator
+{
+    public bool IsEnrolled { get; private set; } = enrolled;
+
+    public bool LockedOut { get; set; }
+
+    public void Enroll(string passphrase) => IsEnrolled = true;
+
+    public PassphraseCheck Verify(string? passphrase)
+    {
+        if (!IsEnrolled) return new PassphraseCheck(PassphraseOutcome.NotEnrolled);
+        if (LockedOut) return new PassphraseCheck(PassphraseOutcome.LockedOut, DateTimeOffset.MaxValue);
+        return string.Equals(passphrase, expected, StringComparison.Ordinal)
+            ? new PassphraseCheck(PassphraseOutcome.Verified)
+            : new PassphraseCheck(PassphraseOutcome.Rejected);
+    }
+
+    public void Revoke() => IsEnrolled = false;
+}
+
 /// <summary>A server identity with a boot id the test controls, to simulate restarts.</summary>
 public sealed class FakeServerIdentity(string bootId) : IServerIdentity
 {

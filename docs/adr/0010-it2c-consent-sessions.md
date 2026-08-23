@@ -85,8 +85,11 @@ a human approving one read. The security properties that do not depend on the UI
 kill switch, read-only scope) are all in place; the ones that do — a trusted
 window, anti-spoofing of the prompt content, a real passphrase — are not.
 
-This is the honest gap in It.2 and it should be closed before Aurora runs
-anywhere the local user is not already fully trusted.
+The passphrase half of that dialog was built separately in
+`docs/adr/0011-it2d-operator-passphrase.md`, which closes the part that actually
+distinguishes a human from the agent. The trusted window itself remains the
+open item, and should be closed before Aurora runs anywhere the local user is
+not already fully trusted.
 
 ## Removed
 

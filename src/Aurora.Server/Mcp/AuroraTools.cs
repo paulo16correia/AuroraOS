@@ -55,15 +55,17 @@ public sealed class AuroraTools
     [McpServerTool(Name = "aurora_approve")]
     [Description("Decide a pending Aurora approval. 'approval_id' comes from a prior aurora_execute "
         + "response whose status was 'denied' with error code 'approval_required'. 'decision' is "
-        + "'approved' or 'rejected'.")]
+        + "'approved' or 'rejected'. When this deployment has an operator passphrase enrolled, "
+        + "'passphrase' is required and must be supplied by the human operator, not guessed.")]
     public static async Task<JsonElement> Approve(
         AuroraKernel kernel,
         IPrincipalAccessor principals,
         string approval_id,
         string decision,
+        string? passphrase = null,
         CancellationToken ct = default)
     {
-        var request = new ApproveRequest(approval_id, decision);
+        var request = new ApproveRequest(approval_id, decision, passphrase);
         var response = await kernel.ApproveAsync(request, principals.Current, ct);
         return JsonSerializer.SerializeToElement(response, AuroraJson.Options);
     }

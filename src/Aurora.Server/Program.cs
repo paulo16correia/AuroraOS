@@ -8,6 +8,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 var options = AuroraServerOptions.FromConfiguration(builder.Configuration);
 
+// Passphrase enrolment happens on this console, never over HTTP: the bearer token belongs to
+// the agent, so any endpoint it can reach is one the agent could use to enrol its own.
+if (PassphraseConsole.TryHandle(args, options))
+{
+    return;
+}
+
 // Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
 builder.WebHost.ConfigureKestrel(kestrel =>
 {

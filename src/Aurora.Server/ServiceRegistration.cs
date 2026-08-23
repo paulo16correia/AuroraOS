@@ -46,6 +46,8 @@ public static class ServiceRegistration
         services.AddSingleton<ISchemaValidator, JsonSchemaValidator>();
         services.AddSingleton<IPolicyEngine, AllowlistPolicyEngine>();
         services.AddSingleton<IConsentGate, SessionAwareConsentGate>();
+        services.AddSingleton<IPassphraseAuthenticator>(sp => new Pbkdf2PassphraseAuthenticator(
+            options.PassphrasePath, sp.GetRequiredService<IClock>(), PassphraseOptions.Default));
         // Untrusted proposers, tried in order. The kernel commits, never the reasoner.
         services.AddHttpClient();
         services.AddSingleton<IReasoner>(sp =>

@@ -25,6 +25,9 @@ public sealed class AuroraServerOptions
     /// </summary>
     public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>File holding the operator passphrase verifier (docs/adr/0011).</summary>
+    public required string PassphrasePath { get; init; }
+
     /// <summary>File holding the HMAC key that signs the audit chain (docs/adr/0005).</summary>
     public required string AuditKeyPath { get; init; }
 
@@ -68,6 +71,9 @@ public sealed class AuroraServerOptions
 
         // Default the audit key and anchor beside the database, but keep them configurable so an
         // operator can put the key somewhere the database's own backups do not reach.
+        var passphrasePath = config["Aurora:PassphrasePath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.passphrase.json");
+
         var auditKeyPath = config["Aurora:AuditKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.audit.key");
         // Derived from the database file, not the directory: two databases side by side must not
@@ -100,6 +106,7 @@ public sealed class AuroraServerOptions
             Port = port,
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
+            PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,
             AuditAnchorPath = auditAnchorPath,
             AzureOpenAi = azure,

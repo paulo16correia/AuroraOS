@@ -36,7 +36,8 @@ public sealed class KernelTests
         RecordingAuditStore? audit = null,
         IConsentGate? consent = null,
         IApprovalStore? approvals = null,
-        IAuroraMetrics? metrics = null) =>
+        IAuroraMetrics? metrics = null,
+        IPassphraseAuthenticator? passphrase = null) =>
         new(
             new FakeReasoner(proposal),
             new FakeRegistry(capability),
@@ -47,7 +48,8 @@ public sealed class KernelTests
             new DirectExecutor(),
             audit ?? new RecordingAuditStore(),
             idempotency ?? new InMemoryIdempotencyStore(),
-            metrics ?? new InMemoryMetrics(new TestClock(DateTimeOffset.UnixEpoch)));
+            metrics ?? new InMemoryMetrics(new TestClock(DateTimeOffset.UnixEpoch)),
+            passphrase ?? new FakePassphrase());
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });
@@ -438,5 +440,107 @@ public sealed class KernelTests
             .ExecuteAsync(new ExecuteRequest(Objective: "greet"), Caller, CancellationToken.None);
 
         Assert.Equal(ResolutionVia.Reasoner, Assert.Single(audit.Entries).Via);
+    }
+
+    // ---- operator passphrase on approval (docs/adr/0011) ----
+
+    private static CapabilityDescriptor GatedDescriptor() => new(
+        "vault.write", "vault.write", "test capability",
+        JsonDocument.Parse("""{"type":"object","additionalProperties":false,"properties":{}}""").RootElement.Clone(),
+        ["writes"], RiskLevel.Medium, ApprovalRequired: true);
+
+    /// <summary>Drives execute → denied, and returns the kernel plus the pending approval id.</summary>
+    private static async Task<(AuroraKernel Kernel, string ApprovalId, FakeApprovalStore Approvals)>
+        PendingApprovalAsync(IPassphraseAuthenticator passphrase)
+    {
+        var capability = new FakeCapability(
+            GatedDescriptor(), _ => JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["ok"] = "1" }));
+        var approvals = new FakeApprovalStore();
+        var kernel = Build(
+            capability, approvals: approvals,
+            consent: new SessionAwareConsentGate(approvals, new NoConsentSessionStore()),
+            passphrase: passphrase);
+
+        var denied = await kernel.ExecuteAsync(
+            new ExecuteRequest(ActionId: "vault.write", Input: JsonDocument.Parse("{}").RootElement),
+            Caller, CancellationToken.None);
+
+        return (kernel, denied.Consent!.ApprovalId!, approvals);
+    }
+
+    [Fact]
+    public async Task Approve_WithoutThePassphrase_IsRefusedAndDecidesNothing()
+    {
+        var (kernel, approvalId, approvals) = await PendingApprovalAsync(new FakePassphrase(true, "s3cret-phrase"));
+
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Invalid, response.Status);
+        Assert.Equal(ErrorCodes.PassphraseRequired, response.Error!.Code);
+
+        // The decisive assertion: the agent calling the tool must not have moved the approval.
+        var still = await approvals.EvaluateAsync(Caller, "vault.write", "scope-x", CancellationToken.None);
+        Assert.NotEqual(ApprovalOutcome.Consumed, still.Outcome);
+    }
+
+    [Fact]
+    public async Task Approve_WithTheWrongPassphrase_IsRefused()
+    {
+        var (kernel, approvalId, _) = await PendingApprovalAsync(new FakePassphrase(true, "s3cret-phrase"));
+
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved, "guessing"), Caller, CancellationToken.None);
+
+        Assert.Equal(ErrorCodes.PassphraseInvalid, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Approve_WithTheCorrectPassphrase_Decides()
+    {
+        var (kernel, approvalId, _) = await PendingApprovalAsync(new FakePassphrase(true, "s3cret-phrase"));
+
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved, "s3cret-phrase"), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Decided, response.Status);
+        Assert.Equal(ApprovalStatus.Approved, response.ApprovalState);
+    }
+
+    [Fact]
+    public async Task Rejecting_AlsoRequiresThePassphrase()
+    {
+        var (kernel, approvalId, _) = await PendingApprovalAsync(new FakePassphrase(true, "s3cret-phrase"));
+
+        // Otherwise the agent could bury a request a human was about to approve.
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Rejected), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Invalid, response.Status);
+        Assert.Equal(ErrorCodes.PassphraseRequired, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Approve_WhenLockedOut_IsRefusedEvenWithTheRightPassphrase()
+    {
+        var passphrase = new FakePassphrase(true, "s3cret-phrase") { LockedOut = true };
+        var (kernel, approvalId, _) = await PendingApprovalAsync(passphrase);
+
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved, "s3cret-phrase"), Caller, CancellationToken.None);
+
+        Assert.Equal(ErrorCodes.PassphraseLockedOut, response.Error!.Code);
+    }
+
+    [Fact]
+    public async Task Approve_WithoutEnrollment_StaysUnguarded()
+    {
+        // Deployments that have not enrolled a passphrase keep the previous behaviour.
+        var (kernel, approvalId, _) = await PendingApprovalAsync(new FakePassphrase(enrolled: false));
+
+        var response = await kernel.ApproveAsync(
+            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Decided, response.Status);
     }
 }

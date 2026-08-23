@@ -14,6 +14,10 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
     private readonly string _dbPath =
         Path.Combine(Path.GetTempPath(), $"aurora-test-{Guid.NewGuid():N}.db");
 
+    /// <summary>Passphrase verifier file for this instance, so enrolling never touches the real one.</summary>
+    public string PassphrasePath { get; } =
+        Path.Combine(Path.GetTempPath(), $"aurora-pass-{Guid.NewGuid():N}.json");
+
     /// <summary>Sandbox root for this instance, so a test write never escapes into the real one.</summary>
     public string SandboxRoot { get; } =
         Path.Combine(Path.GetTempPath(), $"aurora-sandbox-{Guid.NewGuid():N}");
@@ -23,6 +27,7 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("Aurora:BearerToken", BearerToken);
         builder.UseSetting("Aurora:DbPath", _dbPath);
         builder.UseSetting("Aurora:SandboxRoot", SandboxRoot);
+        builder.UseSetting("Aurora:PassphrasePath", PassphrasePath);
     }
 
     protected override void Dispose(bool disposing)
@@ -37,6 +42,8 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         {
             TryDelete(_dbPath + suffix);
         }
+
+        TryDelete(PassphrasePath);
 
         try
         {

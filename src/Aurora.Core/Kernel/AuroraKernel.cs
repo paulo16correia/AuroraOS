@@ -27,6 +27,7 @@ public sealed class AuroraKernel
     private readonly IAuditStore _audit;
     private readonly IIdempotencyStore _idempotency;
     private readonly IAuroraMetrics _metrics;
+    private readonly IPassphraseAuthenticator _passphrase;
 
     public AuroraKernel(
         IReasoner reasoner,
@@ -38,7 +39,8 @@ public sealed class AuroraKernel
         ICapabilityExecutor executor,
         IAuditStore audit,
         IIdempotencyStore idempotency,
-        IAuroraMetrics metrics)
+        IAuroraMetrics metrics,
+        IPassphraseAuthenticator passphrase)
     {
         _reasoner = reasoner;
         _registry = registry;
@@ -50,6 +52,7 @@ public sealed class AuroraKernel
         _audit = audit;
         _idempotency = idempotency;
         _metrics = metrics;
+        _passphrase = passphrase;
     }
 
     /// <summary>
@@ -370,6 +373,33 @@ public sealed class AuroraKernel
         {
             return new ApproveResponse(ApproveStatus.Invalid,
                 Error: new ExecuteError(ErrorCodes.InvalidDecision, "decision must be 'approved' or 'rejected'."));
+        }
+
+        // A decision must be a human act. aurora_approve is an MCP tool, so without a secret the
+        // agent does not hold, an untrusted reasoner could approve its own request and the whole
+        // gate would be decoration (docs/adr/0011). Checked before the decision is applied, and
+        // required for a rejection too — otherwise the agent could bury a request a human wanted.
+        if (_passphrase.IsEnrolled)
+        {
+            PassphraseCheck check = _passphrase.Verify(request.Passphrase);
+            switch (check.Outcome)
+            {
+                case PassphraseOutcome.LockedOut:
+                    return new ApproveResponse(ApproveStatus.Invalid, request.ApprovalId,
+                        Error: new ExecuteError(
+                            ErrorCodes.PassphraseLockedOut,
+                            "Too many failed attempts; approvals are locked out."));
+
+                case PassphraseOutcome.Rejected:
+                    return new ApproveResponse(ApproveStatus.Invalid, request.ApprovalId,
+                        Error: new ExecuteError(
+                            string.IsNullOrEmpty(request.Passphrase)
+                                ? ErrorCodes.PassphraseRequired
+                                : ErrorCodes.PassphraseInvalid,
+                            string.IsNullOrEmpty(request.Passphrase)
+                                ? "This deployment requires the operator passphrase to decide an approval."
+                                : "The operator passphrase is not valid."));
+            }
         }
 
         var result = await _approvals.DecideAsync(principal, request.ApprovalId, approve, ct).ConfigureAwait(false);
