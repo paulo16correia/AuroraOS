@@ -319,4 +319,70 @@ public sealed class KernelTests
         Assert.Equal(ApproveStatus.Invalid, response.Status);
         Assert.Equal(ErrorCodes.InvalidDecision, response.Error?.Code);
     }
+
+    [Fact]
+    public async Task Objective_KeywordProposal_MayNotReachAMediumCapability()
+    {
+        // The adapter already refuses this, but the kernel must not rely on the adapter's manners:
+        // a proposer that widened its own reach has to be stopped here.
+        var descriptor = new CapabilityDescriptor(
+            "vault.write", "vault.write", "test capability",
+            JsonDocument.Parse("""{"type":"object","additionalProperties":false,"properties":{}}""").RootElement.Clone(),
+            ["writes"], RiskLevel.Medium, ApprovalRequired: true);
+        var capability = new FakeCapability(descriptor, _ => JsonSerializer.SerializeToElement(new { }));
+
+        var proposal = new ReasonerProposal(
+            "vault.write", JsonDocument.Parse("{}").RootElement, 0.4, ResolutionVia.Keyword);
+        var kernel = Build(capability, proposal: proposal);
+
+        var response = await kernel.ExecuteAsync(
+            new ExecuteRequest(Objective: "write to the vault"), Caller, CancellationToken.None);
+
+        Assert.Equal(ExecuteStatus.Invalid, response.Status);
+        Assert.Equal(ErrorCodes.KeywordRestricted, response.Error!.Code);
+        Assert.Equal(0, capability.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task Objective_ModelProposal_MayReachAMediumCapability_StillGatedByConsent()
+    {
+        // Restricting the *keyword* fallback must not restrict the model-backed path, which stays
+        // subject to the normal policy and consent gates rather than to a resolution-mode rule.
+        var descriptor = new CapabilityDescriptor(
+            "vault.write", "vault.write", "test capability",
+            JsonDocument.Parse("""{"type":"object","additionalProperties":false,"properties":{}}""").RootElement.Clone(),
+            ["writes"], RiskLevel.Medium, ApprovalRequired: true);
+        var capability = new FakeCapability(descriptor, _ => JsonSerializer.SerializeToElement(new { }));
+
+        var approvals = new FakeApprovalStore();
+        var proposal = new ReasonerProposal(
+            "vault.write", JsonDocument.Parse("{}").RootElement, 0.9, ResolutionVia.Reasoner);
+        var kernel = Build(
+            capability, proposal: proposal, approvals: approvals,
+            consent: new PersistentApprovalConsentGate(approvals));
+
+        var response = await kernel.ExecuteAsync(
+            new ExecuteRequest(Objective: "write to the vault"), Caller, CancellationToken.None);
+
+        Assert.Equal(ExecuteStatus.Denied, response.Status);
+        Assert.Equal(ErrorCodes.ApprovalRequired, response.Error!.Code);
+        Assert.Equal(0, capability.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task Objective_KeywordProposal_IsAcceptedForLowReadOnly()
+    {
+        var capability = EchoCapability();
+        var proposal = new ReasonerProposal(
+            "echo.say",
+            JsonDocument.Parse("""{"message":"hi"}""").RootElement,
+            0.4,
+            ResolutionVia.Keyword);
+
+        var response = await Build(capability, proposal: proposal)
+            .ExecuteAsync(new ExecuteRequest(Objective: "say hi"), Caller, CancellationToken.None);
+
+        Assert.Equal(ExecuteStatus.Completed, response.Status);
+        Assert.Equal(ResolutionVia.Keyword, response.Resolved!.Via);
+    }
 }

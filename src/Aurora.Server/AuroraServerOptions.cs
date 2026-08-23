@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 
+using Aurora.Adapters.Reasoning;
+
 namespace Aurora.Server;
 
 /// <summary>
@@ -16,6 +18,9 @@ public sealed class AuroraServerOptions
 
     /// <summary>Root of the writable sandbox for <c>files.write_sandbox</c> (design/0003).</summary>
     public required string SandboxRoot { get; init; }
+
+    /// <summary>Azure OpenAI settings, or null when objective mode falls back to keywords only.</summary>
+    public AzureOpenAiOptions? AzureOpenAi { get; init; }
 
     public static AuroraServerOptions FromConfiguration(IConfiguration config)
     {
@@ -49,9 +54,32 @@ public sealed class AuroraServerOptions
 
         Directory.CreateDirectory(sandboxRoot);
 
+        // Objective mode only reaches the model when all three are present; otherwise the
+        // keyword fallback stands in, restricted to LOW read-only actions.
+        var azureEndpoint = config["Aurora:AzureOpenAI:Endpoint"];
+        var azureDeployment = config["Aurora:AzureOpenAI:Deployment"];
+        var azureKey = config["Aurora:AzureOpenAI:ApiKey"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+
+        AzureOpenAiOptions? azure = null;
+        if (!string.IsNullOrWhiteSpace(azureEndpoint)
+            && !string.IsNullOrWhiteSpace(azureDeployment)
+            && !string.IsNullOrWhiteSpace(azureKey))
+        {
+            azure = new AzureOpenAiOptions(
+                azureEndpoint,
+                azureDeployment,
+                azureKey,
+                config["Aurora:AzureOpenAI:ApiVersion"] ?? "2024-10-21");
+        }
+
         var options = new AuroraServerOptions
         {
-            BearerToken = token, Port = port, DbPath = dbPath, SandboxRoot = sandboxRoot,
+            BearerToken = token,
+            Port = port,
+            DbPath = dbPath,
+            SandboxRoot = sandboxRoot,
+            AzureOpenAi = azure,
         };
         if (generated)
         {

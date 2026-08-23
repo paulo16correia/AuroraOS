@@ -329,4 +329,40 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         var parent = Directory.GetParent(_factory.SandboxRoot)!.FullName;
         Assert.False(File.Exists(Path.Combine(parent, escapeName)));
     }
+
+    [Fact]
+    public async Task Execute_Objective_ResolvesViaKeywordFallback_WhenNoModelIsConfigured()
+    {
+        // No Azure deployment is configured for tests, so objective mode degrades to the keyword
+        // fallback rather than disappearing.
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?> { ["objective"] = "say hello from aurora" },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("completed", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal("echo.say", doc.RootElement.GetProperty("resolved").GetProperty("action_id").GetString());
+        Assert.Equal("keyword", doc.RootElement.GetProperty("resolved").GetProperty("via").GetString());
+        Assert.Equal("hello from aurora", doc.RootElement.GetProperty("result").GetProperty("said").GetString());
+    }
+
+    [Fact]
+    public async Task Execute_Objective_TargetingAWriteAction_IsRefused()
+    {
+        // "remember ..." names a MEDIUM capability; the keyword fallback must not reach it, and
+        // no approval prompt should be created either.
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?> { ["objective"] = "remember that milk is expensive" },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("invalid", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(
+            "objective_mode_unavailable",
+            doc.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
 }

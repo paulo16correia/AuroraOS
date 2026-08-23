@@ -6,6 +6,7 @@ public static class ErrorCodes
     public const string BothModes = "both_modes";
     public const string NoMode = "no_mode";
     public const string ObjectiveUnavailable = "objective_mode_unavailable";
+    public const string KeywordRestricted = "keyword_resolution_restricted";
     public const string UnknownAction = "unknown_action";
     public const string SchemaInvalid = "schema_invalid";
     public const string InputTooLarge = "input_too_large";

@@ -35,7 +35,20 @@ public static class ServiceRegistration
         services.AddSingleton<ISchemaValidator, JsonSchemaValidator>();
         services.AddSingleton<IPolicyEngine, AllowlistPolicyEngine>();
         services.AddSingleton<IConsentGate, PersistentApprovalConsentGate>();
-        services.AddSingleton<IReasoner, NullReasoner>();
+        // Untrusted proposers, tried in order. The kernel commits, never the reasoner.
+        services.AddHttpClient();
+        services.AddSingleton<IReasoner>(sp =>
+        {
+            var proposers = new List<IReasoner>();
+            if (options.AzureOpenAi is { } azure)
+            {
+                var factory = sp.GetRequiredService<IHttpClientFactory>();
+                proposers.Add(new AzureOpenAiReasoner(factory.CreateClient("azure-openai"), azure));
+            }
+
+            proposers.Add(new KeywordReasoner());
+            return new CompositeReasoner(proposers);
+        });
         services.AddSingleton<ISandboxFileWriter>(_ => new SandboxFileWriter(options.SandboxRoot));
         services.AddSingleton<ICapability, ClockNowCapability>();
         services.AddSingleton<ICapability, EchoSayCapability>();

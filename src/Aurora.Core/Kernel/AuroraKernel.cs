@@ -109,6 +109,17 @@ public sealed class AuroraKernel
 
         var descriptor = capability.Descriptor;
 
+        // 3b. The keyword fallback is blunt and untrusted: design 0001 confines it to LOW,
+        //     effect-free actions. Enforced here as well as in the adapter, so a future
+        //     proposer cannot quietly widen its own reach.
+        if (via == ResolutionVia.Keyword
+            && (descriptor.Risk != RiskLevel.Low || descriptor.Effects.Count > 0))
+        {
+            return Invalid(
+                ErrorCodes.KeywordRestricted,
+                "Keyword resolution is limited to low-risk, read-only actions.");
+        }
+
         // 3a. Size guard on the canonical input.
         var canonicalInput = CanonicalJson.Canonicalize(input);
         if (Encoding.UTF8.GetByteCount(canonicalInput) > AuroraLimits.MaxInputBytes)
