@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Aurora.Core.Abstractions;
@@ -25,6 +26,7 @@ public sealed class AuroraKernel
     private readonly ICapabilityExecutor _executor;
     private readonly IAuditStore _audit;
     private readonly IIdempotencyStore _idempotency;
+    private readonly IAuroraMetrics _metrics;
 
     public AuroraKernel(
         IReasoner reasoner,
@@ -35,7 +37,8 @@ public sealed class AuroraKernel
         IApprovalStore approvals,
         ICapabilityExecutor executor,
         IAuditStore audit,
-        IIdempotencyStore idempotency)
+        IIdempotencyStore idempotency,
+        IAuroraMetrics metrics)
     {
         _reasoner = reasoner;
         _registry = registry;
@@ -46,6 +49,7 @@ public sealed class AuroraKernel
         _executor = executor;
         _audit = audit;
         _idempotency = idempotency;
+        _metrics = metrics;
     }
 
     /// <summary>
@@ -168,6 +172,7 @@ public sealed class AuroraKernel
                         Error: new ExecuteError(ErrorCodes.ExecutionInProgress, "A request with this idempotency key is already in progress."));
 
                 case IdempotencyDisposition.Conflict:
+                    _metrics.IdempotencyConflict();
                     return new ExecuteResponse(ExecuteStatus.Conflict, resolved,
                         Error: new ExecuteError(ErrorCodes.IdempotencyConflict, "Idempotency key reused with a different input."));
 
@@ -274,9 +279,22 @@ public sealed class AuroraKernel
         Principal principal, string actionId, string inputHash, string outcome,
         string? key, bool reserved, string idempotencyState, AuditFacts facts, ExecuteResponse response)
     {
+        _metrics.ExecutionSettled(outcome);
+
         // Audit is the security record and must succeed (a failure here fails the call, fail-closed).
-        var auditRef = await _audit.AppendAsync(
-            Entry(principal, actionId, inputHash, outcome, facts), CancellationToken.None).ConfigureAwait(false);
+        string auditRef;
+        try
+        {
+            auditRef = await _audit.AppendAsync(
+                Entry(principal, actionId, inputHash, outcome, facts), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Counted before rethrowing: a spike here means the security record is degrading, which
+            // an operator must see even though the call itself still fails closed.
+            _metrics.AuditFailure();
+            throw;
+        }
         var stamped = response with { AuditRef = [auditRef] };
 
         if (reserved && key is not null)
@@ -356,6 +374,17 @@ public sealed class AuroraKernel
 
         var result = await _approvals.DecideAsync(principal, request.ApprovalId, approve, ct).ConfigureAwait(false);
 
+        // How long the caller waited for a human. Measured from the record itself rather than a
+        // timer, so a decision that spans a restart is still counted correctly.
+        if (result is { Outcome: ApprovalDecideOutcome.Decided, Record: { DecidedAtUtc: { } decidedAt } record }
+            && DateTimeOffset.TryParse(
+                record.CreatedAtUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var createdUtc)
+            && DateTimeOffset.TryParse(
+                decidedAt, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var decidedUtc))
+        {
+            _metrics.ConsentDecided(decidedUtc - createdUtc);
+        }
+
         var outcome = result.Outcome switch
         {
             ApprovalDecideOutcome.Decided => approve ? "approval_granted" : "approval_rejected",
@@ -409,6 +438,8 @@ public sealed class AuroraKernel
             }
         }
 
+        _metrics.ExecutionUnknown();
+
         try
         {
             await _audit.AppendAsync(
@@ -417,6 +448,7 @@ public sealed class AuroraKernel
         catch
         {
             // Best-effort; never mask the original cancellation with a bookkeeping fault.
+            _metrics.AuditFailure();
         }
     }
 

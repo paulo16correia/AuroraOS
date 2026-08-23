@@ -73,6 +73,10 @@ public sealed class FakeConsent : IConsentGate
 public sealed class FakeApprovalStore : IApprovalStore
 {
     private readonly Dictionary<string, ApprovalRecord> _byId = [];
+
+    public Task<int> CountPendingAsync(CancellationToken ct) =>
+        Task.FromResult(_byId.Values.Count(r => r.Status == ApprovalStatus.Pending));
+
     private int _sequence;
 
     public Task<ApprovalEvaluation> EvaluateAsync(Principal principal, string actionId, string scopeHash, CancellationToken ct)

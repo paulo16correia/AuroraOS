@@ -50,6 +50,12 @@ app.UseMiddleware<BearerAuthMiddleware>();
 
 app.MapMcp("/mcp");
 
+// Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
+// NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
+// hand an untrusted reasoner a view of how often its requests are being refused.
+app.MapGet("/metrics", async (IAuroraMetrics metrics, IApprovalStore approvals, CancellationToken ct) =>
+    Results.Json(metrics.Snapshot(await approvals.CountPendingAsync(ct))));
+
 app.Run();
 
 /// <summary>Exposed so WebApplicationFactory can host the app in integration tests.</summary>

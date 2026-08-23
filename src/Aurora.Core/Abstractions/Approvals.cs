@@ -18,4 +18,11 @@ public interface IApprovalStore
 
     /// <summary>Applies a human decision to a live PENDING approval owned by <paramref name="principal"/>.</summary>
     Task<ApprovalDecideResult> DecideAsync(Principal principal, string approvalId, bool approve, CancellationToken ct);
+
+    /// <summary>
+    /// Number of approvals still awaiting a human and not yet expired — the "active prompts"
+    /// gauge (design/0008). Read from storage rather than counted in memory, so it survives a
+    /// restart and cannot drift from the ledger.
+    /// </summary>
+    Task<int> CountPendingAsync(CancellationToken ct);
 }

@@ -1,6 +1,7 @@
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
 using Aurora.Adapters.Files;
+using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
@@ -35,6 +36,7 @@ public static class ServiceRegistration
 
         // Runtime.
         services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<IAuroraMetrics, InMemoryMetrics>();
         services.AddSingleton<IPrincipalAccessor, WindowsPrincipalAccessor>();
 
         // Domain adapters.

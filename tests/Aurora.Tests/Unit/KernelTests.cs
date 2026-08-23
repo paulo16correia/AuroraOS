@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Observability;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
@@ -34,7 +35,8 @@ public sealed class KernelTests
         IIdempotencyStore? idempotency = null,
         RecordingAuditStore? audit = null,
         IConsentGate? consent = null,
-        IApprovalStore? approvals = null) =>
+        IApprovalStore? approvals = null,
+        IAuroraMetrics? metrics = null) =>
         new(
             new FakeReasoner(proposal),
             new FakeRegistry(capability),
@@ -44,7 +46,8 @@ public sealed class KernelTests
             approvals ?? new FakeApprovalStore(),
             new DirectExecutor(),
             audit ?? new RecordingAuditStore(),
-            idempotency ?? new InMemoryIdempotencyStore());
+            idempotency ?? new InMemoryIdempotencyStore(),
+            metrics ?? new InMemoryMetrics(new TestClock(DateTimeOffset.UnixEpoch)));
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });

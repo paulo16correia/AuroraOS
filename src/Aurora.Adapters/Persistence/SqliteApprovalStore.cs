@@ -142,6 +142,22 @@ public sealed class SqliteApprovalStore : IApprovalStore
         }
     }
 
+    public async Task<int> CountPendingAsync(CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+
+        // Expired rows are excluded: they are pending in the table but nobody is waiting on them,
+        // and counting them would make the gauge climb forever.
+        command.CommandText = """
+            SELECT COUNT(*) FROM approval WHERE status = @pending AND expires_at_utc > @now;
+            """;
+        command.Parameters.AddWithValue("@pending", ApprovalStatus.Pending);
+        command.Parameters.AddWithValue("@now", _clock.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+    }
+
     public async Task<ApprovalDecideResult> DecideAsync(
         Principal principal, string approvalId, bool approve, CancellationToken ct)
     {

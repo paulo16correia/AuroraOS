@@ -365,4 +365,53 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             "objective_mode_unavailable",
             doc.RootElement.GetProperty("error").GetProperty("code").GetString());
     }
+
+    // ---- It.3 metrics surface (design/0008) ----
+
+    [Fact]
+    public async Task Metrics_RequireTheBearerToken()
+    {
+        var http = _factory.CreateClient();
+
+        var response = await http.GetAsync("/metrics", Timeout());
+
+        // The operational surface is behind the same guard as the MCP one; an unauthenticated
+        // reader could otherwise learn how often requests are being refused.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Metrics_ReportExecutionsAndPendingApprovals()
+    {
+        await using var client = await ConnectAsync();
+
+        await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "echo.say",
+                ["input"] = new Dictionary<string, object?> { ["message"] = "for metrics" },
+            },
+            cancellationToken: Timeout());
+
+        // Leave one approval outstanding so the gauge has something to report.
+        await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "memory.remember",
+                ["input"] = new Dictionary<string, object?> { ["note"] = $"pending {Guid.NewGuid():N}" },
+            },
+            cancellationToken: Timeout());
+
+        var http = _factory.CreateClient();
+        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_factory.BearerToken}");
+
+        var response = await http.GetAsync("/metrics", Timeout());
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Timeout()));
+        Assert.True(doc.RootElement.GetProperty("executionsByOutcome").GetProperty("completed").GetInt64() >= 1);
+        Assert.True(doc.RootElement.GetProperty("pendingApprovals").GetInt32() >= 1);
+    }
 }
