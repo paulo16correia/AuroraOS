@@ -17,6 +17,7 @@ using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Time;
 using Aurora.Adapters.Validation;
 using Aurora.Core.Abstractions;
+using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
 using Aurora.Server.Security;
 
