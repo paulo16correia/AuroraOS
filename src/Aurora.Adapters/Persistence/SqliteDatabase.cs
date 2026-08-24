@@ -62,6 +62,42 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS memory (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          subject_ref TEXT NOT NULL,
+          predicate TEXT NOT NULL,
+          object_json TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          source_refs TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          status TEXT NOT NULL,
+          sensitivity TEXT NOT NULL,
+          access_policy_id TEXT NOT NULL,
+          valid_from_utc TEXT NULL,
+          valid_to_utc TEXT NULL,
+          retention_until_utc TEXT NULL,
+          embedding_ref TEXT NULL,
+          created_by TEXT NOT NULL,
+          content_hash TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_subject ON memory(subject_ref, predicate, status);
+
+        CREATE TABLE IF NOT EXISTS memory_revision (
+          id TEXT PRIMARY KEY,
+          memory_id TEXT NOT NULL,
+          operation TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          prior_hash TEXT NULL,
+          new_hash TEXT NOT NULL,
+          at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_revision_memory ON memory_revision(memory_id, at_utc);
+
         CREATE TABLE IF NOT EXISTS mind_state_snapshot (
           id TEXT PRIMARY KEY,
           mind_id TEXT NOT NULL,

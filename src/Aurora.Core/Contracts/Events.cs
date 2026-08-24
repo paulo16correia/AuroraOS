@@ -17,6 +17,16 @@ public static class Sensitivity
 
     public static bool IsKnown(string sensitivity) =>
         sensitivity is Public or Private or Confidential or Secret;
+
+    /// <summary>Ordering, so a caller's ceiling can be compared against a record's class.</summary>
+    public static int Rank(string sensitivity) => sensitivity switch
+    {
+        Public => 0,
+        Private => 1,
+        Confidential => 2,
+        Secret => 3,
+        _ => int.MaxValue,
+    };
 }
 
 /// <summary>

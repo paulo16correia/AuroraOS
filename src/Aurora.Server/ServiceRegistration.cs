@@ -5,6 +5,7 @@ using Aurora.Adapters.Vault;
 using Aurora.Adapters.Files;
 using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Lifecycle;
+using Aurora.Adapters.Memories;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -60,6 +61,8 @@ public static class ServiceRegistration
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));
         services.AddSingleton<IGenomeService, SqliteGenomeService>();
+        services.AddSingleton<IMemoryRanker, LexicalMemoryRanker>();
+        services.AddSingleton<IMemoryService, SqliteMemoryService>();
 
         // Snapshots get their own key: a compromised vault key must not also open every
         // Mind State ever captured (docs/adr/0018).
