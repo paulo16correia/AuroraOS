@@ -77,6 +77,8 @@ public static class ServiceRegistration
         services.AddSingleton<IAttentionAuthorization, SensitivityAttentionAuthorization>();
         services.AddSingleton<IAttentionSystem, SqliteAttentionSystem>();
         services.AddSingleton<IWorkingMemory, SqliteWorkingMemory>();
+        services.AddSingleton<IDecisionEngine, SqliteDecisionEngine>();
+        services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
 
         // Snapshots get their own key: a compromised vault key must not also open every
         // Mind State ever captured (docs/adr/0018).

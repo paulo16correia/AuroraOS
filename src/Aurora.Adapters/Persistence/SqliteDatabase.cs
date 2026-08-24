@@ -62,6 +62,53 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS cognitive_cycle (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT NOT NULL,
+          stage TEXT NOT NULL,
+          status TEXT NOT NULL,
+          ingress_ref TEXT NOT NULL,
+          mcp_session_ref TEXT NULL,
+          started_at_utc TEXT NOT NULL,
+          deadline_at_utc TEXT NULL,
+          completed_at_utc TEXT NULL,
+          executed INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS cycle_stage_record (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          stage TEXT NOT NULL,
+          input_refs TEXT NOT NULL,
+          output_refs TEXT NOT NULL,
+          decision_ref TEXT NULL,
+          started_at_utc TEXT NOT NULL,
+          ended_at_utc TEXT NULL,
+          status TEXT NOT NULL,
+          note TEXT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_stage_once ON cycle_stage_record(cycle_id, stage);
+
+        CREATE TABLE IF NOT EXISTS decision (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          objective_ref TEXT NULL,
+          selected_option_json TEXT NOT NULL,
+          alternatives_json TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          uncertainty TEXT NOT NULL,
+          risk_level TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          policy_decision_ids TEXT NOT NULL,
+          approval_required INTEGER NOT NULL,
+          expiry_at_utc TEXT NULL,
+          status TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_decision_cycle ON decision(cycle_id, status);
+
         CREATE TABLE IF NOT EXISTS attention_set (
           id TEXT PRIMARY KEY,
           cycle_id TEXT NOT NULL UNIQUE,
