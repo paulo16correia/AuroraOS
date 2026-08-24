@@ -14,6 +14,7 @@ using Aurora.Adapters.Observations;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Pilot;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
@@ -86,6 +87,9 @@ public static class ServiceRegistration
         services.AddSingleton<ICapabilityResolver, SqliteCapabilityResolver>();
         services.AddSingleton<IToolManager, SqliteToolManager>();
         services.AddSingleton<IObservationService, SqliteObservationService>();
+
+        // The low-risk pilot: the first vertical slice, using no external tool (step 9).
+        services.AddSingleton<IPilotApplication, LocalConversationPilot>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.
