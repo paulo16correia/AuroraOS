@@ -1,4 +1,5 @@
 using Aurora.Adapters.Capabilities;
+using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Vault;
@@ -68,6 +69,13 @@ public static class ServiceRegistration
         services.AddSingleton<IKnowledgeGraph, SqliteKnowledgeGraph>();
         services.AddSingleton(WorldModelOptions.Default);
         services.AddSingleton<IWorldModel, SqliteWorldModel>();
+
+        // Cognitive cycle, step 7.
+        services.AddSingleton(AttentionPolicy.Default);
+        services.AddSingleton(WorkingMemoryOptions.Default);
+        services.AddSingleton<IAttentionAuthorization, SensitivityAttentionAuthorization>();
+        services.AddSingleton<IAttentionSystem, SqliteAttentionSystem>();
+        services.AddSingleton<IWorkingMemory, SqliteWorkingMemory>();
 
         // Snapshots get their own key: a compromised vault key must not also open every
         // Mind State ever captured (docs/adr/0018).

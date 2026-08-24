@@ -62,6 +62,64 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS attention_set (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL UNIQUE,
+          token_budget INTEGER NOT NULL,
+          item_limit INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          selected_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS attention_item (
+          id TEXT PRIMARY KEY,
+          set_id TEXT NOT NULL,
+          ref TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          relevance REAL NOT NULL,
+          urgency REAL NOT NULL,
+          novelty REAL NOT NULL,
+          impact REAL NOT NULL,
+          confidence REAL NOT NULL,
+          recency REAL NOT NULL,
+          sensitivity TEXT NOT NULL,
+          token_cost INTEGER NOT NULL,
+          expires_at_utc TEXT NULL,
+          score REAL NOT NULL,
+          reason_codes TEXT NOT NULL,
+          selected INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_attention_item_set ON attention_item(set_id, selected);
+
+        CREATE TABLE IF NOT EXISTS working_memory (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          session_id TEXT NULL,
+          status TEXT NOT NULL,
+          capacity_tokens INTEGER NOT NULL,
+          capacity_items INTEGER NOT NULL,
+          sensitivity_ceiling TEXT NOT NULL,
+          expires_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS working_item (
+          id TEXT PRIMARY KEY,
+          working_memory_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          payload_json TEXT NULL,
+          payload_ref TEXT NULL,
+          source_refs TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          sensitivity TEXT NOT NULL,
+          token_cost INTEGER NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          expires_at_utc TEXT NULL,
+          disposition TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_working_item_frame ON working_item(working_memory_id);
+
         CREATE TABLE IF NOT EXISTS world_version (
           id TEXT PRIMARY KEY,
           mind_id TEXT NOT NULL,
