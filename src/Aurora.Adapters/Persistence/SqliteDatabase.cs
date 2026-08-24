@@ -62,6 +62,56 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS capability_definition (
+          id TEXT PRIMARY KEY,
+          domain TEXT NOT NULL,
+          intent_schema TEXT NOT NULL,
+          effect_classes TEXT NOT NULL,
+          risk_class TEXT NOT NULL,
+          required_permissions TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS capability_provider (
+          id TEXT PRIMARY KEY,
+          capability_id TEXT NOT NULL,
+          application_id TEXT NOT NULL,
+          tool_ref TEXT NOT NULL,
+          priority INTEGER NOT NULL,
+          available INTEGER NOT NULL,
+          cost_estimate REAL NOT NULL,
+          data_classes TEXT NOT NULL,
+          constraints TEXT NOT NULL,
+          declared_effects TEXT NOT NULL,
+          health_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_provider_capability
+          ON capability_provider(capability_id, priority);
+
+        CREATE TABLE IF NOT EXISTS capability_request (
+          id TEXT PRIMARY KEY,
+          decision_ref TEXT NULL,
+          capability_id TEXT NOT NULL,
+          intent_payload_json TEXT NOT NULL,
+          target_constraints TEXT NOT NULL,
+          status TEXT NOT NULL,
+          pinned_provider_id TEXT NULL,
+          preferred_provider_id TEXT NULL,
+          resolved_provider_id TEXT NULL,
+          blocked_reason TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS resolution_verdict (
+          id TEXT PRIMARY KEY,
+          request_id TEXT NOT NULL,
+          provider_id TEXT NOT NULL,
+          eligible INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          explanation TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_verdict_request ON resolution_verdict(request_id);
+
         CREATE TABLE IF NOT EXISTS goal (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
