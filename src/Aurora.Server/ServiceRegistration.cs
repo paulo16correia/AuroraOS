@@ -10,6 +10,7 @@ using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Lifecycle;
 using Aurora.Adapters.Knowledge;
 using Aurora.Adapters.Memories;
+using Aurora.Adapters.Observations;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -84,6 +85,7 @@ public static class ServiceRegistration
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
         services.AddSingleton<ICapabilityResolver, SqliteCapabilityResolver>();
         services.AddSingleton<IToolManager, SqliteToolManager>();
+        services.AddSingleton<IObservationService, SqliteObservationService>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.

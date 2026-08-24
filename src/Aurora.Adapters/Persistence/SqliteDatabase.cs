@@ -62,6 +62,55 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS aurora_action (
+          id TEXT PRIMARY KEY,
+          decision_id TEXT NOT NULL,
+          effect_type TEXT NOT NULL,
+          target_ref TEXT NOT NULL,
+          parameters_hash TEXT NOT NULL,
+          reversible INTEGER NOT NULL,
+          state TEXT NOT NULL,
+          tool_call_id TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_action_state ON aurora_action(state);
+
+        CREATE TABLE IF NOT EXISTS observation (
+          id TEXT PRIMARY KEY,
+          action_id TEXT NOT NULL,
+          observer TEXT NOT NULL,
+          observed_at_utc TEXT NOT NULL,
+          modality TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          payload_ref TEXT NULL,
+          integrity TEXT NOT NULL,
+          external_ref TEXT NULL,
+          state TEXT NOT NULL,
+          rejection_reason TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_observation_action ON observation(action_id, state);
+
+        CREATE TABLE IF NOT EXISTS reflection (
+          id TEXT PRIMARY KEY,
+          observation_id TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          lessons TEXT NOT NULL,
+          proposal_refs TEXT NOT NULL,
+          state TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS learning_proposal (
+          id TEXT PRIMARY KEY,
+          reflection_id TEXT NOT NULL,
+          type TEXT NOT NULL,
+          change_set_json TEXT NOT NULL,
+          evaluation_plan TEXT NOT NULL,
+          rollback_plan TEXT NOT NULL,
+          state TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS tool_manifest (
           tool_id TEXT PRIMARY KEY,
           version TEXT NOT NULL,
