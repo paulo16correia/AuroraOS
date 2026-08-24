@@ -17,6 +17,7 @@ using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Time;
+using Aurora.Adapters.Tools;
 using Aurora.Adapters.Validation;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
@@ -82,6 +83,7 @@ public static class ServiceRegistration
         services.AddSingleton<IDecisionEngine, SqliteDecisionEngine>();
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
         services.AddSingleton<ICapabilityResolver, SqliteCapabilityResolver>();
+        services.AddSingleton<IToolManager, SqliteToolManager>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.

@@ -13,7 +13,12 @@ public static class DecisionMode
     public const string Silent = "SILENT";
 
     /// <summary>Modes whose effect reaches outside Aurora.</summary>
-    public static bool HasExternalEffect(string mode) => mode is ToolCall;
+    /// <remarks>
+    /// Compared rather than pattern-matched: RFC 06 also names a <c>ToolCall</c> record, and
+    /// <c>is</c> would resolve the identifier to that type instead of to this constant.
+    /// </remarks>
+    public static bool HasExternalEffect(string mode) =>
+        string.Equals(mode, ToolCall, StringComparison.Ordinal);
 }
 
 public static class DecisionState

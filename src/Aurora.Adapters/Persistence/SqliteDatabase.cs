@@ -62,6 +62,46 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS tool_manifest (
+          tool_id TEXT PRIMARY KEY,
+          version TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          capabilities TEXT NOT NULL,
+          input_schema TEXT NOT NULL,
+          output_schema TEXT NOT NULL,
+          effects TEXT NOT NULL,
+          data_classes_in TEXT NOT NULL,
+          data_classes_out TEXT NOT NULL,
+          auth_mode TEXT NOT NULL,
+          timeout_seconds INTEGER NOT NULL,
+          rate_limit_per_minute INTEGER NOT NULL,
+          requires_approval INTEGER NOT NULL,
+          secret_reference_id TEXT NULL,
+          disabled_reason TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS tool_call (
+          id TEXT PRIMARY KEY,
+          work_item_id TEXT NOT NULL,
+          task_id TEXT NULL,
+          tool_id TEXT NOT NULL,
+          capability TEXT NOT NULL,
+          input_redacted_json TEXT NOT NULL,
+          input_hash TEXT NOT NULL,
+          idempotency_key TEXT NULL,
+          status TEXT NOT NULL,
+          policy_decision_ids TEXT NOT NULL,
+          approval_id TEXT NULL,
+          started_at_utc TEXT NULL,
+          ended_at_utc TEXT NULL,
+          external_reference TEXT NULL,
+          output_ref TEXT NULL,
+          error_code TEXT NULL,
+          retry_after_utc TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tool_call_status ON tool_call(status, tool_id);
+
         CREATE TABLE IF NOT EXISTS capability_definition (
           id TEXT PRIMARY KEY,
           domain TEXT NOT NULL,
