@@ -228,7 +228,7 @@ public sealed class SqliteVault : IVault
         await _audit.AppendAsync(
             new AuditEntry(
                 principal.ClientId,
-                principal.WindowsUser,
+                principal.OsUser,
                 "vault.lease",
                 Hashing.Sha256Hex($"{secretReferenceId}\n{toolCall.ToolCallId}\n{toolCall.ToolId}"),
                 outcome,

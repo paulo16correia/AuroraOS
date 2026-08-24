@@ -116,14 +116,14 @@ public sealed class SqliteApprovalStore : IApprovalStore
                 insert.Transaction = transaction;
                 insert.CommandText = """
                     INSERT INTO approval
-                        (approval_id, principal_client_id, principal_windows_user, action_id, scope_hash,
+                        (approval_id, principal_client_id, principal_os_user, action_id, scope_hash,
                          status, created_at_utc, expires_at_utc, decided_at_utc)
                     VALUES
                         (@id, @c, @wu, @a, @s, @status, @now, @exp, NULL);
                     """;
                 insert.Parameters.AddWithValue("@id", newId);
                 insert.Parameters.AddWithValue("@c", principal.ClientId);
-                insert.Parameters.AddWithValue("@wu", principal.WindowsUser);
+                insert.Parameters.AddWithValue("@wu", principal.OsUser);
                 insert.Parameters.AddWithValue("@a", actionId);
                 insert.Parameters.AddWithValue("@s", scopeHash);
                 insert.Parameters.AddWithValue("@status", ApprovalStatus.Pending);
@@ -205,7 +205,7 @@ public sealed class SqliteApprovalStore : IApprovalStore
         {
             select.Transaction = transaction;
             select.CommandText = """
-                SELECT approval_id, principal_client_id, principal_windows_user, action_id, scope_hash,
+                SELECT approval_id, principal_client_id, principal_os_user, action_id, scope_hash,
                        status, created_at_utc, expires_at_utc, decided_at_utc
                 FROM approval WHERE approval_id = @id;
                 """;

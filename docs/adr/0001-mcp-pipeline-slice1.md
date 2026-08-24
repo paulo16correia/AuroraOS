@@ -30,7 +30,7 @@ aurora_execute
 
 ## Security invariants — from It.0 (cheap now, expensive to retrofit)
 
-- **Transport:** Kestrel bound to **loopback only**, a mandatory **high-entropy local bearer token**, and `Host`/`Origin` checking (anti DNS-rebinding). The principal is the authenticated MCP client plus the local Windows user.
+- **Transport:** Kestrel bound to **loopback only**, a mandatory **high-entropy local bearer token**, and `Host`/`Origin` checking (anti DNS-rebinding). The principal is the authenticated MCP client plus the local OS user.
 - **The reasoner only proposes:** the Kernel validates and commits the action; the LLM never authorises.
 - **Fail-closed policy:** deny by default; re-evaluated with the `input` before the effect, since risk can depend on the input.
 - **Hash-chained audit from It.0** (`previous_hash`/`record_hash`, SHA-256), append-only; an integrity failure is fail-closed. (RFC 09.)
@@ -41,11 +41,11 @@ aurora_execute
 
 `status → request → session → reuse`, `LOCKED`/`UNLOCKED`. One approval (a trusted desktop dialog plus passphrase) opens a **local, time-boxed, scoped** session that is reused without a fresh prompt. Mandatory corrections (Codex):
 
-- `session_id` generated **server-side** and bound to principal, Windows session, server boot, policy version, risk ceiling and scope. **Never** accepted from the client.
+- `session_id` generated **server-side** and bound to principal, OS login session, server boot, policy version, risk ceiling and scope. **Never** accepted from the client.
 - Prompts **serialised** (single-flight per key); bounded deadline plus SSE heartbeats; a client disconnect or cancel closes the prompt and **guarantees non-execution**.
 - Policy, scope, expiry and revocation re-evaluated **atomically** before the effect.
 - The prompt shows the **validated canonical action, the authenticated requester and the hash**, never client-supplied text (anti-spoofing); signed executable, foreground parented window, no secrets in logs.
-- A real passphrase: KDF (Argon2/PBKDF2) plus verifier, throttling, enrollment and revocation — not `TaskDialog`, which has no text field; a dedicated dialog or the Windows Credential UI.
+- A real passphrase: KDF (Argon2/PBKDF2) plus verifier, throttling, enrollment and revocation — not `TaskDialog`, which has no text field; a dedicated dialog, or the platform's own credential UI where one exists.
 - Grants preferably held **in memory** (only the audit persists); invalidated on restart, logout, lock, user switch, policy change or clock failure. `LOW` is never covered by a session; `MEDIUM` never covers `HIGH/CRITICAL`.
 - **Autonomy with effects (caveat):** a reused session that runs subsequent MEDIUM writes without prompting is, in practice, permanent autonomy with effects. DaVault does this to *read secrets*, not to *write*. Mandatory guards: a ceiling on action count and cost per session, a kill switch, per-action audit, and a reconsideration of whether the scope "everything ≤MEDIUM" should shrink to "this capability" for write effects.
 

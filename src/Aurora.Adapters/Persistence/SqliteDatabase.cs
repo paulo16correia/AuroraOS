@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Aurora.Adapters.Persistence;
@@ -13,14 +14,11 @@ public sealed class SqliteDatabase
           version INTEGER NOT NULL
         );
 
-        INSERT INTO schema_version (version)
-        SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version);
-
         CREATE TABLE IF NOT EXISTS audit_record (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT,
           record_id TEXT NOT NULL,
           principal_client_id TEXT NOT NULL,
-          principal_windows_user TEXT NOT NULL,
+          principal_os_user TEXT NOT NULL,
           action_id TEXT NOT NULL,
           input_hash TEXT NOT NULL,
           outcome TEXT NOT NULL,
@@ -48,7 +46,7 @@ public sealed class SqliteDatabase
         CREATE TABLE IF NOT EXISTS approval (
           approval_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
-          principal_windows_user TEXT NOT NULL,
+          principal_os_user TEXT NOT NULL,
           action_id TEXT NOT NULL,
           scope_hash TEXT NOT NULL,
           status TEXT NOT NULL,
@@ -133,7 +131,7 @@ public sealed class SqliteDatabase
         CREATE TABLE IF NOT EXISTS consent_session (
           session_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
-          principal_windows_user TEXT NOT NULL,
+          principal_os_user TEXT NOT NULL,
           server_boot_id TEXT NOT NULL,
           policy_version TEXT NOT NULL,
           status TEXT NOT NULL,
@@ -153,6 +151,24 @@ public sealed class SqliteDatabase
           created_at_utc TEXT NOT NULL
         );
         """;
+
+    /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
+    public const int TargetSchemaVersion = 2;
+
+    /// <summary>
+    /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
+    /// database that predates them; a database created fresh already matches the DDL above and is
+    /// stamped at <see cref="TargetSchemaVersion"/> without running any of them.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<int, string> Migrations = new Dictionary<int, string>
+    {
+        // v2 — the principal's OS user is not Windows-specific (docs/adr/0015).
+        [2] = """
+            ALTER TABLE audit_record RENAME COLUMN principal_windows_user TO principal_os_user;
+            ALTER TABLE approval RENAME COLUMN principal_windows_user TO principal_os_user;
+            ALTER TABLE consent_session RENAME COLUMN principal_windows_user TO principal_os_user;
+            """,
+    };
 
     private readonly SqliteConnectionFactory _factory;
 
@@ -178,6 +194,58 @@ public sealed class SqliteDatabase
             ddlCommand.ExecuteNonQuery();
         }
 
+        Migrate(connection, transaction);
+
         transaction.Commit();
+    }
+
+    /// <summary>
+    /// Brings an existing database up to <see cref="TargetSchemaVersion"/>. Runs inside the same
+    /// transaction as the DDL, so a half-applied migration cannot survive a crash.
+    /// </summary>
+    private static void Migrate(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        int current;
+        using (var read = connection.CreateCommand())
+        {
+            read.Transaction = transaction;
+            read.CommandText = "SELECT version FROM schema_version LIMIT 1;";
+            var value = read.ExecuteScalar();
+
+            if (value is null)
+            {
+                // Nothing recorded: the DDL above just created this database at the current shape.
+                using var seed = connection.CreateCommand();
+                seed.Transaction = transaction;
+                seed.CommandText = "INSERT INTO schema_version (version) VALUES (@v);";
+                seed.Parameters.AddWithValue("@v", TargetSchemaVersion);
+                seed.ExecuteNonQuery();
+                return;
+            }
+
+            current = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+        }
+
+        for (var version = current + 1; version <= TargetSchemaVersion; version++)
+        {
+            if (!Migrations.TryGetValue(version, out var sql))
+            {
+                continue;
+            }
+
+            using var apply = connection.CreateCommand();
+            apply.Transaction = transaction;
+            apply.CommandText = sql;
+            apply.ExecuteNonQuery();
+        }
+
+        if (current < TargetSchemaVersion)
+        {
+            using var stamp = connection.CreateCommand();
+            stamp.Transaction = transaction;
+            stamp.CommandText = "UPDATE schema_version SET version = @v;";
+            stamp.Parameters.AddWithValue("@v", TargetSchemaVersion);
+            stamp.ExecuteNonQuery();
+        }
     }
 }

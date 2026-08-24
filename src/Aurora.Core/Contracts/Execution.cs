@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Aurora.Core.Contracts;
 
 /// <summary>An authenticated caller. Established by the transport — never asserted by the LLM.</summary>
-public sealed record Principal(string ClientId, string WindowsUser);
+public sealed record Principal(string ClientId, string OsUser);
 
 /// <summary>
 /// Input of <c>aurora_execute</c>. Exactly one of <see cref="Objective"/> (NL) or

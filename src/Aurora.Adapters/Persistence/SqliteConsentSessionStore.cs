@@ -71,7 +71,7 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
             var session = new ConsentSession(
                 Guid.NewGuid().ToString("N"),
                 principal.ClientId,
-                principal.WindowsUser,
+                principal.OsUser,
                 _server.BootId,
                 _policy.Version,
                 ConsentSessionStatus.Active,
@@ -84,13 +84,13 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
             {
                 insert.CommandText = """
                     INSERT INTO consent_session
-                        (session_id, principal_client_id, principal_windows_user, server_boot_id,
+                        (session_id, principal_client_id, principal_os_user, server_boot_id,
                          policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc)
                     VALUES (@id, @cid, @wu, @boot, @pv, @st, 0, @max, @created, @expires);
                     """;
                 insert.Parameters.AddWithValue("@id", session.SessionId);
                 insert.Parameters.AddWithValue("@cid", session.PrincipalClientId);
-                insert.Parameters.AddWithValue("@wu", session.PrincipalWindowsUser);
+                insert.Parameters.AddWithValue("@wu", session.PrincipalOsUser);
                 insert.Parameters.AddWithValue("@boot", session.ServerBootId);
                 insert.Parameters.AddWithValue("@pv", session.PolicyVersion);
                 insert.Parameters.AddWithValue("@st", session.Status);
@@ -180,7 +180,7 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
     }
 
     private const string LiveSelect = """
-        SELECT session_id, principal_client_id, principal_windows_user, server_boot_id,
+        SELECT session_id, principal_client_id, principal_os_user, server_boot_id,
                policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc
           FROM consent_session
          WHERE principal_client_id = @cid

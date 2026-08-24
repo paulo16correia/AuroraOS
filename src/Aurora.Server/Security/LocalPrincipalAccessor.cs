@@ -8,7 +8,7 @@ namespace Aurora.Server.Security;
 /// component is the interactive OS user, read portably via <see cref="Environment.UserName"/>.
 /// <para>
 /// Named Local rather than Windows on purpose: the repository targets net10.0 and runs on
-/// Windows, macOS and Linux. The <c>Principal.WindowsUser</c> member still carries the older
+/// Windows, macOS and Linux. The <c>Principal.OsUser</c> member still carries the older
 /// name and reaches the audit schema, so renaming it is a migration rather than a rename and is
 /// tracked separately.
 /// </para>

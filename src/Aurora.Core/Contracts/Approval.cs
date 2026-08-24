@@ -15,7 +15,7 @@ public static class ApprovalStatus
 public sealed record ApprovalRecord(
     string ApprovalId,
     string PrincipalClientId,
-    string PrincipalWindowsUser,
+    string PrincipalOsUser,
     string ActionId,
     string ScopeHash,
     string Status,

@@ -26,7 +26,7 @@ in for the second one.
 
 ```
 ConsentSession
-  session_id, principal_client_id, principal_windows_user
+  session_id, principal_client_id, principal_os_user
   server_boot_id, policy_version
   status: ACTIVE | REVOKED
   actions_used, max_actions

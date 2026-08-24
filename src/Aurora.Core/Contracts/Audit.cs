@@ -8,7 +8,7 @@ public sealed record AuditRecord(
     long Sequence,
     string RecordId,
     string PrincipalClientId,
-    string PrincipalWindowsUser,
+    string PrincipalOsUser,
     string ActionId,
     string InputHash,
     string Outcome,

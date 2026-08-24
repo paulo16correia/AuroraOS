@@ -80,7 +80,7 @@ public sealed class SqliteAuditStore : IAuditStore
                 insertCommand.Transaction = transaction;
                 insertCommand.CommandText = """
                     INSERT INTO audit_record
-                        (sequence, record_id, principal_client_id, principal_windows_user,
+                        (sequence, record_id, principal_client_id, principal_os_user,
                          action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
                          risk, via, decision, policy_ids, reason)
                     VALUES
@@ -90,7 +90,7 @@ public sealed class SqliteAuditStore : IAuditStore
                 insertCommand.Parameters.AddWithValue("@seq", nextSequence);
                 insertCommand.Parameters.AddWithValue("@rid", recordId);
                 insertCommand.Parameters.AddWithValue("@cid", entry.PrincipalClientId);
-                insertCommand.Parameters.AddWithValue("@wu", entry.PrincipalWindowsUser);
+                insertCommand.Parameters.AddWithValue("@wu", entry.PrincipalOsUser);
                 insertCommand.Parameters.AddWithValue("@aid", entry.ActionId);
                 insertCommand.Parameters.AddWithValue("@ih", entry.InputHash);
                 insertCommand.Parameters.AddWithValue("@out", entry.Outcome);
@@ -123,7 +123,7 @@ public sealed class SqliteAuditStore : IAuditStore
         await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT sequence, record_id, principal_client_id, principal_windows_user,
+            SELECT sequence, record_id, principal_client_id, principal_os_user,
                    action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
                    risk, via, decision, policy_ids, reason
             FROM audit_record
@@ -141,7 +141,7 @@ public sealed class SqliteAuditStore : IAuditStore
             var sequence = reader.GetInt64(0);
             var recordId = reader.GetString(1);
             var principalClientId = reader.GetString(2);
-            var principalWindowsUser = reader.GetString(3);
+            var principalOsUser = reader.GetString(3);
             var actionId = reader.GetString(4);
             var inputHash = reader.GetString(5);
             var outcome = reader.GetString(6);
@@ -150,7 +150,7 @@ public sealed class SqliteAuditStore : IAuditStore
             var recordHash = reader.GetString(9);
             var entry = new AuditEntry(
                 principalClientId,
-                principalWindowsUser,
+                principalOsUser,
                 actionId,
                 inputHash,
                 outcome,
@@ -222,7 +222,7 @@ public sealed class SqliteAuditStore : IAuditStore
                 sequence.ToString(CultureInfo.InvariantCulture),
                 recordId,
                 entry.PrincipalClientId,
-                entry.PrincipalWindowsUser,
+                entry.PrincipalOsUser,
                 entry.ActionId,
                 entry.InputHash,
                 entry.Outcome,

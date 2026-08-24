@@ -25,7 +25,7 @@ public static class ConsentSessionStatus
 public sealed record ConsentSession(
     string SessionId,
     string PrincipalClientId,
-    string PrincipalWindowsUser,
+    string PrincipalOsUser,
     string ServerBootId,
     string PolicyVersion,
     string Status,

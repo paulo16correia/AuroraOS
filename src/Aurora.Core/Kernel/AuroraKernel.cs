@@ -423,7 +423,7 @@ public sealed class AuroraKernel
         };
         var auditRef = await _audit.AppendAsync(
             new AuditEntry(
-                principal.ClientId, principal.WindowsUser,
+                principal.ClientId, principal.OsUser,
                 result.Record?.ActionId ?? "approval.decide",
                 Hashing.Sha256Hex(request.ApprovalId), outcome,
                 Via: "approval", Decision: approve ? "approved" : "rejected"),
@@ -484,7 +484,7 @@ public sealed class AuroraKernel
 
     private static AuditEntry Entry(
         Principal principal, string actionId, string inputHash, string outcome, AuditFacts facts) =>
-        new(principal.ClientId, principal.WindowsUser, actionId, inputHash, outcome,
+        new(principal.ClientId, principal.OsUser, actionId, inputHash, outcome,
             facts.Risk, facts.Via, facts.Decision, facts.PolicyIds, facts.Reason);
 
     private static ExecuteResponse Invalid(string code, string message, IReadOnlyList<string>? details = null) =>

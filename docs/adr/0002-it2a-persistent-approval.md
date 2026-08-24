@@ -22,7 +22,7 @@ scope.
 
 ```
 Approval
-  approval_id, principal_client_id, principal_windows_user
+  approval_id, principal_client_id, principal_os_user
   action_id, scope_hash            -- scope_hash = the Kernel's existing requestHash
                                        (Sha256(action_id + canonical input));
                                        any change to the input changes the scope_hash.

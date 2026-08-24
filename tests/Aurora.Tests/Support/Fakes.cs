@@ -56,7 +56,7 @@ public sealed class NoConsentSessionStore : IConsentSessionStore
 {
     public Task<ConsentSession> OpenAsync(Principal principal, CancellationToken ct) =>
         Task.FromResult(new ConsentSession(
-            "none", principal.ClientId, principal.WindowsUser, "boot", "pv",
+            "none", principal.ClientId, principal.OsUser, "boot", "pv",
             ConsentSessionStatus.Active, 0, 0, "", ""));
 
     public Task<ConsentSessionUse> TryUseAsync(Principal principal, CancellationToken ct) =>
@@ -158,7 +158,7 @@ public sealed class FakeApprovalStore : IApprovalStore
 
         var id = $"appr-{++_sequence}";
         _byId[id] = new ApprovalRecord(
-            id, principal.ClientId, principal.WindowsUser, actionId, scopeHash, ApprovalStatus.Pending, "t0", "t1", null);
+            id, principal.ClientId, principal.OsUser, actionId, scopeHash, ApprovalStatus.Pending, "t0", "t1", null);
         return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Pending, id));
     }
 

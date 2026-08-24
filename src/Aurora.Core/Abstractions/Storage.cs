@@ -15,7 +15,7 @@ public sealed record AuditVerification(bool Ok, long? BrokenSequence, string? Re
 /// </summary>
 public sealed record AuditEntry(
     string PrincipalClientId,
-    string PrincipalWindowsUser,
+    string PrincipalOsUser,
     string ActionId,
     string InputHash,
     string Outcome,
