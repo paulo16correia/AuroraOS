@@ -426,7 +426,8 @@ public sealed class SqliteDatabase
           retention_until_utc TEXT NULL,
           embedding_ref TEXT NULL,
           created_by TEXT NOT NULL,
-          content_hash TEXT NOT NULL
+          content_hash TEXT NOT NULL,
+          anchors TEXT NOT NULL DEFAULT '[]'
         );
 
         CREATE INDEX IF NOT EXISTS idx_memory_subject ON memory(subject_ref, predicate, status);

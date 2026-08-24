@@ -11,6 +11,10 @@ public sealed class MemoryTests
 {
     private static readonly CancellationToken Ct = CancellationToken.None;
 
+    /// <summary>LAW-004: every memory needs at least one anchor carrying its reason.</summary>
+    private static IReadOnlyList<MemoryAnchor> Anchor() =>
+        [new MemoryAnchor(MemoryAnchorKind.Conversation, "conversation/1", "stated in this conversation")];
+
     private sealed class BrokenRanker : IMemoryRanker
     {
         public IReadOnlyList<RankedMemory> Rank(string query, IReadOnlyList<MemoryRecord> permitted) =>
@@ -28,7 +32,8 @@ public sealed class MemoryTests
 
     private static MemoryProvenance From(
         string createdBy = MemoryOrigin.User, string? rule = null, params string[] sources) =>
-        new(sources.Length == 0 ? ["conversation/1"] : sources, ["message/7"], createdBy, "policy/owner", rule);
+        new(sources.Length == 0 ? ["conversation/1"] : sources, ["message/7"], createdBy, "policy/owner",
+            Anchor(), rule);
 
     private static MemoryAccessContext Owner(string max = Sensitivity.Secret) =>
         new("owner", ["policy/owner"], max);
@@ -41,7 +46,7 @@ public sealed class MemoryTests
         using var db = new SqliteTestDb();
 
         await Assert.ThrowsAsync<MemoryException>(() => Service(db).RecordAsync(
-            Candidate(), new MemoryProvenance([], ["e"], MemoryOrigin.User, "policy/owner"), Ct));
+            Candidate(), new MemoryProvenance([], ["e"], MemoryOrigin.User, "policy/owner", Anchor()), Ct));
     }
 
     [Fact]
@@ -50,7 +55,7 @@ public sealed class MemoryTests
         using var db = new SqliteTestDb();
 
         await Assert.ThrowsAsync<MemoryException>(() => Service(db).RecordAsync(
-            Candidate(), new MemoryProvenance(["s"], ["e"], MemoryOrigin.User, ""), Ct));
+            Candidate(), new MemoryProvenance(["s"], ["e"], MemoryOrigin.User, "", Anchor()), Ct));
     }
 
     [Fact]

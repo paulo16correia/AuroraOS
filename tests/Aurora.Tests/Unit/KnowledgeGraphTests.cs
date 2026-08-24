@@ -31,7 +31,8 @@ public sealed class KnowledgeGraphTests
             new MemoryCandidate(
                 MemoryKind.Semantic, subject, predicate, obj, $"{subject} {predicate}", 0.9, sensitivity,
                 ValidFromUtc: validFrom, ValidToUtc: validTo),
-            new MemoryProvenance(["doc/1"], ["page/2"], createdBy, "policy/owner"), Ct);
+            new MemoryProvenance(["doc/1"], ["page/2"], createdBy, "policy/owner",
+                [new MemoryAnchor(MemoryAnchorKind.Document, "doc/1", "the fact was stated in this document")]), Ct);
 
     private static MemoryAccessContext Owner(string max = Sensitivity.Secret) =>
         new("owner", ["policy/owner"], max);

@@ -69,7 +69,35 @@ public sealed record MemoryRecord(
     string? RetentionUntilUtc,
     string? EmbeddingRef,
     string CreatedBy,
-    string ContentHash);
+    string ContentHash,
+    /// <summary>Kept on the record so LAW-004 is auditable after the fact, not only at write time.</summary>
+    IReadOnlyList<MemoryAnchor> Anchors);
+
+/// <summary>Kinds of contextual anchor a memory can be tied to (LAW-004).</summary>
+public static class MemoryAnchorKind
+{
+    public const string Entity = "ENTITY";
+    public const string Goal = "GOAL";
+    public const string Conversation = "CONVERSATION";
+    public const string Observation = "OBSERVATION";
+    public const string Interval = "INTERVAL";
+    public const string Tool = "TOOL";
+    public const string Document = "DOCUMENT";
+    public const string Memory = "MEMORY";
+
+    public static bool IsKnown(string kind) =>
+        kind is Entity or Goal or Conversation or Observation or Interval or Tool or Document or Memory;
+}
+
+/// <summary>
+/// What situates a memory in context (LAW-004).
+/// </summary>
+/// <remarks>
+/// The anchor carries a reason, not merely a pointer. LAW-004's verifiable control is explicit that
+/// links hold reason and evidence rather than vector similarity: "related somehow" is not a
+/// relationship anyone can later explain.
+/// </remarks>
+public sealed record MemoryAnchor(string Kind, string Ref, string Reason);
 
 /// <summary>Where a memory came from and who may see it (RFC 03 rule 1).</summary>
 public sealed record MemoryProvenance(
@@ -77,6 +105,8 @@ public sealed record MemoryProvenance(
     IReadOnlyList<string> EvidenceRefs,
     string CreatedBy,
     string AccessPolicyId,
+    /// <summary>At least one is required: a memory is not born in isolation (LAW-004).</summary>
+    IReadOnlyList<MemoryAnchor> Anchors,
     /// <summary>The specific rule that permits consolidating sensitive material (rule 5).</summary>
     string? SpecificRuleRef = null);
 

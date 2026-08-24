@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Aurora.Adapters.Persistence;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
@@ -36,6 +37,29 @@ public sealed class SqliteMemoryService : IMemoryService
             throw new MemoryException("A memory must declare an access policy.");
         }
 
+        // LAW-004: no memory is born in isolation. A single sentence with no anchor is too weak to
+        // guide a later decision, and unretrievable besides — it has nothing to be found by.
+        if (provenance.Anchors.Count == 0)
+        {
+            throw new MemoryException(
+                "A memory must be anchored to at least one entity, goal, conversation, observation, "
+                + "interval, tool, document or other memory.");
+        }
+
+        foreach (MemoryAnchor anchor in provenance.Anchors)
+        {
+            if (!MemoryAnchorKind.IsKnown(anchor.Kind))
+            {
+                throw new MemoryException($"'{anchor.Kind}' is not a known anchor kind.");
+            }
+
+            // The reason is what makes the link explicable later; a bare pointer is not a relation.
+            if (string.IsNullOrWhiteSpace(anchor.Reason))
+            {
+                throw new MemoryException($"The {anchor.Kind} anchor must record why it applies.");
+            }
+        }
+
         if (!Sensitivity.IsKnown(candidate.SensitivityClass))
         {
             throw new MemoryException($"Unknown sensitivity '{candidate.SensitivityClass}'.");
@@ -62,7 +86,7 @@ public sealed class SqliteMemoryService : IMemoryService
             Math.Clamp(candidate.Confidence, 0, 1), status, candidate.SensitivityClass,
             provenance.AccessPolicyId, candidate.ValidFromUtc, candidate.ValidToUtc,
             candidate.RetentionUntilUtc, EmbeddingRef: null, provenance.CreatedBy,
-            ContentHash: string.Empty);
+            ContentHash: string.Empty, provenance.Anchors);
 
         memory = memory with { ContentHash = HashOf(memory) };
 
@@ -73,9 +97,9 @@ public sealed class SqliteMemoryService : IMemoryService
                 INSERT INTO memory
                     (id, kind, subject_ref, predicate, object_json, summary, source_refs, evidence_refs,
                      confidence, status, sensitivity, access_policy_id, valid_from_utc, valid_to_utc,
-                     retention_until_utc, embedding_ref, created_by, content_hash)
+                     retention_until_utc, embedding_ref, created_by, content_hash, anchors)
                 VALUES (@id, @kind, @subject, @pred, @obj, @summary, @sources, @evidence, @conf,
-                        @status, @sens, @policy, @from, @to, @retain, NULL, @by, @hash);
+                        @status, @sens, @policy, @from, @to, @retain, NULL, @by, @hash, @anchors);
                 """;
             Bind(command, memory);
             await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -375,7 +399,7 @@ public sealed class SqliteMemoryService : IMemoryService
     private const string Select = """
         SELECT id, kind, subject_ref, predicate, object_json, summary, source_refs, evidence_refs,
                confidence, status, sensitivity, access_policy_id, valid_from_utc, valid_to_utc,
-               retention_until_utc, embedding_ref, created_by, content_hash
+               retention_until_utc, embedding_ref, created_by, content_hash, anchors
           FROM memory
         """;
 
@@ -398,6 +422,7 @@ public sealed class SqliteMemoryService : IMemoryService
         command.Parameters.AddWithValue("@retain", (object?)m.RetentionUntilUtc ?? DBNull.Value);
         command.Parameters.AddWithValue("@by", m.CreatedBy);
         command.Parameters.AddWithValue("@hash", m.ContentHash);
+        command.Parameters.AddWithValue("@anchors", JsonSerializer.Serialize(m.Anchors));
     }
 
     private static MemoryRecord Read(SqliteDataReader r) => new(
@@ -407,7 +432,8 @@ public sealed class SqliteMemoryService : IMemoryService
         r.GetDouble(8), r.GetString(9), r.GetString(10), r.GetString(11),
         r.IsDBNull(12) ? null : r.GetString(12), r.IsDBNull(13) ? null : r.GetString(13),
         r.IsDBNull(14) ? null : r.GetString(14), r.IsDBNull(15) ? null : r.GetString(15),
-        r.GetString(16), r.GetString(17));
+        r.GetString(16), r.GetString(17),
+        JsonSerializer.Deserialize<List<MemoryAnchor>>(r.GetString(18)) ?? []);
 
     private static string HashOf(MemoryRecord m) => Hashing.Sha256Hex(string.Join(
         (char)0x1F,
