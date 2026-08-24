@@ -62,6 +62,38 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS genome (
+          id TEXT PRIMARY KEY,
+          family TEXT NOT NULL,
+          version TEXT NOT NULL,
+          parent_genome_ref TEXT NULL,
+          status TEXT NOT NULL,
+          constitution_version TEXT NOT NULL,
+          law_set_version TEXT NOT NULL,
+          base_identity_template_ref TEXT NOT NULL,
+          personality_baseline_ref TEXT NOT NULL,
+          development_profile_ref TEXT NOT NULL,
+          mind_schema_version INTEGER NOT NULL,
+          allowed_capability_ids TEXT NOT NULL,
+          policy_bundle_refs TEXT NOT NULL,
+          default_locales TEXT NOT NULL,
+          bootstrap_configuration_ref TEXT NOT NULL,
+          integrity_hash TEXT NOT NULL,
+          signature TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS genome_resolution (
+          id TEXT PRIMARY KEY,
+          genome_id TEXT NOT NULL,
+          installation_id TEXT NOT NULL,
+          selected_variants TEXT NOT NULL,
+          effective_capability_ids TEXT NOT NULL,
+          denied_overrides TEXT NOT NULL,
+          effective_hash TEXT NOT NULL,
+          resolved_at_utc TEXT NOT NULL,
+          resolver TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS instance_lifecycle (
           instance_id TEXT PRIMARY KEY,
           state TEXT NOT NULL,

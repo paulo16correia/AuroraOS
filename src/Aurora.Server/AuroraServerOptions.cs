@@ -33,6 +33,9 @@ public sealed class AuroraServerOptions
     /// </summary>
     public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>File holding the ECDSA key that signs genome manifests (docs/adr/0017).</summary>
+    public required string GenomeKeyPath { get; init; }
+
     /// <summary>File holding the key that encrypts vault secrets at rest (docs/adr/0014).</summary>
     public required string VaultKeyPath { get; init; }
 
@@ -84,6 +87,9 @@ public sealed class AuroraServerOptions
 
         // Default the audit key and anchor beside the database, but keep them configurable so an
         // operator can put the key somewhere the database's own backups do not reach.
+        var genomeKeyPath = config["Aurora:GenomeKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.genome.key");
+
         var vaultKeyPath = config["Aurora:VaultKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.vault.key");
 
@@ -123,6 +129,7 @@ public sealed class AuroraServerOptions
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
             SandboxFilesEnabled = sandboxFilesEnabled,
+            GenomeKeyPath = genomeKeyPath,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

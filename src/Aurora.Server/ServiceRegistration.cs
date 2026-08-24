@@ -3,6 +3,7 @@ using Aurora.Adapters.Consent;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Vault;
 using Aurora.Adapters.Files;
+using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Lifecycle;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -56,6 +57,8 @@ public static class ServiceRegistration
         services.AddSingleton<IPrincipalAccessor, LocalPrincipalAccessor>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
+        services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));
+        services.AddSingleton<IGenomeService, SqliteGenomeService>();
 
         // Domain adapters.
         services.AddSingleton<ISchemaValidator, JsonSchemaValidator>();
