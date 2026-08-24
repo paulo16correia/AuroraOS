@@ -12,6 +12,7 @@ using Aurora.Adapters.Memories;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Time;
@@ -79,6 +80,13 @@ public static class ServiceRegistration
         services.AddSingleton<IWorkingMemory, SqliteWorkingMemory>();
         services.AddSingleton<IDecisionEngine, SqliteDecisionEngine>();
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
+
+        // One type serves planner, task service and scheduler: they share the same tables and
+        // splitting them would mean three objects arguing about the same rows.
+        services.AddSingleton<SqlitePlanner>();
+        services.AddSingleton<IPlanner>(sp => sp.GetRequiredService<SqlitePlanner>());
+        services.AddSingleton<ITaskService>(sp => sp.GetRequiredService<SqlitePlanner>());
+        services.AddSingleton<ITaskScheduler>(sp => sp.GetRequiredService<SqlitePlanner>());
 
         // Snapshots get their own key: a compromised vault key must not also open every
         // Mind State ever captured (docs/adr/0018).

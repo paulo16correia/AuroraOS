@@ -62,6 +62,64 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS goal (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          outcome TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          priority INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          constraints_json TEXT NOT NULL,
+          success_criteria TEXT NOT NULL,
+          deadline_at_utc TEXT NULL,
+          budget_json TEXT NOT NULL,
+          created_from_ref TEXT NULL,
+          approval_policy_id TEXT NULL,
+          blocked_reason TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS planned_task (
+          id TEXT PRIMARY KEY,
+          goal_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          status TEXT NOT NULL,
+          dependencies TEXT NOT NULL,
+          inputs_json TEXT NOT NULL,
+          expected_output_schema TEXT NULL,
+          risk TEXT NOT NULL,
+          assigned_to TEXT NOT NULL,
+          retry_policy TEXT NOT NULL,
+          idempotency_key TEXT NULL,
+          acceptance_tests TEXT NOT NULL,
+          diagnosis TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_goal ON planned_task(goal_id, status);
+
+        CREATE TABLE IF NOT EXISTS plan (
+          id TEXT PRIMARY KEY,
+          goal_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          rationale TEXT NOT NULL,
+          assumptions TEXT NOT NULL,
+          task_ids TEXT NOT NULL,
+          status TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_plan_goal ON plan(goal_id, revision);
+
+        CREATE TABLE IF NOT EXISTS task_transition (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          from_state TEXT NOT NULL,
+          to_state TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          note TEXT NULL,
+          at_utc TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS cognitive_cycle (
           id TEXT PRIMARY KEY,
           work_item_id TEXT NOT NULL,
