@@ -62,6 +62,59 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS predicate_schema (
+          key TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          allowed_subject_types TEXT NOT NULL,
+          allowed_object_types TEXT NOT NULL,
+          cardinality TEXT NOT NULL,
+          inverse_key TEXT NULL,
+          sensitivity_rule TEXT NULL,
+          acyclic INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS knowledge_entity (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          canonical_name TEXT NOT NULL,
+          aliases TEXT NOT NULL,
+          attributes_json TEXT NOT NULL,
+          status TEXT NOT NULL,
+          sensitivity TEXT NOT NULL,
+          source_refs TEXT NOT NULL,
+          merged_into_id TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_entity_name ON knowledge_entity(type, canonical_name, status);
+
+        CREATE TABLE IF NOT EXISTS knowledge_relation (
+          id TEXT PRIMARY KEY,
+          subject_id TEXT NOT NULL,
+          predicate TEXT NOT NULL,
+          object_id TEXT NULL,
+          literal_json TEXT NULL,
+          qualifier_json TEXT NULL,
+          confidence REAL NOT NULL,
+          source_memory_ids TEXT NOT NULL,
+          status TEXT NOT NULL,
+          valid_from_utc TEXT NULL,
+          valid_to_utc TEXT NULL,
+          asserted_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_relation_subject
+          ON knowledge_relation(subject_id, predicate, status);
+        CREATE INDEX IF NOT EXISTS idx_relation_object ON knowledge_relation(object_id);
+
+        CREATE TABLE IF NOT EXISTS entity_merge (
+          id TEXT PRIMARY KEY,
+          survivor_id TEXT NOT NULL,
+          merged_id TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          at_utc TEXT NOT NULL,
+          reversed INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS memory (
           id TEXT PRIMARY KEY,
           kind TEXT NOT NULL,

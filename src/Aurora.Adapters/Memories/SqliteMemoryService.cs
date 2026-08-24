@@ -258,6 +258,11 @@ public sealed class SqliteMemoryService : IMemoryService
     /// Contradictory memories are both kept and both marked DISPUTED (RFC 03 limit case). Silently
     /// superseding one would destroy the evidence that the two ever disagreed.
     /// </summary>
+    /// <remarks>
+    /// Only memories whose validity windows <b>overlap</b> can contradict each other. Someone who
+    /// lived in one city and then another is not contradicting themselves, and marking that pair
+    /// DISPUTED would both be wrong and stop the graph recording the succession (RFC 04 rule 3).
+    /// </remarks>
     private async Task MarkContradictionsAsync(MemoryRecord memory, CancellationToken ct)
     {
         if (memory.Status != MemoryStatus.Active)
@@ -268,7 +273,7 @@ public sealed class SqliteMemoryService : IMemoryService
         await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id FROM memory
+            SELECT id, valid_from_utc, valid_to_utc FROM memory
              WHERE subject_ref = @subject AND predicate = @pred AND id <> @id
                AND status = @active AND object_json <> @obj;
             """;
@@ -283,7 +288,13 @@ public sealed class SqliteMemoryService : IMemoryService
         {
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                conflicting.Add(reader.GetString(0));
+                var otherFrom = reader.IsDBNull(1) ? null : reader.GetString(1);
+                var otherTo = reader.IsDBNull(2) ? null : reader.GetString(2);
+
+                if (Overlaps(memory.ValidFromUtc, memory.ValidToUtc, otherFrom, otherTo))
+                {
+                    conflicting.Add(reader.GetString(0));
+                }
             }
         }
 
@@ -297,6 +308,22 @@ public sealed class SqliteMemoryService : IMemoryService
             await SetStatusOnlyAsync(memory.Id, MemoryStatus.Disputed, ct).ConfigureAwait(false);
         }
     }
+
+    /// <summary>Half-open windows; a null bound is unbounded on that side.</summary>
+    private static bool Overlaps(string? aFrom, string? aTo, string? bFrom, string? bTo)
+    {
+        DateTimeOffset from1 = Parse(aFrom) ?? DateTimeOffset.MinValue;
+        DateTimeOffset to1 = Parse(aTo) ?? DateTimeOffset.MaxValue;
+        DateTimeOffset from2 = Parse(bFrom) ?? DateTimeOffset.MinValue;
+        DateTimeOffset to2 = Parse(bTo) ?? DateTimeOffset.MaxValue;
+
+        return from1 < to2 && from2 < to1;
+    }
+
+    private static DateTimeOffset? Parse(string? value) =>
+        DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed
+            : null;
 
     private async Task<MemoryRevision> AppendRevisionAsync(
         string memoryId, string operation, string actor, string reason,
