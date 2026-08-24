@@ -118,6 +118,14 @@ public sealed class SqliteAuditStore : IAuditStore
         }
     }
 
+    public async Task<string?> HeadHashAsync(CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT record_hash FROM audit_record ORDER BY sequence DESC LIMIT 1;";
+        return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+    }
+
     public async Task<AuditVerification> VerifyChainAsync(CancellationToken ct)
     {
         await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);

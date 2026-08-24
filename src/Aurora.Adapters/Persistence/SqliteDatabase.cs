@@ -62,6 +62,35 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS mind_state_snapshot (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          schema_version INTEGER NOT NULL,
+          captured_at_utc TEXT NOT NULL,
+          consistency_cursor TEXT NOT NULL,
+          audit_anchor_hash TEXT NULL,
+          encryption_metadata TEXT NOT NULL,
+          status TEXT NOT NULL,
+          non_consistent_components TEXT NOT NULL,
+          nonce BLOB NOT NULL,
+          ciphertext BLOB NOT NULL,
+          tag BLOB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_snapshot_mind
+          ON mind_state_snapshot(mind_id, captured_at_utc);
+
+        CREATE TABLE IF NOT EXISTS recovery_plan (
+          id TEXT PRIMARY KEY,
+          snapshot_id TEXT NOT NULL,
+          target_environment TEXT NOT NULL,
+          steps TEXT NOT NULL,
+          unresolved_tool_call_refs TEXT NOT NULL,
+          reconciliation_policy TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS genome (
           id TEXT PRIMARY KEY,
           family TEXT NOT NULL,

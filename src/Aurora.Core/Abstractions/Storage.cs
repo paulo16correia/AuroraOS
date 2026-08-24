@@ -33,6 +33,12 @@ public interface IAuditStore
 
     /// <summary>Recomputes the chain and reports the first break, if any.</summary>
     Task<AuditVerification> VerifyChainAsync(CancellationToken ct);
+
+    /// <summary>
+    /// The newest record hash, or null on an empty log. A Mind State snapshot pins it so a
+    /// restore can tell which audit position the snapshot belongs to (RFC 043).
+    /// </summary>
+    Task<string?> HeadHashAsync(CancellationToken ct);
 }
 
 /// <summary>Idempotency ledger keyed by (principal client, idempotency_key).</summary>
@@ -62,4 +68,10 @@ public interface IIdempotencyStore
     /// deliberately not retryable — the effect may have happened.
     /// </summary>
     Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct);
+
+    /// <summary>
+    /// Keys whose outcome is indeterminate. RFC 043 rule 2 requires these to be reconciled
+    /// before an instance acts again after a restore.
+    /// </summary>
+    Task<IReadOnlyList<string>> ListUnknownAsync(CancellationToken ct);
 }

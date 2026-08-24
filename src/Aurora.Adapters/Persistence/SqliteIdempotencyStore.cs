@@ -163,6 +163,24 @@ public sealed class SqliteIdempotencyStore : IIdempotencyStore
         return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<string>> ListUnknownAsync(CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT idempotency_key FROM idempotency WHERE state = @unknown ORDER BY updated_at_utc ASC;";
+        command.Parameters.AddWithValue("@unknown", IdempotencyState.Unknown);
+
+        var keys = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            keys.Add(reader.GetString(0));
+        }
+
+        return keys;
+    }
+
     private static IdempotencyBegin Resolve(string storedRequestHash, string storedState, string? storedResultJson, string requestHash)
     {
         if (!string.Equals(storedRequestHash, requestHash, StringComparison.Ordinal))

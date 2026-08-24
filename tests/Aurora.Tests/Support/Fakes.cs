@@ -208,6 +208,9 @@ public sealed class RecordingAuditStore : IAuditStore
 
     public Task<AuditVerification> VerifyChainAsync(CancellationToken ct) =>
         Task.FromResult(new AuditVerification(true, null));
+
+    public Task<string?> HeadHashAsync(CancellationToken ct) =>
+        Task.FromResult<string?>(Outcomes.Count == 0 ? null : $"audit-{Outcomes.Count}");
 }
 
 /// <summary>
@@ -217,6 +220,9 @@ public sealed class RecordingAuditStore : IAuditStore
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
     public Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct) => Task.FromResult(0);
+
+    public Task<IReadOnlyList<string>> ListUnknownAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>([]);
 
     private sealed record Row(string RequestHash, string State, string? ResultJson);
 

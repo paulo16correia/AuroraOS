@@ -33,6 +33,9 @@ public sealed class AuroraServerOptions
     /// </summary>
     public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>File holding the key that encrypts Mind State snapshots (docs/adr/0018).</summary>
+    public required string SnapshotKeyPath { get; init; }
+
     /// <summary>File holding the ECDSA key that signs genome manifests (docs/adr/0017).</summary>
     public required string GenomeKeyPath { get; init; }
 
@@ -87,6 +90,9 @@ public sealed class AuroraServerOptions
 
         // Default the audit key and anchor beside the database, but keep them configurable so an
         // operator can put the key somewhere the database's own backups do not reach.
+        var snapshotKeyPath = config["Aurora:SnapshotKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.snapshot.key");
+
         var genomeKeyPath = config["Aurora:GenomeKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.genome.key");
 
@@ -129,6 +135,7 @@ public sealed class AuroraServerOptions
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
             SandboxFilesEnabled = sandboxFilesEnabled,
+            SnapshotKeyPath = snapshotKeyPath,
             GenomeKeyPath = genomeKeyPath,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
