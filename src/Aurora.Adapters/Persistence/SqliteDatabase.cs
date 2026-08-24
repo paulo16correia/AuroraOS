@@ -62,6 +62,46 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS world_version (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          parent_version_id TEXT NULL,
+          status TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS world_assertion (
+          id TEXT PRIMARY KEY,
+          subject_ref TEXT NOT NULL,
+          predicate TEXT NOT NULL,
+          category TEXT NOT NULL,
+          object_ref TEXT NULL,
+          literal TEXT NULL,
+          evidence_refs TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          valid_from_utc TEXT NOT NULL,
+          valid_to_utc TEXT NULL,
+          observed_at_utc TEXT NOT NULL,
+          asserted_at_utc TEXT NOT NULL,
+          status TEXT NOT NULL,
+          version_id TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_world_subject
+          ON world_assertion(subject_ref, predicate, status);
+
+        CREATE TABLE IF NOT EXISTS entity_resolution (
+          id TEXT PRIMARY KEY,
+          candidate_ref TEXT NOT NULL,
+          observed_name TEXT NOT NULL,
+          match_score REAL NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          decision TEXT NOT NULL,
+          decided_by TEXT NOT NULL,
+          decided_at_utc TEXT NOT NULL,
+          matched_entity_ref TEXT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS predicate_schema (
           key TEXT PRIMARY KEY,
           display_name TEXT NOT NULL,

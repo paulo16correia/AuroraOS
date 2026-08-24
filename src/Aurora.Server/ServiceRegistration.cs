@@ -2,6 +2,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Vault;
+using Aurora.Adapters.World;
 using Aurora.Adapters.Files;
 using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Lifecycle;
@@ -65,6 +66,8 @@ public static class ServiceRegistration
         services.AddSingleton<IMemoryRanker, LexicalMemoryRanker>();
         services.AddSingleton<IMemoryService, SqliteMemoryService>();
         services.AddSingleton<IKnowledgeGraph, SqliteKnowledgeGraph>();
+        services.AddSingleton(WorldModelOptions.Default);
+        services.AddSingleton<IWorldModel, SqliteWorldModel>();
 
         // Snapshots get their own key: a compromised vault key must not also open every
         // Mind State ever captured (docs/adr/0018).
