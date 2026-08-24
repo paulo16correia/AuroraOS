@@ -62,6 +62,25 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS instance_lifecycle (
+          instance_id TEXT PRIMARY KEY,
+          state TEXT NOT NULL,
+          entered_at_utc TEXT NOT NULL,
+          reason TEXT NULL,
+          active_cycle_refs TEXT NOT NULL,
+          pending_action_refs TEXT NOT NULL,
+          last_verified_snapshot_ref TEXT NULL,
+          version INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS lifecycle_proposal (
+          proposal_id TEXT PRIMARY KEY,
+          instance_id TEXT NOT NULL,
+          target_state TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          proposed_at_utc TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS vault_item (
           id TEXT PRIMARY KEY,
           provider TEXT NOT NULL,
