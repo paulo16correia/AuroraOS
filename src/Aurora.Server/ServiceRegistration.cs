@@ -1,6 +1,7 @@
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Consent;
 using Aurora.Adapters.Events;
+using Aurora.Adapters.Vault;
 using Aurora.Adapters.Files;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -35,6 +36,13 @@ public static class ServiceRegistration
         services.AddSingleton<IApprovalStore, SqliteApprovalStore>();
 
         // Event Bus (RFC 050, step 3 of the frozen implementation order).
+        // Vault (RFC 09, step 4). Key outside the database, AES-GCM from the BCL so the same
+        // code runs on Windows, macOS and Linux.
+        services.AddSingleton(VaultOptions.Default);
+        services.AddSingleton(_ => new AesGcmSecretProtector(
+            LocalKeyFile.LoadOrCreate(options.VaultKeyPath, "Vault")));
+        services.AddSingleton<IVault, SqliteVault>();
+
         services.AddSingleton<IOutbox, SqliteOutbox>();
         services.AddSingleton<IEventBus, SqliteEventBus>();
         services.AddSingleton(ConsentSessionOptions.Default);
@@ -44,7 +52,7 @@ public static class ServiceRegistration
         // Runtime.
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IAuroraMetrics, InMemoryMetrics>();
-        services.AddSingleton<IPrincipalAccessor, WindowsPrincipalAccessor>();
+        services.AddSingleton<IPrincipalAccessor, LocalPrincipalAccessor>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
 
         // Domain adapters.

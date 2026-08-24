@@ -33,6 +33,9 @@ public sealed class AuroraServerOptions
     /// </summary>
     public TimeSpan ExecutingStaleAfter { get; init; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>File holding the key that encrypts vault secrets at rest (docs/adr/0014).</summary>
+    public required string VaultKeyPath { get; init; }
+
     /// <summary>File holding the operator passphrase verifier (docs/adr/0011).</summary>
     public required string PassphrasePath { get; init; }
 
@@ -81,6 +84,9 @@ public sealed class AuroraServerOptions
 
         // Default the audit key and anchor beside the database, but keep them configurable so an
         // operator can put the key somewhere the database's own backups do not reach.
+        var vaultKeyPath = config["Aurora:VaultKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.vault.key");
+
         var passphrasePath = config["Aurora:PassphrasePath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.passphrase.json");
 
@@ -117,6 +123,7 @@ public sealed class AuroraServerOptions
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
             SandboxFilesEnabled = sandboxFilesEnabled,
+            VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,
             AuditAnchorPath = auditAnchorPath,

@@ -1,6 +1,3 @@
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-
 namespace Aurora.Adapters.Persistence;
 
 /// <summary>
@@ -20,48 +17,5 @@ public static class AuditKeyFile
 {
     public const int KeyLengthBytes = 32;
 
-    public static byte[] LoadOrCreate(string path)
-    {
-        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        if (File.Exists(path))
-        {
-            var existing = File.ReadAllBytes(path);
-            if (existing.Length != KeyLengthBytes)
-            {
-                // Refuse to silently regenerate: a wrong-length key means every existing record
-                // would fail verification, and overwriting it would destroy the evidence.
-                throw new InvalidOperationException(
-                    $"Audit key at '{path}' is {existing.Length} bytes; expected {KeyLengthBytes}.");
-            }
-
-            return existing;
-        }
-
-        var key = RandomNumberGenerator.GetBytes(KeyLengthBytes);
-
-        // Create with owner-only permissions before any bytes land on disk.
-        var options = new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-        };
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        }
-
-        using (var stream = new FileStream(path, options))
-        {
-            stream.Write(key);
-        }
-
-        return key;
-    }
+    public static byte[] LoadOrCreate(string path) => LocalKeyFile.LoadOrCreate(path, "Audit");
 }

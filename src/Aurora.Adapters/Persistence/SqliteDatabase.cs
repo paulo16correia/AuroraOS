@@ -64,6 +64,23 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_approval_scope
           ON approval(principal_client_id, action_id, scope_hash);
 
+        CREATE TABLE IF NOT EXISTS vault_item (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          locator TEXT NOT NULL,
+          purpose TEXT NOT NULL,
+          allowed_tool_ids TEXT NOT NULL,
+          rotation_due_at_utc TEXT NULL,
+          status TEXT NOT NULL,
+          nonce BLOB NOT NULL,
+          ciphertext BLOB NOT NULL,
+          tag BLOB NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          updated_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vault_status ON vault_item(status);
+
         CREATE TABLE IF NOT EXISTS domain_event (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT,
           event_id TEXT NOT NULL UNIQUE,
