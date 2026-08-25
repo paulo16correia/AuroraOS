@@ -77,6 +77,9 @@ public static class ServiceRegistration
         services.AddSingleton<IClock, SystemClock>();
         services.AddSingleton<IAuroraMetrics, InMemoryMetrics>();
         services.AddSingleton<IPrincipalAccessor, LocalPrincipalAccessor>();
+
+        // The person's credential, which the agent does not hold (RFC 11).
+        services.AddSingleton<OperatorSessions>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

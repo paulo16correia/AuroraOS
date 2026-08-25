@@ -7,6 +7,14 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Embedded rather than served from disk: a panel that could be changed by editing a file
+         next to the binary would be a way to put arbitrary script in front of an operator who is
+         about to approve something. -->
+    <EmbeddedResource Include="Ui/index.html" />
+    <EmbeddedResource Include="Ui/app.css" />
+    <EmbeddedResource Include="Ui/app.js" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Aurora.Core/Aurora.Core.csproj" />
     <ProjectReference Include="../Aurora.Adapters/Aurora.Adapters.csproj" />
   </ItemGroup>

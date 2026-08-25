@@ -1,3 +1,6 @@
+using System.Net;
+using Aurora.Server.Security;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -33,6 +36,29 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         // a test that silently depended on that default would stop covering the capabilities the
         // day somebody changed it.
         builder.UseSetting("Aurora:SandboxFilesEnabled", "true");
+    }
+
+    /// <summary>
+    /// A client carrying an operator session, as a browser would after following the printed link.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a shortcut past the exchange: it mints a grant and redeems it through the
+    /// real endpoint, so the tests exercise the path an operator actually takes.
+    /// </remarks>
+    public async Task<HttpClient> CreateOperatorClientAsync()
+    {
+        HttpClient http = CreateDefaultClient(new Microsoft.AspNetCore.Mvc.Testing.Handlers.CookieContainerHandler());
+
+        var grant = Services.GetRequiredService<OperatorSessions>().Mint();
+        HttpResponseMessage redeemed = await http.GetAsync($"/ui/session?t={grant}");
+
+        if (redeemed.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Redirect
+            or HttpStatusCode.Found or HttpStatusCode.MovedPermanently))
+        {
+            throw new InvalidOperationException($"Could not open an operator session: {redeemed.StatusCode}.");
+        }
+
+        return http;
     }
 
     protected override void Dispose(bool disposing)

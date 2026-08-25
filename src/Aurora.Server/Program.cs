@@ -3,6 +3,7 @@ using Aurora.Core.Abstractions;
 using Aurora.Server;
 using Aurora.Server.Api;
 using Aurora.Server.Mcp;
+using Aurora.Server.Ui;
 using Aurora.Server.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -68,8 +69,15 @@ if (reconciled > 0)
         $"[Aurora] Reconciled {reconciled} reservation(s) stuck in EXECUTING into UNKNOWN.");
 }
 
-// Security pipeline: loopback/Origin guard, then bearer auth, before the MCP endpoints.
+// Security pipeline: loopback/Origin guard, then auth, before anything else.
 app.UseMiddleware<LoopbackGuardMiddleware>();
+
+// Redeeming a printed link happens before auth, because the point of the link is that the browser
+// does not hold a credential yet. Still behind the loopback guard: the link is only usable from
+// this machine.
+app.MapGet("/ui/session", (string? t, HttpContext context, OperatorSessions sessions) =>
+    UiSessionExchange.Redeem(t, context, sessions));
+
 app.UseMiddleware<BearerAuthMiddleware>();
 
 app.MapMcp("/mcp");
@@ -78,6 +86,9 @@ app.MapMcp("/mcp");
 // MCP on purpose: these are the endpoints a person uses to decide, correct and inspect what
 // Aurora did, and they must not be reachable as agent tools.
 app.MapAuroraApi();
+
+// The control panel (RFC 11): the command post for memory, approvals, auditing and health.
+app.MapAuroraUi();
 
 // Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
 // NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
@@ -92,6 +103,18 @@ app.MapGet("/metrics", async (
 // surface, not an MCP tool: the agent must not be able to reason about its own leash.
 app.MapPost("/sessions/revoke", async (IConsentSessionStore sessions, CancellationToken ct) =>
     Results.Json(new { revoked = await sessions.RevokeAllAsync(ct) }));
+
+// The panel's link is printed on this console and nowhere else. It is the only way a person gets
+// a credential the agent does not have, and printing it here is what keeps it that way.
+if (args.Contains("ui", StringComparer.Ordinal))
+{
+    var grant = app.Services.GetRequiredService<OperatorSessions>().Mint();
+    Console.WriteLine();
+    Console.WriteLine("[Aurora] Control panel — open this once, within ten minutes:");
+    Console.WriteLine($"         http://127.0.0.1:{options.Port}/ui/session?t={grant}");
+    Console.WriteLine("[Aurora] The link is single-use. Anyone holding it gets an operator session.");
+    Console.WriteLine();
+}
 
 app.Run();
 

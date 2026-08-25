@@ -3,6 +3,7 @@ using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
+using Aurora.Server.Security;
 
 namespace Aurora.Server.Api;
 
@@ -55,6 +56,7 @@ public static class ApiEndpoints
         app.MapGet("/v1/audit", ReadAuditAsync);
         app.MapGet("/v1/stream", StreamAsync);
         app.MapGet("/v1/status", ReadStatusAsync);
+        app.MapGet("/v1/catalog", ReadCatalog);
         app.MapPost("/v1/maintenance", RunMaintenanceAsync);
         return app;
     }
@@ -144,11 +146,17 @@ public static class ApiEndpoints
     // ---- approvals: this is where the person decides ----
 
     private static Task<IResult> DecideApprovalAsync(
-        string id, DecideApprovalBody body, HttpRequest request,
+        string id, DecideApprovalBody body, HttpContext context,
         AuroraKernel kernel, IIdempotencyStore idempotency, IPrincipalAccessor principals,
         CancellationToken ct)
     {
+        HttpRequest request = context.Request;
         var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return Task.FromResult(refused);
+        }
 
         // Through the Kernel rather than straight to the store, so an approval decided here is
         // subject to the same passphrase check and leaves the same audit trail as one decided
@@ -178,11 +186,17 @@ public static class ApiEndpoints
     }
 
     private static async Task<IResult> CorrectMemoryAsync(
-        string id, CorrectMemoryBody body, HttpRequest request,
+        string id, CorrectMemoryBody body, HttpContext context,
         IMemoryService memories, IIdempotencyStore idempotency, IPrincipalAccessor principals,
         CancellationToken ct)
     {
+        HttpRequest request = context.Request;
         var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
 
         if (await HiddenAsync(memories, principals, id, ct))
         {
@@ -197,11 +211,17 @@ public static class ApiEndpoints
     }
 
     private static async Task<IResult> ForgetMemoryAsync(
-        string id, HttpRequest request,
+        string id, HttpContext context,
         IMemoryService memories, IIdempotencyStore idempotency, IPrincipalAccessor principals,
         CancellationToken ct)
     {
+        HttpRequest request = context.Request;
         var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
 
         if (await HiddenAsync(memories, principals, id, ct))
         {
@@ -232,6 +252,17 @@ public static class ApiEndpoints
 
         return Results.Json(ApiEnvelopes.Ok(page, correlationId, links));
     }
+
+    /// <summary>
+    /// What Aurora is offering to do, and what each of those costs in permission.
+    /// </summary>
+    /// <remarks>
+    /// The same list the agent sees through <c>aurora_catalog</c>. Shown to the person too, because
+    /// "what is this thing allowed to do" is the first question anyone reasonably asks, and it
+    /// should not require reading a config file to answer.
+    /// </remarks>
+    private static IResult ReadCatalog(string? query, HttpRequest request, AuroraKernel kernel) =>
+        Results.Json(ApiEnvelopes.Ok(kernel.Catalog(query), ApiEnvelopes.CorrelationOf(request)));
 
     // ---- status and upkeep ----
 
@@ -373,6 +404,26 @@ public static class ApiEndpoints
     /// </summary>
     private static MemoryAccessContext AccessFor(Principal principal) =>
         new(principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Confidential);
+
+    /// <summary>
+    /// Refuses a deciding request that did not come from a person.
+    /// </summary>
+    /// <remarks>
+    /// RFC 11 makes the panel the place where impact actions are approved, and the whole value of
+    /// that is that the panel needs a credential the agent does not hold. Approving, correcting,
+    /// forgetting and revoking therefore require an operator session; the bearer token, which
+    /// belongs to the MCP client, is not enough. Without this the agent could approve its own
+    /// request simply by calling the endpoint instead of the tool.
+    /// </remarks>
+    private static IResult? RequireOperator(HttpContext context, string correlationId) =>
+        RequestActor.IsOperator(context)
+            ? null
+            : Results.Json(
+                ApiEnvelopes.Fail(
+                    correlationId, ApiErrorCode.Forbidden,
+                    "This decision is made by a person. Run 'ui' on the Aurora console to open the "
+                    + "control panel."),
+                statusCode: StatusCodes.Status403Forbidden);
 
     private static string? KeyOf(HttpRequest request) =>
         request.Headers.TryGetValue("Idempotency-Key", out var key) ? key.ToString() : null;

@@ -93,6 +93,18 @@ public sealed class StatusAndMaintenanceTests
     }
 
     [Fact]
+    public void AZeroReadingFromTheRuntimeIsNotAMeasurement()
+    {
+        // MemoryLoadBytes is populated by the GC and reads zero until the first collection. Zero
+        // is not a plausible memory load on a running machine, so it is reported as unmeasured
+        // rather than as a very healthy one.
+        ResourceReading reading = new SystemResourceProbe(new TestClock(At("2026-01-15T09:00:00+00:00")))
+            .Read();
+
+        Assert.True(reading.MemoryFraction is null or > 0);
+    }
+
+    [Fact]
     public async Task WorkThatWillNotSayWhatItCostsIsNotAdmitted()
     {
         var model = new SystemResourceModel(new FakeResourceProbe(), new TestClock(At("2026-01-15T09:00:00+00:00")));

@@ -1,0 +1,130 @@
+/* Aurora control panel.
+   No framework, no build step, no remote origin: the page where approvals are decided should be
+   the last page in the system that can load anything. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #fbfbfa; --fg: #16150f; --muted: #57544a; --line: #dcd8cd;
+  --card: #ffffff; --accent: #6a4b16; --warn: #7a2e12; --ok: #2b5c2b;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171613; --fg: #eceae2; --muted: #a5a093; --line: #33302a;
+    --card: #1f1e1a; --accent: #d5aa5c; --warn: #e28a6a; --ok: #8fc08f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.skip {
+  position: absolute; left: -999px;
+}
+.skip:focus {
+  left: 8px; top: 8px; z-index: 10; padding: 8px 12px;
+  background: var(--card); border: 2px solid var(--accent);
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+}
+
+.bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 20px; border-bottom: 1px solid var(--line);
+}
+.bar h1 { font-size: 17px; margin: 0; letter-spacing: 0.02em; }
+.freshness { margin: 0 auto 0 8px; color: var(--muted); font-size: 13px; }
+
+.tabs {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  padding: 0 12px; border-bottom: 1px solid var(--line);
+}
+.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 10px 12px; font: inherit; color: var(--muted); cursor: pointer;
+}
+.tabs button[aria-selected="true"] {
+  color: var(--fg); border-bottom-color: var(--accent); font-weight: 600;
+}
+.tabs button:focus-visible, .bar button:focus-visible, .card button:focus-visible,
+input:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+main { padding: 20px; max-width: 900px; }
+h2 { font-size: 20px; margin: 0 0 4px; }
+h3 { font-size: 15px; margin: 28px 0 8px; }
+.lede { color: var(--muted); margin: 0 0 18px; max-width: 62ch; }
+
+.cards { display: flex; flex-direction: column; gap: 12px; }
+
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.card h4 { margin: 0 0 4px; font-size: 15px; }
+.card p { margin: 4px 0; }
+.card dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 10px 0 0; }
+.card dt { color: var(--muted); font-size: 13px; }
+.card dd { margin: 0; font-size: 13px; word-break: break-word; }
+
+.empty { color: var(--muted); font-style: italic; }
+
+/* Lifecycle state (RFC 11 rule 1). The word carries the meaning; the shape and the border are
+   there so it does not depend on colour, and the colour only reinforces it. */
+.state {
+  display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; text-transform: uppercase;
+}
+.state-generated { color: var(--muted); border-style: dashed; }
+.state-draft     { color: var(--muted); border-style: dotted; }
+.state-proposed  { color: var(--warn); border-style: dashed; }
+.state-ongoing   { color: var(--accent); border-style: solid; }
+.state-completed { color: var(--ok); border-style: solid; }
+
+button.primary, button.reject {
+  font: inherit; padding: 8px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg);
+}
+button.primary { border-color: var(--accent); font-weight: 600; }
+button.reject { border-color: var(--warn); color: var(--warn); }
+button.ghost {
+  font: inherit; font-size: 13px; padding: 5px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: none; color: var(--fg); cursor: pointer;
+}
+button[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+
+/* Rule 4: sensitive material is hidden until an explicit, temporary gesture reveals it. */
+.sensitive { display: inline-flex; align-items: center; gap: 8px; }
+.sensitive .value { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.sensitive .value[data-hidden="true"] { color: var(--muted); letter-spacing: 0.15em; }
+
+form[role="search"] { display: flex; gap: 8px; align-items: end; margin-bottom: 16px; flex-wrap: wrap; }
+form[role="search"] label { display: block; font-size: 13px; color: var(--muted); }
+input[type="search"] {
+  font: inherit; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 240px;
+}
+form[role="search"] button {
+  font: inherit; padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer;
+}
+
+.degraded {
+  margin: 0; padding: 12px 20px;
+  border-bottom: 1px solid var(--warn); color: var(--warn); background: var(--card);
+}
+
+.stale { color: var(--warn); font-weight: 600; }
+.problem { color: var(--warn); }

@@ -5,6 +5,7 @@ using System.Text.Json;
 using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Server.Security;
 using Aurora.Tests.Support;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -53,6 +54,9 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
 
     private static string Key() => Guid.NewGuid().ToString("N");
+
+    private IMemoryService MemoryStore() =>
+        _factory.Services.GetRequiredService<IMemoryService>();
 
     private async Task<MemoryRecord> RememberAsync(
         string summary, string sensitivity = Sensitivity.Private, string policy = MemoryAccessPolicy.Owner)
@@ -195,7 +199,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     {
         MemoryRecord hidden = await RememberAsync("Not yours.", policy: "policy/other");
 
-        using HttpClient http = Client();
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
         HttpResponseMessage response = await http.SendAsync(
             Request(HttpMethod.Patch, $"/v1/memories/{hidden.Id}", new { reason = "Wrong." }, Key()), Ct());
 
@@ -211,7 +215,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     {
         MemoryRecord memory = await RememberAsync("The owner prefers coffee.");
 
-        using HttpClient http = Client();
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
         HttpResponseMessage response = await http.SendAsync(
             Request(
                 HttpMethod.Patch, $"/v1/memories/{memory.Id}",
@@ -230,7 +234,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     {
         MemoryRecord memory = await RememberAsync("Forget this.");
 
-        using HttpClient http = Client();
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
         HttpResponseMessage response = await http.SendAsync(
             Request(HttpMethod.Delete, $"/v1/memories/{memory.Id}", body: null, Key()), Ct());
 
@@ -307,6 +311,129 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         Assert.Equal(string.Empty, await http.GetStringAsync($"/v1/stream?after={after}", Ct()));
     }
 
+    // ---- RFC 11: deciding is a person's act, and needs a person's credential ----
+
+    [Fact]
+    public async Task TheAgentSTokenCannotDecideAnApproval()
+    {
+        using HttpClient agent = Client();
+        HttpResponseMessage response = await agent.SendAsync(
+            Request(
+                HttpMethod.Post, "/v1/approvals/anything/decide",
+                new { decision = "approved" }, Key()),
+            Ct());
+
+        // Without this, the agent could approve its own request simply by calling the panel's API
+        // instead of the tool. The bearer token belongs to the MCP client; the session does not.
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task TheAgentSTokenCannotCorrectOrForgetAMemory()
+    {
+        MemoryRecord memory = await RememberAsync("the owner prefers tea.");
+
+        using HttpClient agent = Client();
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await agent.SendAsync(
+                Request(HttpMethod.Patch, $"/v1/memories/{memory.Id}", new { reason = "no" }, Key()),
+                Ct())).StatusCode);
+
+        Assert.Equal(
+            HttpStatusCode.Forbidden,
+            (await agent.SendAsync(
+                Request(HttpMethod.Delete, $"/v1/memories/{memory.Id}", body: null, Key()),
+                Ct())).StatusCode);
+
+        // And it is still there, which is the point.
+        Assert.NotNull(await MemoryStore().GetAsync(memory.Id, Ct()));
+    }
+
+    [Fact]
+    public async Task ReadingIsOpenToBothSurfaces()
+    {
+        // The split is about deciding, not about looking. An agent that cannot read the audit log
+        // cannot explain itself.
+        using HttpClient agent = Client();
+        (await agent.GetAsync("/v1/audit", Ct())).EnsureSuccessStatusCode();
+        (await agent.GetAsync("/v1/status?timezone=Europe/Lisbon", Ct())).EnsureSuccessStatusCode();
+    }
+
+    // ---- RFC 11: the panel itself ----
+
+    [Fact]
+    public async Task ThePanelIsNotServedToAnyoneWithoutACredential()
+    {
+        using HttpClient anonymous = _factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/ui/", Ct())).StatusCode);
+    }
+
+    [Fact]
+    public async Task AnOperatorLinkWorksOnceAndOnlyOnce()
+    {
+        var grant = _factory.Services.GetRequiredService<OperatorSessions>().Mint();
+
+        using HttpClient first = _factory.CreateDefaultClient(
+            new Microsoft.AspNetCore.Mvc.Testing.Handlers.CookieContainerHandler());
+
+        HttpResponseMessage redeemed = await first.GetAsync($"/ui/session?t={grant}", Ct());
+        Assert.NotEqual(HttpStatusCode.Unauthorized, redeemed.StatusCode);
+
+        // A link that keeps working is a link that keeps working for whoever finds it in a shell
+        // history or a screenshot.
+        using HttpClient second = _factory.CreateClient();
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            (await second.GetAsync($"/ui/session?t={grant}", Ct())).StatusCode);
+    }
+
+    [Fact]
+    public async Task ThePanelLoadsForAnOperatorAndCarriesNoRemoteOrigin()
+    {
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+
+        HttpResponseMessage page = await http.GetAsync("/ui/", Ct());
+        page.EnsureSuccessStatusCode();
+
+        var html = await page.Content.ReadAsStringAsync(Ct());
+
+        Assert.Contains("Aurora", html, StringComparison.Ordinal);
+        Assert.Contains("/ui/app.js", html, StringComparison.Ordinal);
+
+        // Nothing loads from anywhere else. The page where approvals are decided is the last page
+        // in the system that should be able to.
+        Assert.DoesNotContain("http://", html.Replace("http://127.0.0.1", "", StringComparison.Ordinal), StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", html, StringComparison.Ordinal);
+
+        var policy = page.Headers.TryGetValues("Content-Security-Policy", out var values)
+            ? string.Join(' ', values)
+            : string.Empty;
+
+        Assert.Contains("default-src 'none'", policy, StringComparison.Ordinal);
+        Assert.Contains("frame-ancestors 'none'", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SigningOutEndsTheSessionImmediately()
+    {
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+        (await http.PostAsync("/ui/session/end", content: null, Ct())).EnsureSuccessStatusCode();
+
+        // The cookie is still in the jar; the server has simply stopped honouring it. That leaves
+        // the client with no credential at all — 401, not 403, which is the stronger answer: it is
+        // not that this caller may not decide, it is that there is no caller.
+        HttpResponseMessage after = await http.SendAsync(
+            Request(
+                HttpMethod.Post, "/v1/approvals/anything/decide",
+                new { decision = "approved" }, Key()),
+            Ct());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, after.StatusCode);
+    }
+
     // ---- status and upkeep ----
 
     [Fact]
@@ -356,7 +483,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     [Fact]
     public async Task DecidingAnApprovalThatDoesNotExistSaysSoWithoutFailing()
     {
-        using HttpClient http = Client();
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
         HttpResponseMessage response = await http.SendAsync(
             Request(
                 HttpMethod.Post, "/v1/approvals/does-not-exist/decide",

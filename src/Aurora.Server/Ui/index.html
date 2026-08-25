@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aurora — control panel</title>
+  <link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+  <a class="skip" href="#panel">Skip to panel</a>
+
+  <header class="bar">
+    <h1>Aurora</h1>
+
+    <!-- RFC 11 limit case: the operator must know how old this view is before acting on it. -->
+    <p class="freshness" id="freshness" aria-live="polite">Loading…</p>
+
+    <button type="button" id="reload" class="ghost">Reload</button>
+    <button type="button" id="signout" class="ghost">Sign out</button>
+  </header>
+
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" role="tab" aria-selected="true"  data-route="work">Conversation &amp; work</button>
+    <button type="button" role="tab" aria-selected="false" data-route="goals">Objectives &amp; tasks</button>
+    <button type="button" role="tab" aria-selected="false" data-route="memory">Memory</button>
+    <button type="button" role="tab" aria-selected="false" data-route="approvals">Approvals &amp; tools</button>
+    <button type="button" role="tab" aria-selected="false" data-route="audit">Audit &amp; health</button>
+  </nav>
+
+  <p id="degraded" class="degraded" role="status" hidden>
+    Aurora is not answering. This view is <strong>read only</strong> — nothing here can be
+    confirmed by the server, so no action will be accepted until it responds.
+  </p>
+
+  <main id="panel" tabindex="-1">
+    <section id="work" class="route" aria-labelledby="work-h">
+      <h2 id="work-h">Conversation &amp; work</h2>
+      <p class="lede">
+        What Aurora is doing right now. A cycle appears here only while it is actually open —
+        an empty list means nothing is running, not that something is happening quietly.
+      </p>
+      <div id="work-body" class="cards"></div>
+    </section>
+
+    <section id="goals" class="route" hidden aria-labelledby="goals-h">
+      <h2 id="goals-h">Objectives &amp; tasks</h2>
+      <p class="lede">
+        Goals Aurora holds, and which mission each one serves. A goal serving no mission carries
+        the date somebody has to look at it again.
+      </p>
+      <div id="goals-body" class="cards"></div>
+    </section>
+
+    <section id="memory" class="route" hidden aria-labelledby="memory-h">
+      <h2 id="memory-h">Memory</h2>
+      <p class="lede">
+        Everything Aurora believes it knows, where each belief came from, and how sure it is.
+        You can correct any of it or ask for it to be forgotten.
+      </p>
+      <form id="memory-search" role="search">
+        <label for="memory-q">Search memory</label>
+        <input type="search" id="memory-q" name="q" placeholder="e.g. tea, address, meeting">
+        <button type="submit">Search</button>
+      </form>
+      <div id="memory-body" class="cards"></div>
+    </section>
+
+    <section id="approvals" class="route" hidden aria-labelledby="approvals-h">
+      <h2 id="approvals-h">Approvals &amp; tools</h2>
+      <p class="lede">
+        Aurora asked before doing these. Each card shows exactly what would happen, to what, and
+        what it would disclose. Approving covers that request and nothing else.
+      </p>
+      <div id="approvals-body" class="cards"></div>
+
+      <h3>Capabilities offered</h3>
+      <div id="capabilities-body" class="cards"></div>
+    </section>
+
+    <section id="audit" class="route" hidden aria-labelledby="audit-h">
+      <h2 id="audit-h">Audit &amp; health</h2>
+      <p class="lede">Every action Aurora took, newest last, and how the system itself is doing.</p>
+      <div id="health-body" class="cards"></div>
+      <h3>Audited actions</h3>
+      <div id="audit-body" class="cards"></div>
+      <button type="button" id="audit-more" class="ghost">Load older</button>
+    </section>
+  </main>
+
+  <div id="announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>

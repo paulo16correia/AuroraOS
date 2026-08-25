@@ -67,11 +67,20 @@ public sealed class SystemResourceProbe : IResourceProbe
         }
     }
 
+    /// <summary>
+    /// Machine memory pressure, or null when the runtime has not measured it yet.
+    /// </summary>
+    /// <remarks>
+    /// <c>MemoryLoadBytes</c> is populated by the garbage collector, so it reads zero until the
+    /// first collection. Zero is not a plausible memory load on any running machine — reporting it
+    /// would be claiming a measurement nobody took, which is the failure the unmeasured list
+    /// exists to prevent.
+    /// </remarks>
     private static double? SampleMemory()
     {
         GCMemoryInfo info = GC.GetGCMemoryInfo();
 
-        return info.TotalAvailableMemoryBytes <= 0
+        return info.TotalAvailableMemoryBytes <= 0 || info.MemoryLoadBytes <= 0
             ? null
             : Math.Clamp((double)info.MemoryLoadBytes / info.TotalAvailableMemoryBytes, 0, 1);
     }
