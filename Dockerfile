@@ -42,6 +42,7 @@ USER aurora:aurora
 VOLUME ["/var/lib/aurora"]
 
 ENV Aurora__Port=8080 \
+    Aurora__BindAddress=0.0.0.0 \
     Aurora__DbPath=/var/lib/aurora/aurora.db \
     Aurora__AuditKeyPath=/var/lib/aurora/audit.key \
     Aurora__AuditAnchorPath=/var/lib/aurora/audit.anchor \
@@ -56,7 +57,11 @@ EXPOSE 8080
 
 # Liveness only. Readiness carries detail and lives behind the auth guard, which a container
 # runtime has no business holding.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD ["/bin/sh", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/live HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+#
+# Run through Aurora itself: this image has no curl and no wget, and its /bin/sh is dash, which has
+# no /dev/tcp. Adding a package so a probe can run would be enlarging the attack surface to answer
+# one question that Aurora can already answer.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=25s --retries=3 \
+    CMD ["dotnet", "/app/Aurora.Server.dll", "health"]
 
 ENTRYPOINT ["dotnet", "/app/Aurora.Server.dll"]

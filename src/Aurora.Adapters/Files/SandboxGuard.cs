@@ -5,10 +5,10 @@ namespace Aurora.Adapters.Files;
 /// <summary>
 /// Filesystem-level sandbox checks shared by the reader and the writer (docs/adr/0003, 0010).
 /// </summary>
-internal static class SandboxGuard
+public static class SandboxGuard
 {
     /// <summary>Resolves the sandbox root through its own links, creating it when absent.</summary>
-    internal static string ResolveRoot(string sandboxRoot)
+    public static string ResolveRoot(string sandboxRoot)
     {
         Directory.CreateDirectory(sandboxRoot);
         RestrictToOwner(sandboxRoot);
@@ -31,7 +31,7 @@ internal static class SandboxGuard
     /// lives.
     /// </para>
     /// </remarks>
-    internal static void RestrictToOwner(string directory)
+    public static void RestrictToOwner(string directory)
     {
         if (OperatingSystem.IsWindows())
         {

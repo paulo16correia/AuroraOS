@@ -38,6 +38,9 @@ services:
     environment:
       # Supplied by the operator, never baked into the image.
       Aurora__BearerToken: ${AURORA_BEARER_TOKEN:?set AURORA_BEARER_TOKEN}
+      # The proxy forwards the public name, so loopback would reject every real request. An
+      # allowlist the operator writes, not a guard that switches itself off.
+      Aurora__AllowedHosts: ${AURORA_ALLOWED_HOSTS:?set AURORA_ALLOWED_HOSTS, e.g. aurora.example.com}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

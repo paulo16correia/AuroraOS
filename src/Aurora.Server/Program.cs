@@ -21,7 +21,17 @@ if (PassphraseConsole.TryHandle(args, options) || OperationsConsole.TryHandle(ar
 // Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
-    kestrel.ListenLocalhost(options.Port);
+    // Loopback on a desktop install; a container has to bind its whole namespace or the proxy
+    // cannot reach it. Binding beyond loopback without declaring the allowed hosts is refused
+    // when the options are read, so this cannot quietly become an open port.
+    if (options.BindAddress is "127.0.0.1" or "localhost")
+    {
+        kestrel.ListenLocalhost(options.Port);
+    }
+    else
+    {
+        kestrel.Listen(System.Net.IPAddress.Parse(options.BindAddress), options.Port);
+    }
     // Resource guard: reject oversized bodies at the transport before any parsing/canonicalization.
     kestrel.Limits.MaxRequestBodySize = 64 * 1024;
 });

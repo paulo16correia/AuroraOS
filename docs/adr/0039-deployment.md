@@ -88,18 +88,44 @@ meant for something else.
 **The keys are not in the backup**, and the scripts say so twice. A backup carrying its own signing
 key proves nothing about itself.
 
-## What I could not verify here
+## Built and run, and what that found
 
-**The container was never built.** There is no Docker on this machine. What I did check: every path
-the Dockerfile copies exists, `dotnet restore --locked-mode` and the exact `dotnet publish`
-invocation both succeed, and all four shell scripts parse. What remains unproven is the image build
-itself, the compose topology, and the healthcheck's shell one-liner. Whoever runs `docker compose
-build` first is testing that for the first time, and should expect to.
+The container was built and run after the fact, and every one of these was a real defect that only
+appears when you actually do it:
+
+- **`COPY src/ src/` clobbered the restore.** The host's `obj/` overwrote the container's, and its
+  assets file points at NuGet paths on a laptop. The publish then could not find a package it had
+  just restored. There was no `.dockerignore` at all; there is one now, and excluding `bin/` and
+  `obj/` is not about speed.
+- **Kestrel bound loopback, so nothing could reach it** — not the published port, not the proxy on
+  the internal network. `Aurora:BindAddress` defaults to loopback for the desktop install and the
+  image sets `0.0.0.0`.
+- **The Host guard rejected the proxy.** A reverse proxy forwards the public name, which loopback
+  refuses. `Aurora:AllowedHosts` is an allowlist the operator writes — and binding beyond loopback
+  *without* writing one is refused at startup, because the binding and the guard are one control
+  and half of it is worse than neither.
+- **The healthcheck could not run.** `/dev/tcp` is a bash feature and the runtime image's `/bin/sh`
+  is dash; there is no curl and no wget either. Adding a package so a probe could run would be
+  enlarging the attack surface to answer one question Aurora can already answer, so the check is
+  `dotnet Aurora.Server.dll health`.
+- **The sandbox root sat at 755.** `RestrictToOwner` runs when the writer is constructed, and the
+  writer is constructed lazily — so an instance that never touched a file left it world-readable
+  indefinitely, which is exactly the precondition ADR 0036's hardening rests on. It is applied at
+  creation now.
+
+Verified running: the image builds, the container reports **healthy** through its own healthcheck,
+`/health` returns PASS across all six components, a request with a foreign `Host` gets 421, the root
+filesystem is genuinely read-only, and the volume is `0700` with the audit key at `0600`. 427 MB.
+
+## What is still unverified
+
+**The compose topology.** The two-service arrangement with Caddy was never brought up — that needs
+a real domain and a certificate, which this machine has neither of. The Aurora service was exercised
+standalone with the same hardening flags compose applies.
 
 **The proxy image is pinned by tag, not digest.** Rule 2 wants digests and `ops/release.sh` records
-the ones it actually ran — but the value in `compose.yaml` is a tag, because resolving a digest
-needs a registry this machine cannot reach. Pin it before a real deployment.
+the ones it ran — but the value in `compose.yaml` is a tag, because resolving a digest needs a
+registry. Pin it before a real deployment.
 
 **TLS and DNS are configuration, not code.** The Caddyfile names `aurora.example.com` and obtains
-its own certificate. Rule 1's controlled DNS and administrative access are the operator's, and
-nothing here can do them on their behalf.
+its own certificate. Rule 1's controlled DNS and administrative access are the operator's.

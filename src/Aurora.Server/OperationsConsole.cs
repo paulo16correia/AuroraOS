@@ -20,9 +20,14 @@ public static class OperationsConsole
     public static bool TryHandle(string[] args, AuroraServerOptions options)
     {
         var command = args.FirstOrDefault();
-        if (command is not ("backup" or "restore-test"))
+        if (command is not ("backup" or "restore-test" or "health"))
         {
             return false;
+        }
+
+        if (command == "health")
+        {
+            return Liveness(options);
         }
 
         var target = args.Length > 1 ? args[1] : null;
@@ -168,4 +173,42 @@ public static class OperationsConsole
 
     private static string Iso(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Asks this instance's own liveness endpoint and exits 0 or 1.
+    /// </summary>
+    /// <remarks>
+    /// The container healthcheck. The runtime image carries no curl and no wget, and its
+    /// <c>/bin/sh</c> is dash, which has no <c>/dev/tcp</c> — so a shell one-liner cannot do this,
+    /// and adding a package to the image so it can would be enlarging the attack surface to run a
+    /// probe. Aurora already speaks HTTP.
+    /// </remarks>
+    private static bool Liveness(AuroraServerOptions options)
+    {
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+
+        try
+        {
+            HttpResponseMessage response = client
+                .GetAsync($"http://127.0.0.1:{options.Port}/health/live")
+                .GetAwaiter().GetResult();
+
+            var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult().Trim();
+
+            if (response.IsSuccessStatusCode && body == "ok")
+            {
+                Environment.ExitCode = 0;
+                return true;
+            }
+
+            Console.Error.WriteLine($"[Aurora] not live: {(int)response.StatusCode} {body}");
+        }
+        catch (Exception unreachable) when (unreachable is HttpRequestException or TaskCanceledException)
+        {
+            Console.Error.WriteLine($"[Aurora] not live: {unreachable.GetType().Name}");
+        }
+
+        Environment.ExitCode = 1;
+        return true;
+    }
 }
