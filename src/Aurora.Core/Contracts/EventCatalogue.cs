@@ -40,6 +40,14 @@ public static class EventCatalogue
     public const string ReviewRequested = "ReviewRequested";
     public const string ExternalObservationReported = "ExternalObservationReported";
     public const string PluginQuarantined = "PluginQuarantined";
+    public const string MissionChanged = "MissionChanged";
+    public const string BeliefChallenged = "BeliefChallenged";
+    public const string RelationshipEnded = "RelationshipEnded";
+    public const string DevelopmentStageChanged = "DevelopmentStageChanged";
+    public const string LifeEpisodeVerified = "LifeEpisodeVerified";
+    public const string GoalDrafted = "GoalDrafted";
+    public const string IdentityActivated = "IdentityActivated";
+    public const string OperationalStateChanged = "OperationalStateChanged";
 
     /// <summary>Producers, named once so a typo cannot invent one.</summary>
     public static class Producers
@@ -50,6 +58,14 @@ public static class EventCatalogue
         public const string Maintenance = "maintenance";
         public const string Review = "review";
         public const string Memory = "memory";
+        public const string Missions = "missions";
+        public const string Beliefs = "beliefs";
+        public const string Relationships = "relationships";
+        public const string Development = "development";
+        public const string LifeHistory = "life-history";
+        public const string Planner = "planner";
+        public const string Identity = "identity";
+        public const string Self = "self";
 
         /// <summary>The ingress endpoint. The only producer reachable from outside Aurora.</summary>
         public const string Api = "api";
@@ -100,6 +116,38 @@ public static class EventCatalogue
         new(PluginQuarantined, 1, Producers.Kernel, Sensitivity.Private,
             "plugin_id and why it was held; never what the plugin returned",
             ["ui", "audit", "review"]),
+
+        new(MissionChanged, 1, Producers.Missions, Sensitivity.Private,
+            "mission_id and the status it moved to; never the purpose text",
+            ["ui", "review"]),
+
+        new(BeliefChallenged, 1, Producers.Beliefs, Sensitivity.Private,
+            "belief_id and that it was contradicted; never the claim itself",
+            ["ui", "attention", "review"]),
+
+        new(RelationshipEnded, 1, Producers.Relationships, Sensitivity.Private,
+            "relationship_id and that its interval closed; never who it was with",
+            ["ui", "world", "review"]),
+
+        new(DevelopmentStageChanged, 1, Producers.Development, Sensitivity.Private,
+            "the stage moved from and to, and whether autonomy grew or shrank",
+            ["ui", "audit", "review"]),
+
+        new(LifeEpisodeVerified, 1, Producers.LifeHistory, Sensitivity.Private,
+            "episode_id and its kind; never the narrative",
+            ["ui", "review"]),
+
+        new(GoalDrafted, 1, Producers.Planner, Sensitivity.Private,
+            "goal_id and its status; never the outcome text",
+            ["ui", "needs", "review"]),
+
+        new(IdentityActivated, 1, Producers.Identity, Sensitivity.Private,
+            "which profile version became active, and who approved it",
+            ["ui", "audit", "review"]),
+
+        new(OperationalStateChanged, 1, Producers.Self, Sensitivity.Private,
+            "the operational state moved from and to; published on transition, never on every reading",
+            ["ui", "review", "metrics"]),
 
         // The one ingress type. A UI or channel normalises something it saw and reports it; it is
         // an observation, not a fact Aurora has accepted, and nothing subscribes to it as truth.

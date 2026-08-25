@@ -56,8 +56,9 @@ public sealed class SqliteOutbox : IOutbox
             INSERT INTO domain_event
                 (event_id, type, schema_version, producer, occurred_at_utc, correlation_id,
                  causation_id, aggregate_ref, payload_json, payload_ref, sensitivity,
-                 idempotency_key, integrity_hash)
-            VALUES (@id, @type, @ver, @prod, @at, @corr, @caus, @agg, @pj, @pr, @sens, @idem, @hash);
+                 idempotency_key, integrity_hash, tenant_id)
+            VALUES (@id, @type, @ver, @prod, @at, @corr, @caus, @agg, @pj, @pr, @sens, @idem,
+                    @hash, @tenant);
             """;
         command.Parameters.AddWithValue("@id", domainEvent.EventId);
         command.Parameters.AddWithValue("@type", domainEvent.Type);
@@ -72,6 +73,7 @@ public sealed class SqliteOutbox : IOutbox
         command.Parameters.AddWithValue("@sens", domainEvent.SensitivityClass);
         command.Parameters.AddWithValue("@idem", (object?)domainEvent.IdempotencyKey ?? DBNull.Value);
         command.Parameters.AddWithValue("@hash", domainEvent.IntegrityHash);
+        command.Parameters.AddWithValue("@tenant", write.TenantId);
 
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
@@ -94,6 +96,13 @@ public sealed class SqliteOutbox : IOutbox
         if (!Sensitivity.IsKnown(write.SensitivityClass))
         {
             throw new EventContractException($"Unknown sensitivity '{write.SensitivityClass}'.");
+        }
+
+        // LAW-005: state that crosses a boundary says who owns it. One tenant today, and an event
+        // that named another would be state this instance has no business carrying.
+        if (!Tenant.IsKnown(write.TenantId))
+        {
+            throw new EventContractException($"'{write.TenantId}' is not this instance's tenant.");
         }
 
         // LAW-007's verifiable control: each producer declares its events and their schema version.

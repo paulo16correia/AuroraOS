@@ -607,7 +607,8 @@ public sealed class SqliteDatabase
           payload_ref TEXT NULL,
           sensitivity TEXT NOT NULL,
           idempotency_key TEXT NULL,
-          integrity_hash TEXT NOT NULL
+          integrity_hash TEXT NOT NULL,
+          tenant_id TEXT NOT NULL DEFAULT 'tenant/local'
         );
 
         CREATE INDEX IF NOT EXISTS idx_event_type ON domain_event(type, sequence);
@@ -1498,6 +1499,9 @@ public sealed class SqliteDatabase
         // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
         ("goal", "mission_ref", "TEXT NULL"),
         ("goal", "ad_hoc_review_at_utc", "TEXT NULL"),
+
+        // LAW-005 — state crossing a component boundary says who owns it (docs/adr/0050).
+        ("domain_event", "tenant_id", "TEXT NOT NULL DEFAULT 'tenant/local'"),
     ];
 
     private readonly SqliteConnectionFactory _factory;

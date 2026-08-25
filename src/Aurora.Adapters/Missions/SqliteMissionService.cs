@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -23,13 +24,15 @@ public sealed class SqliteMissionService : IMissionService
 {
     private readonly SqliteConnectionFactory _factory;
     private readonly IPlanner _planner;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
-    public SqliteMissionService(SqliteConnectionFactory factory, IPlanner planner, IClock clock)
+    public SqliteMissionService(SqliteConnectionFactory factory, IPlanner planner, IEventBus bus, IClock clock)
     {
         _factory = factory;
         _planner = planner;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<Mission> CreateAsync(
@@ -195,6 +198,17 @@ public sealed class SqliteMissionService : IMissionService
 
         await ExecuteAsync("UPDATE mission SET status = @s WHERE id = @id;", ct,
             ("@s", status), ("@id", missionId)).ConfigureAwait(false);
+
+        // LAW-007: what Aurora is for changing is a state change the panel and the review both
+        // need to see. The status travels; the purpose text does not.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.MissionChanged, 1, EventCatalogue.Producers.Missions,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"mission/{missionId}",
+                PayloadJson: AuroraJson.Serialize(new { mission_id = missionId, status }),
+                IdempotencyKey: $"mission:{missionId}:{status}:{Iso(_clock.UtcNow)}"),
+            ct).ConfigureAwait(false);
 
         return mission with { Status = status };
     }

@@ -22,9 +22,9 @@ public sealed class MissionTests
         SqliteTestDb db, string now = "2026-01-15T09:00:00+00:00")
     {
         var clock = new TestClock(At(now));
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
 
-        return (new SqliteMissionService(db.Factory, planner, clock), planner, clock);
+        return (new SqliteMissionService(db.Factory, planner, TestBus.Over(db.Factory, clock), clock), planner, clock);
     }
 
     private static MissionDefinition Organised() =>

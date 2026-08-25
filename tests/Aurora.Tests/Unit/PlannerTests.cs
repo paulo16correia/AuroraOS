@@ -11,8 +11,11 @@ public sealed class PlannerTests
     private static readonly CancellationToken Ct = CancellationToken.None;
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-01-01T00:00:00+00:00");
 
-    private static SqlitePlanner New(SqliteTestDb db, DateTimeOffset? now = null) =>
-        new(db.Factory, new TestClock(now ?? Now));
+    private static SqlitePlanner New(SqliteTestDb db, DateTimeOffset? now = null)
+    {
+        var clock = new TestClock(now ?? Now);
+        return new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
+    }
 
     private static GoalRequest Request(
         string outcome = "The report is filed with the regulator",

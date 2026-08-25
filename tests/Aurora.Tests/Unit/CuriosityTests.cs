@@ -37,7 +37,7 @@ public sealed class CuriosityTests
     {
         var clock = new TestClock(At(now));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
         var needs = new SqliteNeedsService(db.Factory, planner, clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
         var probe = new FakeResourceProbe();

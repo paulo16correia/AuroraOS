@@ -52,7 +52,7 @@ public sealed class DevelopmentTests
             new SqliteDevelopmentModel(
                 db.Factory, audit,
                 new Adapters.Capabilities.StaticCapabilityRegistry([Reading(), Writing()]),
-                SqliteDevelopmentModel.DefaultProfile, clock),
+                SqliteDevelopmentModel.DefaultProfile, clock, TestBus.Over(db.Factory, clock)),
             audit, clock);
     }
 

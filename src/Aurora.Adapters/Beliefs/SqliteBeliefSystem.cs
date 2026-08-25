@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -30,13 +31,15 @@ public sealed class SqliteBeliefSystem : IBeliefSystem
 
     private readonly SqliteConnectionFactory _factory;
     private readonly BeliefPolicy _policy;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
-    public SqliteBeliefSystem(SqliteConnectionFactory factory, BeliefPolicy policy, IClock clock)
+    public SqliteBeliefSystem(SqliteConnectionFactory factory, BeliefPolicy policy, IClock clock, IEventBus bus)
     {
         _factory = factory;
         _policy = policy;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<Belief> ProposeAsync(
@@ -207,6 +210,18 @@ public sealed class SqliteBeliefSystem : IBeliefSystem
 
         await RecordUpdateAsync(beliefId, evidenceRef, 0, $"challenged: {reason}", ct)
             .ConfigureAwait(false);
+
+        // The identifier and the fact of contradiction, never the claim. Attention should learn
+        // that something it was leaning on is contested without the bus repeating what it said.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.BeliefChallenged, 1, EventCatalogue.Producers.Beliefs,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"belief/{beliefId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { belief_id = beliefId, subject_ref = belief.SubjectRef }),
+                IdempotencyKey: $"belief-challenged:{beliefId}:{evidenceRef}"),
+            ct).ConfigureAwait(false);
 
         return belief with
         {

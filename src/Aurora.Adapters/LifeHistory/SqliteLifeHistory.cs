@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -19,13 +20,15 @@ public sealed class SqliteLifeHistory : ILifeHistory
 {
     private readonly SqliteConnectionFactory _factory;
     private readonly IAuditStore _audit;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
-    public SqliteLifeHistory(SqliteConnectionFactory factory, IAuditStore audit, IClock clock)
+    public SqliteLifeHistory(SqliteConnectionFactory factory, IAuditStore audit, IClock clock, IEventBus bus)
     {
         _factory = factory;
         _audit = audit;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<LifeEpisode> ProposeAsync(LifeEpisode candidate, CancellationToken ct)
@@ -105,6 +108,18 @@ public sealed class SqliteLifeHistory : ILifeHistory
             "UPDATE life_episode SET status = @verified, verified_at_utc = @at WHERE id = @id;", ct,
             ("@verified", EpisodeStatus.Verified), ("@at", verifiedAt), ("@id", episodeId))
             .ConfigureAwait(false);
+
+        // The narrative gained something. The title and the summary stay behind: what a person may
+        // be told about Aurora's past is decided when they ask, not when it is recorded.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.LifeEpisodeVerified, 1, EventCatalogue.Producers.LifeHistory,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"episode/{episodeId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { episode_id = episodeId, kind = episode.Kind }),
+                IdempotencyKey: $"episode-verified:{episodeId}"),
+            ct).ConfigureAwait(false);
 
         return episode with { Status = EpisodeStatus.Verified, VerifiedAtUtc = verifiedAt };
     }

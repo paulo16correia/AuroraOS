@@ -29,6 +29,7 @@ public sealed class AuroraKernel
     private readonly IAuroraMetrics _metrics;
     private readonly IPassphraseAuthenticator _passphrase;
     private readonly IEventBus _bus;
+    private readonly IOperatorPrompt _prompt;
 
     public AuroraKernel(
         IReasoner reasoner,
@@ -42,7 +43,8 @@ public sealed class AuroraKernel
         IIdempotencyStore idempotency,
         IAuroraMetrics metrics,
         IPassphraseAuthenticator passphrase,
-        IEventBus bus)
+        IEventBus bus,
+        IOperatorPrompt prompt)
     {
         _reasoner = reasoner;
         _registry = registry;
@@ -56,6 +58,7 @@ public sealed class AuroraKernel
         _metrics = metrics;
         _passphrase = passphrase;
         _bus = bus;
+        _prompt = prompt;
     }
 
     /// <summary>
@@ -497,7 +500,29 @@ public sealed class AuroraKernel
         // required for a rejection too — otherwise the agent could bury a request a human wanted.
         if (_passphrase.IsEnrolled)
         {
-            PassphraseCheck check = _passphrase.Verify(request.Passphrase);
+            // When this machine can draw its own window, the passphrase is asked for there rather
+            // than accepted from the tool call. That closes the older half of the gap: the agent
+            // composed neither the question nor the answer, and never sees the secret at all
+            // (docs/adr/0050). A passphrase the caller supplied still verifies, for the scripted
+            // path and for a headless machine.
+            var supplied = request.Passphrase;
+
+            if (string.IsNullOrEmpty(supplied) && _prompt.IsAvailable)
+            {
+                // The approval's own identifier, because the decision has not been applied yet and
+                // the action behind it is not read until it is. A person confirms the request they
+                // were shown in the panel; naming it here would mean reading it before deciding
+                // whether they may.
+                OperatorAnswer answered = await _prompt.AskAsync(
+                    "Aurora — approval",
+                    $"{(approve ? "Approve" : "Reject")} request {request.ApprovalId}? "
+                    + "Enter the operator passphrase to confirm.",
+                    secret: true, TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
+
+                supplied = answered.Answered ? answered.Value : null;
+            }
+
+            PassphraseCheck check = _passphrase.Verify(supplied);
             switch (check.Outcome)
             {
                 case PassphraseOutcome.LockedOut:

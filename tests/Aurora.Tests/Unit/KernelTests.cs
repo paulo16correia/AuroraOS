@@ -38,7 +38,8 @@ public sealed class KernelTests
         IApprovalStore? approvals = null,
         IAuroraMetrics? metrics = null,
         IPassphraseAuthenticator? passphrase = null,
-        IEventBus? bus = null) =>
+        IEventBus? bus = null,
+        IOperatorPrompt? prompt = null) =>
         new(
             new FakeReasoner(proposal),
             new FakeRegistry(capability),
@@ -51,7 +52,8 @@ public sealed class KernelTests
             idempotency ?? new InMemoryIdempotencyStore(),
             metrics ?? new InMemoryMetrics(new TestClock(DateTimeOffset.UnixEpoch)),
             passphrase ?? new FakePassphrase(),
-            bus ?? new RecordingEventBus());
+            bus ?? new RecordingEventBus(),
+            prompt ?? new NoOperatorPrompt());
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });
@@ -543,6 +545,75 @@ public sealed class KernelTests
         var response = await kernel.ApproveAsync(
             new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
 
+        Assert.Equal(ApproveStatus.Decided, response.Status);
+    }
+
+    // ---- docs/adr/0050: the person is asked where the agent cannot reach ----
+
+    [Fact]
+    public async Task WhenThisMachineHasADesktopThePassphraseIsAskedForThereAndNotTakenFromTheCall()
+    {
+        var approvals = new FakeApprovalStore();
+        var passphrase = new FakePassphrase(enrolled: true, expected: "correct-horse");
+        var prompt = new ScriptedOperatorPrompt("correct-horse");
+
+        AuroraKernel kernel = Build(
+            EchoCapability(), approvals: approvals, passphrase: passphrase, prompt: prompt);
+
+        ApprovalRecord pending = approvals.Seed(Caller, "memory.remember", "scope-1");
+
+        // No passphrase in the request. The agent never held one and never will.
+        ApproveResponse response = await kernel.ApproveAsync(
+            new ApproveRequest(pending.ApprovalId, ApprovalDecision.Approved), Caller,
+            CancellationToken.None);
+
+        Assert.Equal(ApproveStatus.Decided, response.Status);
+        Assert.Equal(1, prompt.Asked);
+
+        // The question was composed by Aurora and rendered by the OS. The agent wrote neither it
+        // nor the answer, and never saw the secret.
+        Assert.Contains(pending.ApprovalId, prompt.LastQuestion!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DismissingThePromptIsARefusalRatherThanAnAbsenceOfOne()
+    {
+        var approvals = new FakeApprovalStore();
+        var passphrase = new FakePassphrase(enrolled: true, expected: "correct-horse");
+
+        AuroraKernel kernel = Build(
+            EchoCapability(), approvals: approvals, passphrase: passphrase,
+            prompt: new ScriptedOperatorPrompt(null));
+
+        ApprovalRecord pending = approvals.Seed(Caller, "memory.remember", "scope-1");
+
+        ApproveResponse response = await kernel.ApproveAsync(
+            new ApproveRequest(pending.ApprovalId, ApprovalDecision.Approved), Caller,
+            CancellationToken.None);
+
+        // Treating "they closed it" as "ask again later" is how a prompt becomes something people
+        // click through.
+        Assert.Equal(ApproveStatus.Invalid, response.Status);
+    }
+
+    [Fact]
+    public async Task OnAMachineWithNoDesktopTheSuppliedPassphraseStillWorks()
+    {
+        var approvals = new FakeApprovalStore();
+        var passphrase = new FakePassphrase(enrolled: true, expected: "correct-horse");
+
+        AuroraKernel kernel = Build(
+            EchoCapability(), approvals: approvals, passphrase: passphrase,
+            prompt: new NoOperatorPrompt());
+
+        ApprovalRecord pending = approvals.Seed(Caller, "memory.remember", "scope-1");
+
+        ApproveResponse response = await kernel.ApproveAsync(
+            new ApproveRequest(pending.ApprovalId, ApprovalDecision.Approved, "correct-horse"),
+            Caller, CancellationToken.None);
+
+        // Headless is a real deployment, and refusing to work there would push somebody back to
+        // no passphrase at all.
         Assert.Equal(ApproveStatus.Decided, response.Status);
     }
 }

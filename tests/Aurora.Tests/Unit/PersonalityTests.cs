@@ -32,10 +32,10 @@ public sealed class PersonalityTests
                 new SqliteMemoryService(
                     db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
                 clock),
-            clock);
+            clock, TestBus.Over(db.Factory, clock));
 
         return (
-            new SqlitePersonalityService(db.Factory, relationships, clock),
+            new SqlitePersonalityService(db.Factory, relationships, clock, TestBus.Over(db.Factory, clock)),
             new MessageComposer(), relationships, clock);
     }
 

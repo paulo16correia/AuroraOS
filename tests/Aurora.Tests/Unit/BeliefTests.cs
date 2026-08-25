@@ -21,7 +21,7 @@ public sealed class BeliefTests
         SqliteTestDb db, string now = "2026-01-15T09:00:00+00:00")
     {
         var clock = new TestClock(At(now));
-        return (new SqliteBeliefSystem(db.Factory, BeliefPolicy.Default, clock), clock);
+        return (new SqliteBeliefSystem(db.Factory, BeliefPolicy.Default, clock, TestBus.Over(db.Factory, clock)), clock);
     }
 
     private static BeliefCandidate ShortAnswers(double confidence = 0.7) =>

@@ -28,6 +28,7 @@ public sealed class MaintenanceService : IMaintenanceService
     private readonly IRetentionService _retention;
     private readonly RetentionPolicy _retentionPolicy;
     private readonly IEventBus _bus;
+    private readonly IOperatorPrompt _prompt;
     private readonly IClock _clock;
 
     public MaintenanceService(
@@ -41,6 +42,7 @@ public sealed class MaintenanceService : IMaintenanceService
         IRetentionService retention,
         RetentionPolicy retentionPolicy,
         IEventBus bus,
+        IOperatorPrompt prompt,
         IClock clock)
     {
         _scheduler = scheduler;
@@ -53,6 +55,7 @@ public sealed class MaintenanceService : IMaintenanceService
         _retention = retention;
         _retentionPolicy = retentionPolicy;
         _bus = bus;
+        _prompt = prompt;
         _clock = clock;
     }
 
@@ -113,6 +116,21 @@ public sealed class MaintenanceService : IMaintenanceService
                 PayloadJson:
                     $$"""{"signals_expired":{{expired}},"needs":{{ranked.Count}},"due_runs":{{due.Count(r => r.Status == ScheduleRunStatus.Due)}},"resources":"{{resources.Status}}","posture":"{{situation.RiskPosture}}"}"""),
             ct).ConfigureAwait(false);
+
+        // Alerts, in the only form that reaches somebody who is not looking at the panel. Sent for
+        // an incident and for nothing else: a notification per upkeep pass would be a notification
+        // people turn off, and then the one that mattered arrives silenced.
+        IReadOnlyList<Need> incidents = ranked.Where(n => NeedKind.IsIncident(n.Kind)).ToList();
+
+        if (incidents.Count > 0 || situation.RiskPosture == RiskPosture.Emergency)
+        {
+            await _prompt.NotifyAsync(
+                "Aurora needs attention",
+                incidents.Count > 0
+                    ? $"{incidents.Count} thing(s) need looking at: {incidents[0].SatisfactionCondition}"
+                    : $"Resources are {resources.Status}.",
+                ct).ConfigureAwait(false);
+        }
 
         return new MaintenanceReport(
             Iso(_clock.UtcNow), expired, decayed, reconciled, failed.Count,

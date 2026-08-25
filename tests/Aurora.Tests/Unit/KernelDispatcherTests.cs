@@ -67,7 +67,7 @@ public sealed class KernelDispatcherTests
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock),
             new FakePassphrase(),
-            TestBus.Over(db.Factory, clock));
+            TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
 
         var cycle = new SqliteCognitiveCycle(db.Factory, clock);
 
@@ -111,11 +111,11 @@ public sealed class KernelDispatcherTests
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
                 new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock),
                 clock),
-            new InMemoryIdempotencyStore(), clock);
+            new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
     }
 
     private static SqliteBeliefSystem Beliefs(SqliteTestDb db, TestClock clock) =>
-        new(db.Factory, BeliefPolicy.Default, clock);
+        new(db.Factory, BeliefPolicy.Default, clock, TestBus.Over(db.Factory, clock));
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });
@@ -207,7 +207,7 @@ public sealed class KernelDispatcherTests
                 new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
-            TestBus.Over(db.Factory, clock));
+            TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
 
         var dispatcher = new KernelDispatcher(
             kernel, cycle, TestBus.Over(db.Factory, clock),
@@ -256,7 +256,7 @@ public sealed class KernelDispatcherTests
                 new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
-            TestBus.Over(db.Factory, clock));
+            TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
 
         var dispatcher = new KernelDispatcher(
             kernel, cycle, TestBus.Over(db.Factory, clock),
@@ -388,13 +388,13 @@ public sealed class KernelDispatcherTests
             new AuroraHealthService(
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
                 new SqliteScheduler(db.Factory, bus, cycle, clock), clock),
-            new InMemoryIdempotencyStore(), clock);
+            new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
 
         var kernel = new AuroraKernel(
             new FakeReasoner(null), new FakeRegistry(effectful), new FakeValidator(true),
             new FakePolicy(true), new FakeConsent(true), new FakeApprovalStore(),
             new DirectExecutor(), audit, new InMemoryIdempotencyStore(),
-            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(), bus);
+            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(), bus, new NoOperatorPrompt());
 
         var dispatcher = new KernelDispatcher(
             kernel, cycle, bus,
@@ -480,7 +480,7 @@ public sealed class KernelDispatcherTests
                 new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
-            TestBus.Over(db.Factory, clock));
+            TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
 
         var cycle = new SqliteCognitiveCycle(db.Factory, clock);
         var decisions = new SqliteDecisionEngine(db.Factory, clock);

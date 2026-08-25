@@ -32,7 +32,7 @@ public sealed class LifeHistoryTests
             db.Factory, clock, new byte[32],
             new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
 
-        return new World(new SqliteLifeHistory(db.Factory, audit, clock), audit, clock);
+        return new World(new SqliteLifeHistory(db.Factory, audit, clock, TestBus.Over(db.Factory, clock)), audit, clock);
     }
 
     /// <summary>Writes a real audit record and returns its id, so evidence resolves.</summary>

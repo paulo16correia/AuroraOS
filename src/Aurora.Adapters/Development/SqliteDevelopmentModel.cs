@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Cryptography;
@@ -58,6 +59,7 @@ public sealed class SqliteDevelopmentModel : IDevelopmentModel
     private readonly IAuditStore _audit;
     private readonly ICapabilityRegistry _registry;
     private readonly DevelopmentProfile _profile;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
     public SqliteDevelopmentModel(
@@ -65,13 +67,14 @@ public sealed class SqliteDevelopmentModel : IDevelopmentModel
         IAuditStore audit,
         ICapabilityRegistry registry,
         DevelopmentProfile profile,
-        IClock clock)
+        IClock clock, IEventBus bus)
     {
         _factory = factory;
         _audit = audit;
         _registry = registry;
         _profile = profile;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<DevelopmentAssessment> AssessAsync(string mindId, CancellationToken ct)
@@ -234,6 +237,23 @@ public sealed class SqliteDevelopmentModel : IDevelopmentModel
                 Hashing.Sha256Hex($"{proposal.FromStageId}->{proposal.ToStageId}"),
                 "completed", Risk: forward ? "Medium" : "Low", Via: "operator",
                 Decision: proposal.ToStageId, PolicyIds: null, Reason: proposal.Rationale),
+            ct).ConfigureAwait(false);
+
+        // Rule 4 asks for visible. The audit journal is the record; the bus is how the panel finds
+        // out without polling for it.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.DevelopmentStageChanged, 1, EventCatalogue.Producers.Development,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"mind/{proposal.MindId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new
+                    {
+                        from = proposal.FromStageId,
+                        to = proposal.ToStageId,
+                        autonomy = forward ? "grew" : "shrank",
+                    }),
+                IdempotencyKey: $"development:{proposal.Id}"),
             ct).ConfigureAwait(false);
 
         return moved;

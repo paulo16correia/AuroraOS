@@ -37,14 +37,16 @@ public sealed class SqlitePersonalityService : IPersonalityService
 
     private readonly SqliteConnectionFactory _factory;
     private readonly IRelationshipModel _relationships;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
     public SqlitePersonalityService(
-        SqliteConnectionFactory factory, IRelationshipModel relationships, IClock clock)
+        SqliteConnectionFactory factory, IRelationshipModel relationships, IClock clock, IEventBus bus)
     {
         _factory = factory;
         _relationships = relationships;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<ResolvedProfile> ResolveAsync(
@@ -205,6 +207,18 @@ public sealed class SqlitePersonalityService : IPersonalityService
             ("@id", Guid.NewGuid().ToString("N")), ("@profile", profileId),
             ("@old", outgoing?.Version ?? 0), ("@new", candidate.Version),
             ("@actor", actor), ("@reason", reason), ("@at", now)).ConfigureAwait(false);
+
+        // Who Aurora is has changed. Everything that renders a message needs to know, and finding
+        // out by re-reading the table on every send is how a stale profile survives a change.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.IdentityActivated, 1, EventCatalogue.Producers.Identity,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"profile/{profileId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { version = candidate.Version, approved_by = actor }),
+                IdempotencyKey: $"identity:{profileId}:{candidate.Version}"),
+            ct).ConfigureAwait(false);
 
         return candidate with
         {

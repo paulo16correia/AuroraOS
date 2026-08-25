@@ -93,7 +93,7 @@ public sealed class RetentionTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-01T00:00:00+00:00"));
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
         var memories = new SqliteMemoryService(
             db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock);
 
@@ -125,7 +125,7 @@ public sealed class RetentionTests
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var scheduler = new SqliteScheduler(db.Factory, bus, cycles, clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
         var needs = new SqliteNeedsService(db.Factory, planner, clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
         var situation = new SituationService(signals, needs, resources, QuietHours.Default, clock);

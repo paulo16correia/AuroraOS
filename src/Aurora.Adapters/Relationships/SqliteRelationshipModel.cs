@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -22,14 +23,16 @@ public sealed class SqliteRelationshipModel : IRelationshipModel
 
     private readonly SqliteConnectionFactory _factory;
     private readonly IKnowledgeGraph _graph;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
     public SqliteRelationshipModel(
-        SqliteConnectionFactory factory, IKnowledgeGraph graph, IClock clock)
+        SqliteConnectionFactory factory, IKnowledgeGraph graph, IClock clock, IEventBus bus)
     {
         _factory = factory;
         _graph = graph;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<RelationshipAssertion> AssertAsync(
@@ -129,6 +132,18 @@ public sealed class SqliteRelationshipModel : IRelationshipModel
             ("@to", endedAt), ("@ended", RelationshipStatus.Ended),
             ("@evidence", string.Join('\n', evidence)), ("@id", relationshipId))
             .ConfigureAwait(false);
+
+        // The world model's picture just changed. Who the tie was with stays out of the payload —
+        // a third party's name is not something to broadcast because their relationship ended.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.RelationshipEnded, 1, EventCatalogue.Producers.Relationships,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"relationship/{relationshipId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { relationship_id = relationshipId, ended_at = endedAt }),
+                IdempotencyKey: $"relationship-ended:{relationshipId}"),
+            ct).ConfigureAwait(false);
 
         return relationship with
         {

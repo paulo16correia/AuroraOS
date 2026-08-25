@@ -46,11 +46,11 @@ public sealed class ReviewApplicationTests
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchorPath));
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
         var needs = new SqliteNeedsService(db.Factory, planner, clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
         var scheduler = new SqliteScheduler(db.Factory, bus, cycles, clock);
-        var missions = new SqliteMissionService(db.Factory, planner, clock);
+        var missions = new SqliteMissionService(db.Factory, planner, TestBus.Over(db.Factory, clock), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
         var situation = new SituationService(signals, needs, resources, QuietHours.Default, clock);
         var curiosity = new SqliteCuriosityEngine(db.Factory, planner, resources, situation, needs, clock);

@@ -33,6 +33,7 @@ public sealed class SqliteSelfModel : ISelfModel
     private readonly IResourceModel _resources;
     private readonly IHealthService _health;
     private readonly IIdempotencyStore _idempotency;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
     public SqliteSelfModel(
@@ -42,7 +43,7 @@ public sealed class SqliteSelfModel : ISelfModel
         IResourceModel resources,
         IHealthService health,
         IIdempotencyStore idempotency,
-        IClock clock)
+        IClock clock, IEventBus bus)
     {
         _factory = factory;
         _registry = registry;
@@ -51,6 +52,7 @@ public sealed class SqliteSelfModel : ISelfModel
         _health = health;
         _idempotency = idempotency;
         _clock = clock;
+        _bus = bus;
     }
 
     public async Task<SelfModel> RefreshAsync(string mindId, CancellationToken ct)
@@ -102,6 +104,23 @@ public sealed class SqliteSelfModel : ISelfModel
             PausedReason: previous?.PausedReason);
 
         await SaveAsync(model, ct).ConfigureAwait(false);
+
+        // Published on a transition and never on a reading. Self refreshes on every capability
+        // check, and an event per reading would make the bus a log of Aurora looking at itself —
+        // which is noise that would bury the one moment somebody actually needed to hear about.
+        if (previous is null || previous.OperationalState != model.OperationalState)
+        {
+            await _bus.PublishAsync(
+                new OutboxWrite(
+                    EventCatalogue.OperationalStateChanged, 1, EventCatalogue.Producers.Self,
+                    Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                    AggregateRef: $"mind/{mindId}",
+                    PayloadJson: AuroraJson.Serialize(
+                        new { from = previous?.OperationalState, to = model.OperationalState }),
+                    IdempotencyKey: $"self:{mindId}:{model.Version}"),
+                ct).ConfigureAwait(false);
+        }
+
         return model;
     }
 

@@ -175,7 +175,7 @@ public sealed class StatusAndMaintenanceTests
         var clock = new TestClock(At(now));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
-        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock), clock);
+        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock)), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
 
         return new World(
@@ -316,7 +316,7 @@ public sealed class StatusAndMaintenanceTests
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
-        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock), clock);
+        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock)), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
 
         var maintenance = new MaintenanceService(
@@ -327,7 +327,7 @@ public sealed class StatusAndMaintenanceTests
             new InMemoryIdempotencyStore(),
             new FakeApprovalStore(),
             new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default,
-            bus, clock);
+            bus, new NoOperatorPrompt(), clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
 
@@ -345,7 +345,7 @@ public sealed class StatusAndMaintenanceTests
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
-        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock), clock);
+        var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock)), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
         var scheduler = new SqliteScheduler(db.Factory, bus, cycles, clock);
 
@@ -359,7 +359,7 @@ public sealed class StatusAndMaintenanceTests
             scheduler, signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
             resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(),
-            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, clock);
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, new NoOperatorPrompt(), clock);
 
         clock.UtcNow = At("2026-01-15T09:00:00+00:00");
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
@@ -381,7 +381,7 @@ public sealed class StatusAndMaintenanceTests
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
         var needs = new SqliteNeedsService(db.Factory, planner, clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
 
@@ -390,7 +390,7 @@ public sealed class StatusAndMaintenanceTests
             signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
             resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(pending: 2),
-            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, clock);
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, new NoOperatorPrompt(), clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
 

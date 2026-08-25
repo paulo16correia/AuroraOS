@@ -34,7 +34,7 @@ public sealed class RelationshipTests
                 db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             clock);
 
-        return (new SqliteRelationshipModel(db.Factory, graph, clock), graph, clock);
+        return (new SqliteRelationshipModel(db.Factory, graph, clock, TestBus.Over(db.Factory, clock)), graph, clock);
     }
 
     private static RelationshipCandidate Employs(

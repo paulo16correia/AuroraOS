@@ -44,6 +44,12 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         builder.ConfigureServices(services =>
         {
             services.AddSingleton<IResourceProbe>(new StubResourceProbe());
+
+            // No windows during a test run. The real NativeDialog finds osascript on macOS and
+            // would put a password prompt on a developer's screen mid-suite — and then block until
+            // somebody dismissed it, which is how a test suite becomes something people stop
+            // running. Availability is false here, so the kernel takes the supplied-passphrase path.
+            services.AddSingleton<IOperatorPrompt>(new NoOperatorPrompt());
         });
     }
 

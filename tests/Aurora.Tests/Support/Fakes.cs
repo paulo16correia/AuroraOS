@@ -135,6 +135,18 @@ public sealed class FakeApprovalStore(int pending = 0) : IApprovalStore
 
     private int _sequence;
 
+    /// <summary>Puts a pending approval on file, for tests about deciding one.</summary>
+    public ApprovalRecord Seed(Principal principal, string actionId, string scopeHash)
+    {
+        var record = new ApprovalRecord(
+            $"approval-{++_sequence}", principal.ClientId, principal.OsUser, actionId, scopeHash,
+            ApprovalStatus.Pending, "2026-01-01T00:00:00.0000000+00:00",
+            "2099-01-01T00:00:00.0000000+00:00", null);
+
+        _byId[record.ApprovalId] = record;
+        return record;
+    }
+
     public Task<ApprovalEvaluation> EvaluateAsync(Principal principal, string actionId, string scopeHash, CancellationToken ct)
     {
         var existing = _byId.Values.FirstOrDefault(a =>
@@ -393,4 +405,45 @@ public sealed class PermissiveEventCatalogue : IEventCatalogue
         violation = null;
         return true;
     }
+}
+
+/// <summary>
+/// A machine with no desktop.
+/// </summary>
+/// <remarks>
+/// The default for tests: <see cref="IsAvailable"/> is false, so the kernel takes the supplied-
+/// passphrase path and the tests stay about approvals rather than about windows.
+/// </remarks>
+public sealed class NoOperatorPrompt : IOperatorPrompt
+{
+    public bool IsAvailable => false;
+
+    public Task<OperatorAnswer> AskAsync(
+        string title, string question, bool secret, TimeSpan timeout, CancellationToken ct) =>
+        Task.FromResult(new OperatorAnswer(false, null, "no desktop in tests"));
+
+    public Task NotifyAsync(string title, string message, CancellationToken ct) => Task.CompletedTask;
+}
+
+/// <summary>A desktop that answers whatever the test says the person typed.</summary>
+public sealed class ScriptedOperatorPrompt(string? answer) : IOperatorPrompt
+{
+    public bool IsAvailable => true;
+
+    public int Asked { get; private set; }
+
+    public string? LastQuestion { get; private set; }
+
+    public Task<OperatorAnswer> AskAsync(
+        string title, string question, bool secret, TimeSpan timeout, CancellationToken ct)
+    {
+        Asked++;
+        LastQuestion = question;
+
+        return Task.FromResult(answer is null
+            ? new OperatorAnswer(false, null, "dismissed")
+            : new OperatorAnswer(true, answer, "answered"));
+    }
+
+    public Task NotifyAsync(string title, string message, CancellationToken ct) => Task.CompletedTask;
 }

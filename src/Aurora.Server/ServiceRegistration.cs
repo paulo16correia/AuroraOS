@@ -4,6 +4,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Desktop;
 using Aurora.Adapters.Development;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Curiosity;
@@ -254,6 +255,10 @@ public static class ServiceRegistration
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 
         // Kernel.
+        // The person, asked in a window the OS draws rather than through the agent that wants the
+        // answer (docs/adr/0050). Falls back to the supplied passphrase where there is no desktop.
+        services.AddSingleton<IOperatorPrompt, NativeDialog>();
+
         services.AddSingleton<AuroraKernel>();
 
         // Every MCP call is reasoned through the cycle rather than executed beside it (RFC 045

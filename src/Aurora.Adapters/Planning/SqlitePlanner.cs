@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -10,12 +11,14 @@ namespace Aurora.Adapters.Planning;
 public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
 {
     private readonly SqliteConnectionFactory _factory;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
-    public SqlitePlanner(SqliteConnectionFactory factory, IClock clock)
+    public SqlitePlanner(SqliteConnectionFactory factory, IClock clock, IEventBus bus)
     {
         _factory = factory;
         _clock = clock;
+        _bus = bus;
     }
 
     // ---- IPlanner ----
@@ -74,8 +77,27 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
             BlockedReason: null, MissionRef: request.MissionRef);
 
         await SaveGoalAsync(goal, ct).ConfigureAwait(false);
+        await AnnounceAsync(goal, ct).ConfigureAwait(false);
         return goal;
     }
+
+    /// <summary>
+    /// Announces a goal coming into existence.
+    /// </summary>
+    /// <remarks>
+    /// The identifier and the status, never the outcome text. A goal's wording can carry anything
+    /// the person put in it, and the bus is read by more consumers than the store is.
+    /// </remarks>
+    private Task AnnounceAsync(Goal goal, CancellationToken ct) =>
+        _bus.PublishAsync(
+            new OutboxWrite(
+                EventCatalogue.GoalDrafted, 1, EventCatalogue.Producers.Planner,
+                Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"goal/{goal.Id}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { goal_id = goal.Id, status = goal.Status, mission_ref = goal.MissionRef }),
+                IdempotencyKey: $"goal-drafted:{goal.Id}"),
+            ct);
 
     /// <summary>How long an unaligned goal may stand before somebody has to look at it again.</summary>
     private static readonly TimeSpan AdHocReview = TimeSpan.FromDays(30);

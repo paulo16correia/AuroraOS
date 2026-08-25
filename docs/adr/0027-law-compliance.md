@@ -69,6 +69,11 @@ local OS user, one principal. There is no tenant to identify, and inventing a co
 satisfy a checklist would be worse than recording the reason. Revisit if Aurora is ever hosted for
 more than one owner.
 
+> **Closed in `docs/adr/0050`.** The reasoning above was half right and half convenient. A tenant
+> that is implicit is a tenant nobody can filter or delete by, which is exactly the orphan state
+> LAW-005 exists to prevent. `Tenant.Local` is carried on every event and refused if it names
+> another — present and constant, multi-tenancy is a data change; absent, it is a redesign.
+
 **LAW-007 is only half-satisfied.** The bus enforces its contract, and every test above passes. But
 the law says components *communicate* through the bus, and Aurora's components still call each other
 directly — the producers do not yet publish events when state changes. The exception clause allows
@@ -77,6 +82,9 @@ direct synchronous queries, but it also says resulting changes publish events, a
 Producer wiring belongs with step 10, and until it lands **LAW-007 is enforced at the bus and not
 across the platform**. Saying the law is satisfied because its unit tests pass would be the exact
 failure this ADR exists to prevent.
+
+> **Closed in `docs/adr/0050`.** All nine producers publish their state changes, each proven through
+> its real path rather than by the presence of a `PublishAsync` in the source.
 
 ## What this means for the frozen capabilities
 

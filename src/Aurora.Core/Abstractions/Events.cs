@@ -58,6 +58,8 @@ public sealed record OutboxWrite(
     string Producer,
     string CorrelationId,
     string SensitivityClass,
+    /// <summary>Who owns the state this describes (LAW-005). One tenant, carried rather than assumed.</summary>
+    string TenantId = Contracts.Tenant.Local,
     string? CausationId = null,
     string? AggregateRef = null,
     string? PayloadJson = null,

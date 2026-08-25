@@ -38,7 +38,7 @@ public sealed class SignalsAndNeedsTests
     {
         var clock = new TestClock(At(now));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var planner = new SqlitePlanner(db.Factory, clock);
+        var planner = new SqlitePlanner(db.Factory, clock, TestBus.Over(db.Factory, clock));
 
         return new World(
             new SqliteSignalService(db.Factory, cycles, clock),
