@@ -68,11 +68,295 @@ public sealed class AuroraKernel
 
     public CatalogResult Catalog(string? query) => new(_registry.List(query));
 
+
+    /// <summary>
+    /// Runs a request end to end. Equivalent to <see cref="ResolveAsync"/> then
+    /// <see cref="AuthorizeAsync"/> then <see cref="CommitAsync"/>, for a caller with no cognition
+    /// to interleave between the phases.
+    /// </summary>
     public async Task<ExecuteResponse> ExecuteAsync(ExecuteRequest request, Principal principal, CancellationToken ct)
     {
+        ResolutionOutcome resolution = await ResolveAsync(request, principal, ct).ConfigureAwait(false);
+        if (resolution.Refusal is { } refused)
+        {
+            return refused;
+        }
+
+        AuthorizationOutcome authorization = await AuthorizeAsync(resolution.Resolution!, ct).ConfigureAwait(false);
+        return authorization.Refusal ?? await CommitAsync(authorization.Authorization!, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Phase 1 — work out what is being asked for, without reserving or permitting anything.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="AuthorizeAsync"/> because a caller running the cognitive cycle has
+    /// to know <i>what</i> it is deciding about before it can decide (RFC 021): the Decision stage
+    /// prices an option by the capability's declared risk and effects, and pricing it after policy
+    /// had already run would be deciding after the fact.
+    /// </remarks>
+    public async Task<ResolutionOutcome> ResolveAsync(
+        ExecuteRequest request, Principal principal, CancellationToken ct)
+    {
         // 1. Mode: objective XOR action_id.
+        if (ValidateIngress(request) is { } invalid)
+        {
+            return new ResolutionOutcome(null, invalid);
+        }
+
+        // 2. Resolve. The reasoner only proposes; the kernel commits below.
+        var hasAction = !string.IsNullOrWhiteSpace(request.ActionId);
+        string actionId;
+        JsonElement input;
+        double confidence;
+        string via;
+        if (hasAction)
+        {
+            actionId = request.ActionId!;
+            input = request.Input ?? EmptyObject;
+            confidence = 1.0;
+            via = ResolutionVia.Explicit;
+        }
+        else
+        {
+            var proposal = await _reasoner.ProposeAsync(request.Objective!, _registry.List(null), ct).ConfigureAwait(false);
+            if (proposal is null || string.IsNullOrWhiteSpace(proposal.ActionId))
+            {
+                return Unresolved(ErrorCodes.ObjectiveUnavailable, "Objective-mode resolution is not available in this iteration.");
+            }
+
+            actionId = proposal.ActionId;
+            input = proposal.Input ?? EmptyObject;
+            confidence = proposal.Confidence;
+            via = proposal.Via;
+        }
+
+        // 3. Capability must exist in the catalog.
+        if (!_registry.TryGet(actionId, out var capability))
+        {
+            return Unresolved(ErrorCodes.UnknownAction, $"Unknown action '{actionId}'.");
+        }
+
+        var descriptor = capability.Descriptor;
+
+        // 3b. The keyword fallback is blunt and untrusted: design 0001 confines it to LOW,
+        //     effect-free actions. Enforced here as well as in the adapter, so a future
+        //     proposer cannot quietly widen its own reach.
+        if (via == ResolutionVia.Keyword
+            && (descriptor.Risk != RiskLevel.Low || descriptor.Effects.Count > 0))
+        {
+            return Unresolved(
+                ErrorCodes.KeywordRestricted,
+                "Keyword resolution is limited to low-risk, read-only actions.");
+        }
+
+        // 3a. Size guard on the canonical input.
+        var canonicalInput = CanonicalJson.Canonicalize(input);
+        if (Encoding.UTF8.GetByteCount(canonicalInput) > AuroraLimits.MaxInputBytes)
+        {
+            return Unresolved(ErrorCodes.InputTooLarge, "Input exceeds the maximum size.");
+        }
+
+        // 4. Schema validation. Unknown/extra fields are rejected by the schema (additionalProperties:false).
+        var validation = _validator.Validate(descriptor.InputSchema, input);
+        if (!validation.IsValid)
+        {
+            return new ResolutionOutcome(
+                null, Invalid(ErrorCodes.SchemaInvalid, "Input failed schema validation.", validation.Errors));
+        }
+
+        return new ResolutionOutcome(
+            new ActionResolution(
+                new ResolvedAction(actionId, input, confidence, via), capability, principal,
+                Hashing.Sha256Hex(canonicalInput), Hashing.Sha256Hex($"{actionId}\n{canonicalInput}"),
+                request.IdempotencyKey),
+            null);
+    }
+
+    /// <summary>
+    /// Phase 2 — reserve the key, then decide whether this may run at all.
+    /// </summary>
+    /// <remarks>
+    /// A returned <see cref="ActionAuthorization"/> holds an idempotency reservation. A caller that
+    /// then chooses not to run it must say so through <see cref="ReleaseAsync"/>, or the key stays
+    /// wedged until reconciliation.
+    /// </remarks>
+    public async Task<AuthorizationOutcome> AuthorizeAsync(ActionResolution resolution, CancellationToken ct)
+    {
+        Principal principal = resolution.Principal;
+        var descriptor = resolution.Capability.Descriptor;
+        ResolvedAction resolved = resolution.Resolved;
+        var actionId = resolved.ActionId;
+        JsonElement input = resolved.Input;
+        var key = resolution.IdempotencyKey;
+
+        // 5. Idempotency reservation (only when a key is supplied).
+        var reserved = false;
+        if (!string.IsNullOrEmpty(key))
+        {
+            var begin = await _idempotency.BeginAsync(principal, key, resolution.RequestHash, ct).ConfigureAwait(false);
+            switch (begin.Disposition)
+            {
+                case IdempotencyDisposition.ReplayCompleted:
+                case IdempotencyDisposition.ReplayFailed:
+                    return Unauthorized(
+                        DeserializeStored(begin.StoredResultJson)
+                        ?? new ExecuteResponse(ExecuteStatus.Failed, resolved,
+                            Error: new ExecuteError(ErrorCodes.UnknownState, "Stored idempotent result was unavailable.")));
+
+                case IdempotencyDisposition.InProgress:
+                    return Unauthorized(new ExecuteResponse(ExecuteStatus.InProgress, resolved,
+                        Error: new ExecuteError(ErrorCodes.ExecutionInProgress, "A request with this idempotency key is already in progress.")));
+
+                case IdempotencyDisposition.Conflict:
+                    _metrics.IdempotencyConflict();
+                    return Unauthorized(new ExecuteResponse(ExecuteStatus.Conflict, resolved,
+                        Error: new ExecuteError(ErrorCodes.IdempotencyConflict, "Idempotency key reused with a different input.")));
+
+                case IdempotencyDisposition.Unknown:
+                    return Unauthorized(new ExecuteResponse(ExecuteStatus.Conflict, resolved,
+                        Error: new ExecuteError(ErrorCodes.UnknownState, "Idempotency key is in an indeterminate state; reconciliation required.")));
+
+                case IdempotencyDisposition.Begin:
+                default:
+                    reserved = true;
+                    break;
+            }
+        }
+
+        // 6. Policy — fail-closed, evaluated with the input.
+        var policy = _policy.Evaluate(descriptor, input, principal);
+        if (!policy.Allowed)
+        {
+            return Unauthorized(await TerminalAsync(
+                principal, actionId, resolution.InputHash, "policy_denied", key, reserved, IdempotencyState.Failed,
+                new AuditFacts(
+                    descriptor.Risk.ToString(), resolved.Via, PolicyIds: string.Join(',', policy.PolicyIds),
+                    Reason: policy.Reason),
+                new ExecuteResponse(ExecuteStatus.Denied, resolved,
+                    Error: new ExecuteError(ErrorCodes.PolicyDenied, policy.Reason ?? "Denied by policy."))).ConfigureAwait(false));
+        }
+
+        // 7. Consent — LOW auto; approval-gated capabilities go through the persisted approval
+        //    ledger (It.2, first increment); everything else at MEDIUM+ stays refused.
+        var consent = await _consent
+            .EvaluateAsync(descriptor, input, resolution.RequestHash, principal, ct).ConfigureAwait(false);
+        if (!consent.Granted)
+        {
+            var isRetryable = consent.Info.Decision == ConsentDecision.RequiresApproval;
+            var deniedResponse = new ExecuteResponse(ExecuteStatus.Denied, resolved, consent.Info,
+                Error: new ExecuteError(
+                    isRetryable ? ErrorCodes.ApprovalRequired : ErrorCodes.ConsentRequired,
+                    isRetryable
+                        ? "Approval is required. Call aurora_approve with the returned approval_id, then retry this exact request."
+                        : "Consent was denied for this request."));
+
+            // A retryable denial abandons the idempotency reservation instead of settling it as a
+            // terminal failure, so a retry after the approval is decided starts fresh rather than
+            // replaying this denial forever (It.2 design note, docs/adr/0002).
+            var deniedFacts = new AuditFacts(
+                descriptor.Risk.ToString(), resolved.Via, consent.Info.Decision, string.Join(',', policy.PolicyIds));
+
+            return Unauthorized(isRetryable
+                ? await AbandonedAsync(
+                    principal, actionId, resolution.InputHash, key, reserved, deniedFacts, deniedResponse).ConfigureAwait(false)
+                : await TerminalAsync(
+                    principal, actionId, resolution.InputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
+                    deniedFacts, deniedResponse).ConfigureAwait(false));
+        }
+
+        return new AuthorizationOutcome(
+            new ActionAuthorization(resolution, policy.PolicyIds, consent.Info, reserved), null);
+    }
+
+    /// <summary>Phase 3 — claim the reservation, run the effect, and settle it exactly once.</summary>
+    public async Task<ExecuteResponse> CommitAsync(ActionAuthorization authorization, CancellationToken ct)
+    {
+        ActionResolution resolution = authorization.Resolution;
+        Principal principal = resolution.Principal;
+        ResolvedAction resolved = resolution.Resolved;
+        var actionId = resolved.ActionId;
+        var key = resolution.IdempotencyKey;
+        var reserved = authorization.Reserved;
+        var facts = new AuditFacts(
+            resolution.Risk, resolved.Via, authorization.Consent.Decision,
+            string.Join(',', authorization.PolicyIds));
+
+        // 8. Claim the reservation for execution. If we no longer own it, fail closed.
+        if (reserved && !await _idempotency.MarkExecutingAsync(principal, key!, ct).ConfigureAwait(false))
+        {
+            return new ExecuteResponse(ExecuteStatus.InProgress, resolved,
+                Error: new ExecuteError(ErrorCodes.ExecutionInProgress,
+                    "The idempotency reservation is no longer owned by this request."));
+        }
+
+        // 9. Execute. ONLY the executor call is guarded; audit + settlement happen exactly once,
+        //    outside the try, so a bookkeeping fault can never be mistaken for an execution failure.
+        JsonElement result;
+        try
+        {
+            result = await _executor
+                .ExecuteAsync(resolution.Capability, resolved.Input, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The effect may have partially occurred; record an indeterminate outcome so a retry
+            // neither replays a result nor reports a false in-progress. (Reconciliation is It.3.)
+            await SettleIndeterminateAsync(
+                principal, actionId, resolution.InputHash, resolved, key, reserved, facts).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception)
+        {
+            return await TerminalAsync(
+                principal, actionId, resolution.InputHash, "failed", key, reserved, IdempotencyState.Failed,
+                facts,
+                new ExecuteResponse(ExecuteStatus.Failed, resolved, authorization.Consent,
+                    Error: new ExecuteError(ErrorCodes.ExecutionFailed, "Execution failed."))).ConfigureAwait(false);
+        }
+
+        return await TerminalAsync(
+            principal, actionId, resolution.InputHash, "completed", key, reserved, IdempotencyState.Completed,
+            facts,
+            new ExecuteResponse(ExecuteStatus.Completed, resolved, authorization.Consent, result)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Gives back an authorization the caller decided not to run, releasing its reservation.
+    /// </summary>
+    /// <remarks>
+    /// Deciding against an action that was permitted is a real outcome, not an absence of one, so
+    /// it is audited under its own reason rather than left as a gap between an approval and no
+    /// effect.
+    /// </remarks>
+    public async Task<ExecuteResponse> ReleaseAsync(
+        ActionAuthorization authorization, string reason, CancellationToken ct)
+    {
+        ActionResolution resolution = authorization.Resolution;
+        ResolvedAction resolved = resolution.Resolved;
+
+        return await AbandonedAsync(
+            resolution.Principal, resolved.ActionId, resolution.InputHash,
+            resolution.IdempotencyKey, authorization.Reserved,
+            new AuditFacts(
+                resolution.Risk, resolved.Via, authorization.Consent.Decision,
+                string.Join(',', authorization.PolicyIds), Reason: reason),
+            new ExecuteResponse(ExecuteStatus.Denied, resolved, authorization.Consent,
+                Error: new ExecuteError(ErrorCodes.NotChosen, reason))).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The cheap ingress checks, which reserve nothing and read no state.
+    /// </summary>
+    /// <remarks>
+    /// Public so a caller can reject a malformed request before opening a cognitive cycle: RFC 021
+    /// requires invalid ingress to be refused before any persistent cognitive mutation.
+    /// </remarks>
+    public static ExecuteResponse? ValidateIngress(ExecuteRequest request)
+    {
         var hasObjective = !string.IsNullOrWhiteSpace(request.Objective);
         var hasAction = !string.IsNullOrWhiteSpace(request.ActionId);
+
         if (hasObjective && hasAction)
         {
             return Invalid(ErrorCodes.BothModes, "Provide either 'objective' or 'action_id', not both.");
@@ -93,185 +377,14 @@ public sealed class AuroraKernel
             return Invalid(ErrorCodes.KeyTooLong, "Idempotency key exceeds the maximum length.");
         }
 
-        // 2. Resolve. The reasoner only proposes; the kernel commits below.
-        string actionId;
-        JsonElement input;
-        double confidence;
-        string via;
-        if (hasAction)
-        {
-            actionId = request.ActionId!;
-            input = request.Input ?? EmptyObject;
-            confidence = 1.0;
-            via = ResolutionVia.Explicit;
-        }
-        else
-        {
-            var proposal = await _reasoner.ProposeAsync(request.Objective!, _registry.List(null), ct).ConfigureAwait(false);
-            if (proposal is null || string.IsNullOrWhiteSpace(proposal.ActionId))
-            {
-                return Invalid(ErrorCodes.ObjectiveUnavailable, "Objective-mode resolution is not available in this iteration.");
-            }
-
-            actionId = proposal.ActionId;
-            input = proposal.Input ?? EmptyObject;
-            confidence = proposal.Confidence;
-            via = proposal.Via;
-        }
-
-        // 3. Capability must exist in the catalog.
-        if (!_registry.TryGet(actionId, out var capability))
-        {
-            return Invalid(ErrorCodes.UnknownAction, $"Unknown action '{actionId}'.");
-        }
-
-        var descriptor = capability.Descriptor;
-
-        // 3b. The keyword fallback is blunt and untrusted: design 0001 confines it to LOW,
-        //     effect-free actions. Enforced here as well as in the adapter, so a future
-        //     proposer cannot quietly widen its own reach.
-        if (via == ResolutionVia.Keyword
-            && (descriptor.Risk != RiskLevel.Low || descriptor.Effects.Count > 0))
-        {
-            return Invalid(
-                ErrorCodes.KeywordRestricted,
-                "Keyword resolution is limited to low-risk, read-only actions.");
-        }
-
-        // 3a. Size guard on the canonical input.
-        var canonicalInput = CanonicalJson.Canonicalize(input);
-        if (Encoding.UTF8.GetByteCount(canonicalInput) > AuroraLimits.MaxInputBytes)
-        {
-            return Invalid(ErrorCodes.InputTooLarge, "Input exceeds the maximum size.");
-        }
-
-        // 4. Schema validation. Unknown/extra fields are rejected by the schema (additionalProperties:false).
-        var validation = _validator.Validate(descriptor.InputSchema, input);
-        if (!validation.IsValid)
-        {
-            return Invalid(ErrorCodes.SchemaInvalid, "Input failed schema validation.", validation.Errors);
-        }
-
-        var resolved = new ResolvedAction(actionId, input, confidence, via);
-        var inputHash = Hashing.Sha256Hex(canonicalInput);
-        var requestHash = Hashing.Sha256Hex($"{actionId}\n{canonicalInput}");
-        var key = request.IdempotencyKey;
-
-        // 5. Idempotency reservation (only when a key is supplied).
-        var reserved = false;
-        if (!string.IsNullOrEmpty(key))
-        {
-            var begin = await _idempotency.BeginAsync(principal, key, requestHash, ct).ConfigureAwait(false);
-            switch (begin.Disposition)
-            {
-                case IdempotencyDisposition.ReplayCompleted:
-                case IdempotencyDisposition.ReplayFailed:
-                    return DeserializeStored(begin.StoredResultJson)
-                        ?? new ExecuteResponse(ExecuteStatus.Failed, resolved,
-                            Error: new ExecuteError(ErrorCodes.UnknownState, "Stored idempotent result was unavailable."));
-
-                case IdempotencyDisposition.InProgress:
-                    return new ExecuteResponse(ExecuteStatus.InProgress, resolved,
-                        Error: new ExecuteError(ErrorCodes.ExecutionInProgress, "A request with this idempotency key is already in progress."));
-
-                case IdempotencyDisposition.Conflict:
-                    _metrics.IdempotencyConflict();
-                    return new ExecuteResponse(ExecuteStatus.Conflict, resolved,
-                        Error: new ExecuteError(ErrorCodes.IdempotencyConflict, "Idempotency key reused with a different input."));
-
-                case IdempotencyDisposition.Unknown:
-                    return new ExecuteResponse(ExecuteStatus.Conflict, resolved,
-                        Error: new ExecuteError(ErrorCodes.UnknownState, "Idempotency key is in an indeterminate state; reconciliation required."));
-
-                case IdempotencyDisposition.Begin:
-                default:
-                    reserved = true;
-                    break;
-            }
-        }
-
-        // 6. Policy — fail-closed, evaluated with the input.
-        var policy = _policy.Evaluate(descriptor, input, principal);
-        if (!policy.Allowed)
-        {
-            return await TerminalAsync(
-                principal, actionId, inputHash, "policy_denied", key, reserved, IdempotencyState.Failed,
-                new AuditFacts(
-                    descriptor.Risk.ToString(), via, PolicyIds: string.Join(',', policy.PolicyIds),
-                    Reason: policy.Reason),
-                new ExecuteResponse(ExecuteStatus.Denied, resolved,
-                    Error: new ExecuteError(ErrorCodes.PolicyDenied, policy.Reason ?? "Denied by policy."))).ConfigureAwait(false);
-        }
-
-        // 7. Consent — LOW auto; approval-gated capabilities go through the persisted approval
-        //    ledger (It.2, first increment); everything else at MEDIUM+ stays refused.
-        var consent = await _consent.EvaluateAsync(descriptor, input, requestHash, principal, ct).ConfigureAwait(false);
-        if (!consent.Granted)
-        {
-            var isRetryable = consent.Info.Decision == ConsentDecision.RequiresApproval;
-            var deniedResponse = new ExecuteResponse(ExecuteStatus.Denied, resolved, consent.Info,
-                Error: new ExecuteError(
-                    isRetryable ? ErrorCodes.ApprovalRequired : ErrorCodes.ConsentRequired,
-                    isRetryable
-                        ? "Approval is required. Call aurora_approve with the returned approval_id, then retry this exact request."
-                        : "Consent was denied for this request."));
-
-            // A retryable denial abandons the idempotency reservation instead of settling it as a
-            // terminal failure, so a retry after the approval is decided starts fresh rather than
-            // replaying this denial forever (It.2 design note, docs/adr/0002).
-            var deniedFacts = new AuditFacts(
-                descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds));
-
-            return isRetryable
-                ? await AbandonedAsync(
-                    principal, actionId, inputHash, key, reserved, deniedFacts, deniedResponse).ConfigureAwait(false)
-                : await TerminalAsync(
-                    principal, actionId, inputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
-                    deniedFacts, deniedResponse).ConfigureAwait(false);
-        }
-
-        // 8. Claim the reservation for execution. If we no longer own it, fail closed.
-        if (reserved && !await _idempotency.MarkExecutingAsync(principal, key!, ct).ConfigureAwait(false))
-        {
-            return new ExecuteResponse(ExecuteStatus.InProgress, resolved,
-                Error: new ExecuteError(ErrorCodes.ExecutionInProgress,
-                    "The idempotency reservation is no longer owned by this request."));
-        }
-
-        // 9. Execute. ONLY the executor call is guarded; audit + settlement happen exactly once,
-        //    outside the try, so a bookkeeping fault can never be mistaken for an execution failure.
-        JsonElement result;
-        try
-        {
-            result = await _executor.ExecuteAsync(capability, input, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // The effect may have partially occurred; record an indeterminate outcome so a retry
-            // neither replays a result nor reports a false in-progress. (Reconciliation is It.3.)
-            await SettleIndeterminateAsync(
-                principal, actionId, inputHash, resolved, key, reserved,
-                new AuditFacts(
-                    descriptor.Risk.ToString(), via, consent.Info.Decision,
-                    string.Join(',', policy.PolicyIds))).ConfigureAwait(false);
-            throw;
-        }
-        catch (Exception)
-        {
-            return await TerminalAsync(
-                principal, actionId, inputHash, "failed", key, reserved, IdempotencyState.Failed,
-                new AuditFacts(
-                    descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds)),
-                new ExecuteResponse(ExecuteStatus.Failed, resolved, consent.Info,
-                    Error: new ExecuteError(ErrorCodes.ExecutionFailed, "Execution failed."))).ConfigureAwait(false);
-        }
-
-        return await TerminalAsync(
-            principal, actionId, inputHash, "completed", key, reserved, IdempotencyState.Completed,
-            new AuditFacts(
-                descriptor.Risk.ToString(), via, consent.Info.Decision, string.Join(',', policy.PolicyIds)),
-            new ExecuteResponse(ExecuteStatus.Completed, resolved, consent.Info, result)).ConfigureAwait(false);
+        return null;
     }
+
+    private static ResolutionOutcome Unresolved(string code, string message) =>
+        new(null, Invalid(code, message));
+
+    private static AuthorizationOutcome Unauthorized(ExecuteResponse refusal) => new(null, refusal);
+
 
     /// <summary>
     /// Appends the audit entry and settles idempotency (if reserved) exactly once, then returns the

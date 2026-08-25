@@ -26,6 +26,18 @@ public static class ErrorCodes
     public const string PassphraseRequired = "passphrase_required";
     public const string PassphraseInvalid = "passphrase_invalid";
     public const string PassphraseLockedOut = "passphrase_locked_out";
+
+    /// <summary>
+    /// The action was permitted, and Aurora decided against it anyway (RFC 022).
+    /// </summary>
+    /// <remarks>
+    /// Distinct from a denial: nothing refused this. Reporting it as <c>policy_denied</c> would
+    /// send the caller looking for a rule that does not exist.
+    /// </remarks>
+    public const string NotChosen = "not_chosen";
+
+    /// <summary>Aurora needs the person's input before it will act (RFC 022 ASK).</summary>
+    public const string ClarificationRequired = "clarification_required";
 }
 
 /// <summary>Hard input limits enforced by the kernel before any effect.</summary>

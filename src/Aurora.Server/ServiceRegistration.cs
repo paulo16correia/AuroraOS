@@ -148,6 +148,10 @@ public static class ServiceRegistration
         // Kernel.
         services.AddSingleton<AuroraKernel>();
 
+        // Every MCP call is reasoned through the cycle rather than executed beside it (RFC 045
+        // rule 3). The Kernel stays the sole authority that commits an effect.
+        services.AddSingleton<KernelDispatcher>();
+
         return services;
     }
 }

@@ -41,6 +41,12 @@ public static class ExecuteStatus
     public const string Conflict = "conflict";
     public const string Invalid = "invalid";
     public const string InProgress = "in_progress";
+
+    /// <summary>
+    /// Aurora chose to ask before acting. Not a refusal: nothing forbade the action, and nothing
+    /// was reserved or run.
+    /// </summary>
+    public const string Asked = "asked";
 }
 
 public static class ConsentDecision
@@ -63,4 +69,10 @@ public sealed record ExecuteResponse(
     ConsentInfo? Consent = null,
     JsonElement? Result = null,
     IReadOnlyList<string>? AuditRef = null,
-    ExecuteError? Error = null);
+    ExecuteError? Error = null,
+    /// <summary>
+    /// The cognitive cycle this call was reasoned through, when it was dispatched rather than
+    /// executed directly. It is the handle for reading back what Aurora attended to, decided,
+    /// observed and concluded — so a caller is never asked to take the outcome on trust.
+    /// </summary>
+    string? CycleRef = null);

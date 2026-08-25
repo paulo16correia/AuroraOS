@@ -71,6 +71,72 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Contains("aurora_catalog", names);
         Assert.Contains("aurora_execute", names);
         Assert.Contains("aurora_approve", names);
+        Assert.Contains("aurora_converse", names);
+        Assert.Contains("aurora_cycle", names);
+    }
+
+    // ---- step 10b: MCP runs through the cognitive cycle, not beside it ----
+
+    [Fact]
+    public async Task Execute_ReturnsTheCycleItWasReasonedThrough()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "echo.say",
+                ["input"] = new Dictionary<string, object?> { ["message"] = "through the cycle" },
+            },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        Assert.Equal("completed", doc.RootElement.GetProperty("status").GetString());
+
+        var cycleRef = doc.RootElement.GetProperty("cycle_ref").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(cycleRef));
+
+        // And the cycle is readable back through MCP, so a client is never asked to take the
+        // outcome on trust.
+        var recalled = await client.CallToolAsync(
+            "aurora_cycle",
+            new Dictionary<string, object?> { ["cycle_id"] = cycleRef },
+            cancellationToken: Timeout());
+
+        using var cycle = JsonDocument.Parse(ToJson(recalled));
+        var run = cycle.RootElement.GetProperty("stages_run").EnumerateArray()
+            .Select(s => s.GetString()).ToList();
+
+        Assert.Contains("DECISION", run);
+        Assert.Contains("POLICY", run);
+        Assert.Contains("EXECUTOR", run);
+        Assert.Contains("OBSERVATION", run);
+        Assert.Contains("REFLECTION", run);
+    }
+
+    [Fact]
+    public async Task Converse_AnswersWithWhatWasDecidedRatherThanWithAWrittenReply()
+    {
+        await using var client = await ConnectAsync();
+        var result = await client.CallToolAsync(
+            "aurora_converse",
+            new Dictionary<string, object?>
+            {
+                ["conversation_ref"] = $"c-{Guid.NewGuid():N}",
+                ["utterance"] = "what do I usually drink",
+            },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+
+        // Aurora returns references, not prose: RFC 021 leaves the wording to the client and keeps
+        // authority over what happened.
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("cycle_id").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("decision_id").GetString()));
+        Assert.NotEmpty(doc.RootElement.GetProperty("audit_refs").EnumerateArray());
+        Assert.Contains(
+            "PLANNER",
+            doc.RootElement.GetProperty("stages_omitted").EnumerateArray().Select(s => s.GetString()));
     }
 
     [Fact]

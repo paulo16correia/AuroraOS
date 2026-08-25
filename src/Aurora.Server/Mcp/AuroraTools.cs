@@ -26,10 +26,13 @@ public sealed class AuroraTools
 
     [McpServerTool(Name = "aurora_execute")]
     [Description("Execute an Aurora capability. Provide either a natural-language 'objective' XOR an explicit "
-        + "'action_id' with 'input'. 'idempotency_key' is optional.")]
+        + "'action_id' with 'input'. 'idempotency_key' is optional. The call is reasoned through a "
+        + "cognitive cycle; the returned 'cycle_ref' reads back what was attended to, decided and "
+        + "observed. A status of 'asked' means Aurora wants your input before acting.")]
     public static async Task<JsonElement> Execute(
-        AuroraKernel kernel,
+        KernelDispatcher dispatcher,
         IPrincipalAccessor principals,
+        McpServer server,
         string? objective = null,
         string? action_id = null,
         JsonElement? input = null,
@@ -48,8 +51,42 @@ public sealed class AuroraTools
             Input: input,
             IdempotencyKey: idempotency_key);
 
-        var response = await kernel.ExecuteAsync(request, principals.Current, ct);
+        // Through the dispatcher, not straight to the kernel: RFC 045 rule 3 requires MCP ingress
+        // to have Mind semantics applied, not only policy and audit.
+        var response = await dispatcher.DispatchAsync(
+            request, principals.Current, server.SessionId, ct);
+
         return JsonSerializer.SerializeToElement(response, AuroraJson.Options);
+    }
+
+    [McpServerTool(Name = "aurora_converse")]
+    [Description("Bring a conversational turn to Aurora. Returns what Aurora recalled, decided and "
+        + "recorded for that turn, by reference — not a written reply. You write the reply; Aurora "
+        + "is authoritative for what is true and what happened, and never for how it is phrased.")]
+    public static async Task<JsonElement> Converse(
+        IPilotApplication pilot,
+        IPrincipalAccessor principals,
+        string conversation_ref,
+        string utterance,
+        CancellationToken ct = default)
+    {
+        var outcome = await pilot.RespondAsync(
+            new PilotRequest(conversation_ref, utterance, principals.Current), ct);
+
+        return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);
+    }
+
+    [McpServerTool(Name = "aurora_cycle")]
+    [Description("Read back a cognitive cycle by its id, as returned in 'cycle_ref' by aurora_execute "
+        + "or as 'cycle_id' by aurora_converse: which stages ran, which were deliberately omitted, "
+        + "and what was decided and observed.")]
+    public static async Task<JsonElement> Cycle(
+        IPilotApplication pilot,
+        string cycle_id,
+        CancellationToken ct = default)
+    {
+        var outcome = await pilot.RecallAsync(cycle_id, ct);
+        return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);
     }
 
     [McpServerTool(Name = "aurora_approve")]
