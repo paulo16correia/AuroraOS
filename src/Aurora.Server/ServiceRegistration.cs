@@ -31,6 +31,7 @@ using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
+using Aurora.Adapters.Relationships;
 using Aurora.Adapters.Time;
 using Aurora.Adapters.Tools;
 using Aurora.Adapters.Validation;
@@ -98,6 +99,10 @@ public static class ServiceRegistration
         // Patterns Aurora thinks it sees, kept apart from the memories it saw them in (RFC 028).
         services.AddSingleton(BeliefPolicy.Default);
         services.AddSingleton<IBeliefSystem, SqliteBeliefSystem>();
+
+        // Who has a tie to whom, and how the person likes things done. Neither is a permission,
+        // and nothing here can turn one into one (RFC 029).
+        services.AddSingleton<IRelationshipModel, SqliteRelationshipModel>();
 
         services.AddSingleton<IClockGuard, AuditClockGuard>();
         services.AddSingleton<IHealthService, AuroraHealthService>();

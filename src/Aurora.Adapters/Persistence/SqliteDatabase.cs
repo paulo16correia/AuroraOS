@@ -868,6 +868,43 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_belief_update ON belief_update(belief_id, applied_at_utc);
 
+        CREATE TABLE IF NOT EXISTS relationship_assertion (
+          id TEXT PRIMARY KEY,
+          subject_ref TEXT NOT NULL,
+          relation_type TEXT NOT NULL,
+          object_ref TEXT NOT NULL,
+          qualifiers_json TEXT NOT NULL,
+          authority_scope TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          valid_from_utc TEXT NOT NULL,
+          valid_to_utc TEXT NULL,
+          status TEXT NOT NULL,
+          authorization_ref TEXT NULL,
+          retention_until_utc TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_relationship_subject
+          ON relationship_assertion(subject_ref, status, valid_from_utc);
+
+        CREATE TABLE IF NOT EXISTS preference (
+          id TEXT PRIMARY KEY,
+          owner_ref TEXT NOT NULL,
+          subject_ref TEXT NOT NULL,
+          dimension TEXT NOT NULL,
+          value_json TEXT NOT NULL,
+          strength REAL NOT NULL,
+          basis TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          scope_json TEXT NOT NULL,
+          status TEXT NOT NULL,
+          review_at_utc TEXT NOT NULL,
+          consent_required INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_preference_owner
+          ON preference(owner_ref, dimension, status);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -877,7 +914,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 8;
+    public const int TargetSchemaVersion = 9;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1113,6 +1150,46 @@ public sealed class SqliteDatabase
             );
 
             CREATE INDEX IF NOT EXISTS idx_belief_update ON belief_update(belief_id, applied_at_utc);
+            """,
+
+        // v9 — relationships and preferences (docs/adr/0042). New tables only.
+        [9] = """
+            CREATE TABLE IF NOT EXISTS relationship_assertion (
+              id TEXT PRIMARY KEY,
+              subject_ref TEXT NOT NULL,
+              relation_type TEXT NOT NULL,
+              object_ref TEXT NOT NULL,
+              qualifiers_json TEXT NOT NULL,
+              authority_scope TEXT NOT NULL,
+              confidence REAL NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              valid_from_utc TEXT NOT NULL,
+              valid_to_utc TEXT NULL,
+              status TEXT NOT NULL,
+              authorization_ref TEXT NULL,
+              retention_until_utc TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_relationship_subject
+              ON relationship_assertion(subject_ref, status, valid_from_utc);
+
+            CREATE TABLE IF NOT EXISTS preference (
+              id TEXT PRIMARY KEY,
+              owner_ref TEXT NOT NULL,
+              subject_ref TEXT NOT NULL,
+              dimension TEXT NOT NULL,
+              value_json TEXT NOT NULL,
+              strength REAL NOT NULL,
+              basis TEXT NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              scope_json TEXT NOT NULL,
+              status TEXT NOT NULL,
+              review_at_utc TEXT NOT NULL,
+              consent_required INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_preference_owner
+              ON preference(owner_ref, dimension, status);
             """,
     };
 
