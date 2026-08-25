@@ -73,6 +73,30 @@ public interface IDbTransactionScope : IAsyncDisposable
     Task CommitAsync(CancellationToken ct);
 }
 
+/// <summary>
+/// The event types this deployment is allowed to publish (LAW-007).
+/// </summary>
+/// <remarks>
+/// A dependency rather than a static lookup so the outbox can be tested on its own mechanics, and
+/// so a deployment could in principle declare more. The production wiring is
+/// <c>DeclaredEventCatalogue</c>, which reads the compile-time list and nothing else; an
+/// architecture test asserts that is what the server registers.
+/// </remarks>
+public interface IEventCatalogue
+{
+    /// <summary>
+    /// Whether this write is one the deployment declared, and if not, what is wrong with it.
+    /// </summary>
+    /// <remarks>
+    /// The catalogue answers about the whole write rather than about the type alone, because the
+    /// declaration covers who may emit it and at what classification — and a mismatch on either is
+    /// the interesting failure, not a missing name.
+    /// </remarks>
+    bool TryValidate(OutboxWrite write, out string? violation);
+
+    IReadOnlyList<EventContract> Declared { get; }
+}
+
 /// <summary>The Event Bus surface defined by RFC 050.</summary>
 public interface IEventBus
 {

@@ -75,7 +75,7 @@ public sealed class LocalConversationPilot : IPilotApplication
         // The turn is a domain fact, so it is published rather than merely handled (LAW-007).
         DomainEvent ingress = await _bus.PublishAsync(
             new OutboxWrite(
-                "ConversationTurnReceived", 1, "pilot", correlationId, Sensitivity.Private,
+                EventCatalogue.ConversationTurnReceived, 1, EventCatalogue.Producers.Pilot, correlationId, Sensitivity.Private,
                 AggregateRef: $"conversation/{request.ConversationRef}",
                 PayloadJson: $$"""{"length":{{request.Utterance.Length}}}""",
                 IdempotencyKey: correlationId),

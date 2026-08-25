@@ -39,10 +39,22 @@ var app = builder.Build();
 // Migrate, then fail closed if the existing audit chain fails its integrity check.
 app.Services.GetRequiredService<SqliteDatabase>().Initialize();
 var auditVerification = await app.Services.GetRequiredService<IAuditStore>().VerifyChainAsync(CancellationToken.None);
+if (auditVerification is { Ok: true, AcknowledgedBreakAt: { } seam })
+{
+    Console.WriteLine(
+        $"[Aurora] The audit chain verifies from record {seam} onwards. Everything before that "
+        + "seam is permanently unverifiable and is recorded as such.");
+}
+
 if (!auditVerification.Ok)
 {
+    // Fail closed, and say what can be done about it. A refusal with no way forward is not
+    // fail-closed, it is bricked — the usual cause is a signing key that was lost or replaced.
     throw new InvalidOperationException(
-        $"Audit chain integrity verification failed at sequence {auditVerification.BrokenSequence}; refusing to start.");
+        $"Audit chain integrity verification failed at sequence {auditVerification.BrokenSequence}"
+        + $"{(auditVerification.Reason is { } why ? $": {why}" : ".")} Refusing to start. "
+        + "If the signing key was lost or replaced, run 'seal-audit-break <reason>' on this console: "
+        + "it records the discontinuity permanently and starts a new chain, and repairs nothing.");
 }
 
 // A process that died mid-effect leaves reservations in EXECUTING, which is deliberately not

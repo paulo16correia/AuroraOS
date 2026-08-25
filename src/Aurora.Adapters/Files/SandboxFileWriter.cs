@@ -13,11 +13,13 @@ namespace Aurora.Adapters.Files;
 /// mid-path cannot redirect the write outside; and the content lands via a temp file plus rename,
 /// so a reader never observes a partially written file.
 /// <para>
-/// Residual race, stated plainly: .NET has no portable <c>openat</c>/<c>O_NOFOLLOW</c>, so the
-/// link check and the write are separate syscalls. An attacker who can create files inside the
-/// sandbox root between those two steps can still win a TOCTOU race. Closing it properly needs
-/// platform interop and is deferred; the mitigation today is that the sandbox root is expected to
-/// be writable only by the Aurora process's own user.
+/// Residual race, stated plainly: .NET has no portable <c>openat</c>/<c>O_NOFOLLOW</c>, so a
+/// directory component swapped between the check and the rename still cannot be <i>prevented</i>.
+/// It is now detected: containment is re-verified immediately before the rename and again after
+/// it, and a file that landed outside the sandbox is removed and reported rather than left
+/// standing. The precondition the whole scheme rests on — that only Aurora's own user can write
+/// inside the root — is applied by <see cref="SandboxGuard.RestrictToOwner"/> instead of assumed
+/// (docs/adr/0036).
 /// </para>
 /// </remarks>
 public sealed class SandboxFileWriter : ISandboxFileWriter
@@ -42,8 +44,10 @@ public sealed class SandboxFileWriter : ISandboxFileWriter
         // Check what already exists before creating anything, so we never mkdir through a link...
         SandboxGuard.EnsureNoLinkedComponents(_root, full);
         Directory.CreateDirectory(directory);
+        SandboxGuard.RestrictToOwner(directory);
         // ...and again afterwards, now that every component exists.
         SandboxGuard.EnsureNoLinkedComponents(_root, full);
+        SandboxGuard.EnsureResolvesInsideRoot(_root, full);
 
         var overwritten = File.Exists(full);
         var bytes = Encoding.UTF8.GetBytes(content);
@@ -59,11 +63,32 @@ public sealed class SandboxFileWriter : ISandboxFileWriter
                 await stream.FlushAsync(ct).ConfigureAwait(false);
             }
 
+            // Immediately before the rename, so the window a swapped directory component has is
+            // as small as two adjacent statements rather than a whole write.
+            SandboxGuard.EnsureResolvesInsideRoot(_root, full);
+
+            // Rename replaces a link at the destination rather than writing through it, on every
+            // platform Aurora supports: POSIX rename() and Win32 MOVEFILE_REPLACE_EXISTING both
+            // operate on the entry, not on what it points at.
             File.Move(temp, full, overwrite: true);
         }
         catch
         {
             TryDelete(temp);
+            throw;
+        }
+
+        try
+        {
+            // Detection, not prevention. If a component was swapped anyway, the file that just
+            // landed is removed and the caller is told — which is the difference between a
+            // contained failure and a silent escape.
+            SandboxGuard.EnsureNoLinkedComponents(_root, full);
+            SandboxGuard.EnsureResolvesInsideRoot(_root, full);
+        }
+        catch (SandboxViolationException)
+        {
+            TryDelete(full);
             throw;
         }
 

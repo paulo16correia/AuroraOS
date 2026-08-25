@@ -43,7 +43,7 @@ public sealed class SignalsAndNeedsTests
         return new World(
             new SqliteSignalService(db.Factory, cycles, clock),
             new SqliteNeedsService(db.Factory, planner, clock),
-            new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock),
+            new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
             cycles, planner, clock);
     }
 

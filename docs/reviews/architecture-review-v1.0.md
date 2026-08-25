@@ -27,6 +27,20 @@ The review evaluated each domain against unique responsibility, state ownership,
 4. Demonstrate isolated snapshot/restore before any connector with effects.
 5. Publish event contracts and authorization matrices for each capability.
 
+### Status in the reference implementation
+
+| # | Closed by |
+| --- | --- |
+| 1 | `docs/adr/0027` — Laws 001–007 as 20 compliance tests. |
+| 2 | `docs/adr/0027` — LAW-002 boundary test over Mind-layer signatures; `docs/reviews/dependency-matrix-v1.0.md`. |
+| 3 | `docs/adr/0016` — outbox, idempotence, DLQ; `UNKNOWN` reconciliation at startup and in the upkeep pass. |
+| 4 | `docs/adr/0018` — isolated snapshot/restore, verified before any connector with effects. |
+| 5 | `docs/adr/0036` — `docs/reference/capability-authorization.md`, generated from the registry and held true by `AuthorizationMatrixTests`; undeclared events are refused by the outbox. |
+
+All five are demonstrated. External writing is no longer blocked by this review;
+the remaining gate on the sandbox capabilities is the residual TOCTOU risk
+recorded in `docs/adr/0003` and closed in `docs/adr/0036`.
+
 ## Findings
 
 | ID | Severity | Found | Resolution v1.0 |

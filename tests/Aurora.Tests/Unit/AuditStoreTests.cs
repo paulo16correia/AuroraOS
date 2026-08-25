@@ -202,4 +202,92 @@ public sealed class AuditStoreTests
         Assert.False(verification.Ok);
         Assert.Equal(1, verification.BrokenSequence);
     }
+
+    // ---- docs/adr/0036: a lost signing key has a way forward that repairs nothing ----
+
+    [Fact]
+    public async Task ALostKeyLeavesTheChainUnverifiableUntilTheBreakIsSealed()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+
+        var original = new SqliteAuditStore(
+            db.Factory, clock, KeyOf(1), new AuditAnchorFile(anchorPath));
+
+        await original.AppendAsync(Entry("first"), CancellationToken.None);
+        await original.AppendAsync(Entry("second"), CancellationToken.None);
+        Assert.True((await original.VerifyChainAsync(CancellationToken.None)).Ok);
+
+        // The key is gone. Records signed under it can never verify again, whatever anyone does.
+        var replaced = new SqliteAuditStore(
+            db.Factory, clock, KeyOf(2), new AuditAnchorFile(anchorPath));
+
+        AuditVerification broken = await replaced.VerifyChainAsync(CancellationToken.None);
+        Assert.False(broken.Ok);
+
+        await replaced.SealBreakAsync("the signing key was lost in a disk failure", "paulo", CancellationToken.None);
+
+        AuditVerification sealed_ = await replaced.VerifyChainAsync(CancellationToken.None);
+
+        // Verifies from the seam onwards, and says exactly where the seam is. Nothing claims the
+        // older records are fine.
+        Assert.True(sealed_.Ok);
+        Assert.NotNull(sealed_.AcknowledgedBreakAt);
+
+        IReadOnlyList<AuditRecordView> log = await replaced.QueryAsync(0, 100, CancellationToken.None);
+        Assert.Contains(log, r => r.ActionId == SqliteAuditStore.ChainBreakAction);
+    }
+
+    [Fact]
+    public async Task ASealCannotBeForgedByAnyoneWhoDoesNotHoldTheKey()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+
+        var real = new SqliteAuditStore(db.Factory, clock, KeyOf(1), new AuditAnchorFile(anchorPath));
+        await real.AppendAsync(Entry("first"), CancellationToken.None);
+
+        // An attacker with write access to the database, but no key, plants a break marker hoping
+        // it will excuse a rewritten history.
+        await using (var connection = await db.Factory.OpenAsync(CancellationToken.None))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO audit_record
+                    (sequence, record_id, principal_client_id, principal_os_user, action_id,
+                     input_hash, outcome, created_at_utc, previous_hash, record_hash)
+                VALUES (99, 'forged', 'attacker', 'attacker', 'audit.chain_break',
+                        'h', 'chain_break_acknowledged', '2026-01-01T00:00:00.0000000+00:00',
+                        'whatever', 'not-a-real-hmac');
+                """;
+            await command.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+
+        AuditVerification verified = await real.VerifyChainAsync(CancellationToken.None);
+
+        // The marker only excuses what came before it if the marker itself is genuine.
+        Assert.False(verified.Ok);
+        Assert.Equal(99, verified.BrokenSequence);
+    }
+
+    [Fact]
+    public async Task SealingWithoutAReasonIsRefused()
+    {
+        using var db = new SqliteTestDb();
+        var store = new SqliteAuditStore(
+            db.Factory, new TestClock(DateTimeOffset.UnixEpoch), KeyOf(1),
+            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+
+        // Nobody should be able to find an unexplained break in an audit log.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.SealBreakAsync("  ", "paulo", CancellationToken.None));
+    }
+
+    private static byte[] KeyOf(byte seed) => Enumerable.Repeat(seed, 32).ToArray();
+
+    private static AuditEntry Entry(string action) =>
+        new("c1", "u1", action, "hash", "completed",
+            Risk: "Low", Via: "explicit", Decision: "auto_low", PolicyIds: "p");
 }

@@ -28,6 +28,7 @@ public sealed class AuroraKernel
     private readonly IIdempotencyStore _idempotency;
     private readonly IAuroraMetrics _metrics;
     private readonly IPassphraseAuthenticator _passphrase;
+    private readonly IEventBus _bus;
 
     public AuroraKernel(
         IReasoner reasoner,
@@ -40,7 +41,8 @@ public sealed class AuroraKernel
         IAuditStore audit,
         IIdempotencyStore idempotency,
         IAuroraMetrics metrics,
-        IPassphraseAuthenticator passphrase)
+        IPassphraseAuthenticator passphrase,
+        IEventBus bus)
     {
         _reasoner = reasoner;
         _registry = registry;
@@ -53,6 +55,7 @@ public sealed class AuroraKernel
         _idempotency = idempotency;
         _metrics = metrics;
         _passphrase = passphrase;
+        _bus = bus;
     }
 
     /// <summary>
@@ -541,6 +544,26 @@ public sealed class AuroraKernel
                 Hashing.Sha256Hex(request.ApprovalId), outcome,
                 Via: "approval", Decision: approve ? "approved" : "rejected"),
             CancellationToken.None).ConfigureAwait(false);
+
+        // LAW-007: a person deciding what Aurora may do is a state change, and the UI, the audit
+        // and the review all need to see it without depending on whoever happened to call this.
+        if (result.Outcome == ApprovalDecideOutcome.Decided)
+        {
+            await _bus.PublishAsync(
+                new OutboxWrite(
+                    EventCatalogue.ApprovalDecided, 1, EventCatalogue.Producers.Kernel,
+                    Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                    AggregateRef: $"approval/{request.ApprovalId}",
+                    PayloadJson: AuroraJson.Serialize(
+                        new
+                        {
+                            approval_id = request.ApprovalId,
+                            decision = approve ? "approved" : "rejected",
+                            action_id = result.Record!.ActionId,
+                        }),
+                    IdempotencyKey: $"approval-decided:{request.ApprovalId}"),
+                CancellationToken.None).ConfigureAwait(false);
+        }
 
         return result.Outcome switch
         {

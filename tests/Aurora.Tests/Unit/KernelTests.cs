@@ -37,7 +37,8 @@ public sealed class KernelTests
         IConsentGate? consent = null,
         IApprovalStore? approvals = null,
         IAuroraMetrics? metrics = null,
-        IPassphraseAuthenticator? passphrase = null) =>
+        IPassphraseAuthenticator? passphrase = null,
+        IEventBus? bus = null) =>
         new(
             new FakeReasoner(proposal),
             new FakeRegistry(capability),
@@ -49,7 +50,8 @@ public sealed class KernelTests
             audit ?? new RecordingAuditStore(),
             idempotency ?? new InMemoryIdempotencyStore(),
             metrics ?? new InMemoryMetrics(new TestClock(DateTimeOffset.UnixEpoch)),
-            passphrase ?? new FakePassphrase());
+            passphrase ?? new FakePassphrase(),
+            bus ?? new RecordingEventBus());
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });

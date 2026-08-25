@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Cryptography;
@@ -13,12 +14,15 @@ public sealed class SqliteMemoryService : IMemoryService
 {
     private readonly SqliteConnectionFactory _factory;
     private readonly IMemoryRanker _ranker;
+    private readonly IEventBus _bus;
     private readonly IClock _clock;
 
-    public SqliteMemoryService(SqliteConnectionFactory factory, IMemoryRanker ranker, IClock clock)
+    public SqliteMemoryService(
+        SqliteConnectionFactory factory, IMemoryRanker ranker, IEventBus bus, IClock clock)
     {
         _factory = factory;
         _ranker = ranker;
+        _bus = bus;
         _clock = clock;
     }
 
@@ -169,9 +173,26 @@ public sealed class SqliteMemoryService : IMemoryService
 
         await SetStatusAsync(memoryId, status, updated.ContentHash, ct).ConfigureAwait(false);
 
-        return await AppendRevisionAsync(
+        MemoryRevision applied = await AppendRevisionAsync(
             memoryId, operation, actor, reason, memory.ContentHash, updated.ContentHash, ct)
             .ConfigureAwait(false);
+
+        // LAW-007: what the owner corrected or retracted is a state change the UI, the audit and
+        // reflection all need to see. The identifiers travel; the content does not — a memory the
+        // owner just asked to forget must not be copied into the bus on its way out.
+        await _bus.PublishAsync(
+            new OutboxWrite(
+                operation == RevisionOperation.Retract
+                    ? EventCatalogue.MemoryForgotten
+                    : EventCatalogue.MemoryRevised,
+                1, EventCatalogue.Producers.Memory, Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                AggregateRef: $"memory/{memoryId}",
+                PayloadJson: AuroraJson.Serialize(
+                    new { memory_id = memoryId, operation, actor, revision_id = applied.Id }),
+                IdempotencyKey: $"memory-revision:{applied.Id}"),
+            ct).ConfigureAwait(false);
+
+        return applied;
     }
 
     public async Task<MemoryTombstone> ForgetAsync(string memoryId, string actor, CancellationToken ct)

@@ -1,3 +1,4 @@
+using Aurora.Adapters.Events;
 using Aurora.Adapters.Persistence;
 using Aurora.Core.Abstractions;
 using Microsoft.Data.Sqlite;
@@ -43,4 +44,18 @@ public sealed class SqliteTestDb : IDisposable
             }
         }
     }
+}
+
+/// <summary>
+/// A real Event Bus over a test database.
+/// </summary>
+/// <remarks>
+/// Not a fake. Components that publish state changes are only correct if what they publish passes
+/// the declared contracts (LAW-007), and a stub that accepts anything would hide exactly the
+/// mistakes that check exists to catch.
+/// </remarks>
+public static class TestBus
+{
+    public static SqliteEventBus Over(SqliteConnectionFactory factory, IClock clock) =>
+        new(factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
 }

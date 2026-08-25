@@ -20,6 +20,8 @@ public sealed record MaintenanceReport(
     IReadOnlyList<string> RankedNeedIds,
     string ResourceStatus,
     string RiskPosture,
+    /// <summary>Working records removed as past retention. Never audit, memory, goals or missions.</summary>
+    RetentionReport Retention,
     /// <summary>
     /// Conditions this pass did not look at. Reported rather than defaulted to zero, so an
     /// unnoticed need is visible as unmeasured instead of appearing to be absent.

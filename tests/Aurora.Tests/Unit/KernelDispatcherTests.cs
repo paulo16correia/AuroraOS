@@ -60,17 +60,18 @@ public sealed class KernelDispatcherTests
             new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchorPath)),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock),
-            new FakePassphrase());
+            new FakePassphrase(),
+            TestBus.Over(db.Factory, clock));
 
         var cycle = new SqliteCognitiveCycle(db.Factory, clock);
 
         var dispatcher = new KernelDispatcher(
             kernel,
             cycle,
-            new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock),
+            new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
             new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
-            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), clock),
+            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
@@ -213,16 +214,17 @@ public sealed class KernelDispatcherTests
                 db.Factory, clock, new byte[32],
                 new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
             new InMemoryIdempotencyStore(),
-            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase());
+            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
+            TestBus.Over(db.Factory, clock));
 
         var cycle = new SqliteCognitiveCycle(db.Factory, clock);
         var decisions = new SqliteDecisionEngine(db.Factory, clock);
 
         var dispatcher = new KernelDispatcher(
-            kernel, cycle, new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock),
+            kernel, cycle, new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
             new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
-            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), clock),
+            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             decisions, new SqliteObservationService(db.Factory, clock),
             AttentionPolicy.Default, clock);

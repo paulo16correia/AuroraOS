@@ -235,7 +235,7 @@ public sealed class SqliteScheduler : IScheduler
         if (catchingUp && schedule.MissedRunPolicy == MissedRunPolicy.Ask)
         {
             await PublishAsync(
-                "ScheduleRunsMissed", schedule,
+                EventCatalogue.ScheduleRunsMissed, schedule,
                 $$"""{"missed":{{missed.Count}},"policy":"ASK"}""", ct).ConfigureAwait(false);
         }
 
@@ -281,7 +281,7 @@ public sealed class SqliteScheduler : IScheduler
             // The due run is announced as a fact, not handed to an executor. What answers it is the
             // cognitive cycle, with everything that entails.
             await PublishAsync(
-                "JobDue", schedule,
+                EventCatalogue.JobDue, schedule,
                 $$"""{"run_id":"{{run.Id}}","target":"{{schedule.Target}}"}""", ct).ConfigureAwait(false);
         }
 
@@ -617,14 +617,14 @@ public sealed class SqliteScheduler : IScheduler
         // Notified, not just recorded: a schedule that quietly stops firing is the failure people
         // find out about weeks later.
         await PublishAsync(
-            "ScheduleDisabled", schedule,
+            EventCatalogue.ScheduleDisabled, schedule,
             $$"""{"status":"{{status}}","reason":{{Quote(reason)}}}""", ct).ConfigureAwait(false);
     }
 
     private Task PublishAsync(string type, Schedule schedule, string payloadJson, CancellationToken ct) =>
         _bus.PublishAsync(
             new OutboxWrite(
-                type, 1, "scheduler", Guid.NewGuid().ToString("N"), Sensitivity.Private,
+                type, 1, EventCatalogue.Producers.Scheduler, Guid.NewGuid().ToString("N"), Sensitivity.Private,
                 AggregateRef: $"schedule/{schedule.Id}", PayloadJson: payloadJson),
             ct);
 

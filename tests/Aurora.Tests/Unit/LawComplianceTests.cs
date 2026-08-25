@@ -28,8 +28,12 @@ public sealed class LawComplianceTests
     private static readonly Principal Caller = new("c1", "u1");
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-01-01T00:00:00+00:00");
 
-    private static SqliteMemoryService Memories(SqliteTestDb db) =>
-        new(db.Factory, new LexicalMemoryRanker(), new TestClock(Now));
+    private static SqliteMemoryService Memories(SqliteTestDb db)
+    {
+        var clock = new TestClock(Now);
+        return new SqliteMemoryService(
+            db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock);
+    }
 
     private static SqliteWorldModel World(SqliteTestDb db, DateTimeOffset? now = null) =>
         new(db.Factory, new TestClock(now ?? Now), WorldModelOptions.Default);
@@ -404,7 +408,7 @@ public sealed class LawComplianceTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(Now);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
 
         DomainEvent published = await bus.PublishAsync(
             new OutboxWrite("MemoryCreated", 1, "kernel", "corr-1", Sensitivity.Public,
@@ -424,7 +428,7 @@ public sealed class LawComplianceTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(Now);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
 
         await Assert.ThrowsAsync<EventContractException>(() => bus.PublishAsync(
             new OutboxWrite("T", 1, "kernel", string.Empty, Sensitivity.Public, PayloadJson: "{}"), Ct));
@@ -435,7 +439,7 @@ public sealed class LawComplianceTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(Now);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
 
         Subscription subscription = await bus.SubscribeAsync(new Subscription(
             "sub-1", "indexer", ["MemoryCreated"], null, DeliveryMode.AtLeastOnce,

@@ -6,7 +6,19 @@ namespace Aurora.Core.Abstractions;
 /// Outcome of an integrity check. <paramref name="Reason"/> distinguishes an edited record
 /// from a truncated tail, which the chain alone cannot tell apart.
 /// </summary>
-public sealed record AuditVerification(bool Ok, long? BrokenSequence, string? Reason = null);
+public sealed record AuditVerification(
+    bool Ok,
+    long? BrokenSequence,
+    string? Reason = null,
+    /// <summary>
+    /// Where an acknowledged discontinuity sits, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// Records before this point cannot be verified and never will be — the key that signed them
+    /// is gone. The chain from here forward is sound. Reported rather than hidden: the honest
+    /// answer to "does the audit log verify" is sometimes "from here onwards".
+    /// </remarks>
+    long? AcknowledgedBreakAt = null);
 
 /// <summary>
 /// One audit record. Beyond the bare outcome it carries *why* the kernel decided as it did
@@ -48,6 +60,20 @@ public interface IAuditStore
 
     /// <summary>Recomputes the chain and reports the first break, if any.</summary>
     Task<AuditVerification> VerifyChainAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Records that the chain before this point can no longer be verified, and starts a new one.
+    /// </summary>
+    /// <remarks>
+    /// The recovery path for a lost signing key, which otherwise leaves Aurora unable to start and
+    /// with no way forward. It does not repair anything and does not pretend to: the older records
+    /// stay exactly as they are, permanently unverifiable, and the marker says so in the log.
+    /// <para>
+    /// The marker is itself signed with the current key, so someone who can write to the database
+    /// but does not hold the key cannot forge a break to make a tampered log verify.
+    /// </para>
+    /// </remarks>
+    Task<string> SealBreakAsync(string reason, string actor, CancellationToken ct);
 
     /// <summary>
     /// The newest record hash, or null on an empty log. A Mind State snapshot pins it so a

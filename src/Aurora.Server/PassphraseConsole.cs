@@ -2,6 +2,7 @@ using Aurora.Adapters.Consent;
 using Aurora.Adapters.Time;
 using Aurora.Core.Abstractions;
 
+using Aurora.Adapters.Persistence;
 namespace Aurora.Server;
 
 /// <summary>
@@ -20,9 +21,14 @@ public static class PassphraseConsole
     public static bool TryHandle(string[] args, AuroraServerOptions options)
     {
         var command = args.FirstOrDefault();
-        if (command is not ("enroll-passphrase" or "revoke-passphrase"))
+        if (command is not ("enroll-passphrase" or "revoke-passphrase" or "seal-audit-break"))
         {
             return false;
+        }
+
+        if (command == "seal-audit-break")
+        {
+            return SealAuditBreak(args, options);
         }
 
         IPassphraseAuthenticator authenticator =
@@ -100,5 +106,58 @@ public static class PassphraseConsole
                 buffer.Append(key.KeyChar);
             }
         }
+    }
+
+    /// <summary>
+    /// Records that the audit chain before now cannot be verified, and starts a new one.
+    /// </summary>
+    /// <remarks>
+    /// The recovery path for a lost or replaced signing key. Without it, a key that goes missing
+    /// leaves Aurora refusing to start with nothing an operator can do about it — which is not
+    /// fail-closed, it is bricked.
+    /// <para>
+    /// On this console and not over HTTP, for the same reason enrolment is: the bearer token
+    /// belongs to the agent, and an agent able to declare its own audit trail unverifiable would
+    /// be able to erase its own history.
+    /// </para>
+    /// </remarks>
+    private static bool SealAuditBreak(string[] args, AuroraServerOptions options)
+    {
+        var reason = args.Length > 1 ? string.Join(' ', args[1..]).Trim() : string.Empty;
+        if (reason.Length == 0)
+        {
+            Console.WriteLine(
+                "[Aurora] Usage: seal-audit-break <reason>. The reason is written into the log "
+                + "and stays there.");
+            return true;
+        }
+
+        Console.WriteLine(
+            "This does not repair anything. Records before the seal stay exactly as they are and");
+        Console.WriteLine(
+            "can never be verified again; the seal says so, permanently, in the audit log itself.");
+        Console.Write("Type SEAL to continue: ");
+
+        if (Console.ReadLine()?.Trim() != "SEAL")
+        {
+            Console.WriteLine("[Aurora] Nothing was sealed.");
+            return true;
+        }
+
+        var factory = new SqliteConnectionFactory(options.DbPath);
+        new SqliteDatabase(factory).Initialize();
+
+        var clock = new SystemClock();
+        var store = new SqliteAuditStore(
+            factory, clock, AuditKeyFile.LoadOrCreate(options.AuditKeyPath),
+            new AuditAnchorFile(options.AuditAnchorPath));
+
+        var recordHash = store
+            .SealBreakAsync(reason, Environment.UserName, CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        Console.WriteLine($"[Aurora] Sealed. The new chain starts at record {recordHash[..16]}...");
+        Console.WriteLine("[Aurora] Verification will report the seam from here on.");
+        return true;
     }
 }

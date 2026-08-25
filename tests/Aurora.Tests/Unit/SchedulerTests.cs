@@ -34,7 +34,7 @@ public sealed class SchedulerTests
         return (
             new SqliteScheduler(
                 db.Factory,
-                new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock),
+                new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
                 new SqliteCognitiveCycle(db.Factory, clock),
                 clock),
             clock);
@@ -291,7 +291,7 @@ public sealed class SchedulerTests
         var clock = new TestClock(At("2026-01-15T07:00:00+00:00"));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var scheduler = new SqliteScheduler(
-            db.Factory, new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock), cycles, clock);
+            db.Factory, new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock), cycles, clock);
 
         Schedule schedule = await scheduler.CreateAsync(Daily(), null, Ct);
         ScheduleRun due = (await scheduler.TickAsync(At("2026-01-15T09:00:00+00:00"), Ct)).Single();

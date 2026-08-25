@@ -44,7 +44,7 @@ public sealed class ReviewApplicationTests
         var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
 
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchorPath));
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var planner = new SqlitePlanner(db.Factory, clock);
         var needs = new SqliteNeedsService(db.Factory, planner, clock);

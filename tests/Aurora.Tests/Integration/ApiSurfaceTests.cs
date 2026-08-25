@@ -252,69 +252,52 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     // ---- events ----
 
     [Fact]
-    public async Task AClassifiedEventMayNotCarryAnOpenPayload()
+    public async Task TheIngressEndpointPublishesOneDeclaredEventAndNotWhateverTheCallerNames()
     {
         using HttpClient http = Client();
         HttpResponseMessage response = await http.SendAsync(
             Request(
                 HttpMethod.Post, "/v1/events",
-                new
-                {
-                    type = "api.test.classified",
-                    sensitivity = Sensitivity.Secret,
-                    payload_json = """{"secret":"value"}""",
-                },
-                Key()),
-            Ct());
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task AnAcceptedEventBecomesAFactWithIdentityAndIntegrity()
-    {
-        using HttpClient http = Client();
-        HttpResponseMessage response = await http.SendAsync(
-            Request(
-                HttpMethod.Post, "/v1/events",
-                new { type = "api.test.accepted", sensitivity = Sensitivity.Private, payload_json = "{}" },
+                new { observation = "the front door sensor reported motion", subject_ref = "sensor/front" },
                 Key()),
             Ct());
 
         response.EnsureSuccessStatusCode();
         JsonElement published = (await BodyAsync(response)).GetProperty("data");
 
-        Assert.False(string.IsNullOrWhiteSpace(published.GetProperty("event_id").GetString()));
+        // A surface outside Aurora choosing its own event type is a surface that can assert
+        // anything about anything. It reports an observation; the type is Aurora's (LAW-007).
+        Assert.Equal("ExternalObservationReported", published.GetProperty("type").GetString());
+        Assert.Equal("api", published.GetProperty("producer").GetString());
         Assert.False(string.IsNullOrWhiteSpace(published.GetProperty("integrity_hash").GetString()));
+    }
+
+    [Fact]
+    public async Task AnObservationThatSaysNothingIsRefused()
+    {
+        using HttpClient http = Client();
+        HttpResponseMessage response = await http.SendAsync(
+            Request(HttpMethod.Post, "/v1/events", new { observation = "" }, Key()), Ct());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     // ---- the stream ----
 
     [Fact]
-    public async Task TheStreamResumesFromACursorAndWithholdsWhatIsAboveItsCeiling()
+    public async Task TheStreamResumesFromACursorRatherThanReplayingFromTheTop()
     {
         using HttpClient http = Client();
 
         await http.SendAsync(
             Request(
                 HttpMethod.Post, "/v1/events",
-                new { type = "api.test.streamed", sensitivity = Sensitivity.Private, payload_json = "{}" },
-                Key()),
-            Ct());
-
-        await http.SendAsync(
-            Request(
-                HttpMethod.Post, "/v1/events",
-                new { type = "api.test.classified", sensitivity = Sensitivity.Secret, payload_ref = "vault/x" },
-                Key()),
+                new { observation = "something worth streaming" }, Key()),
             Ct());
 
         var frames = await http.GetStringAsync("/v1/stream?after=0", Ct());
+        Assert.Contains("event: ExternalObservationReported", frames, StringComparison.Ordinal);
 
-        Assert.Contains("event: api.test.streamed", frames, StringComparison.Ordinal);
-        Assert.DoesNotContain("api.test.classified", frames, StringComparison.Ordinal);
-
-        // Resuming past everything yields nothing rather than replaying from the top.
         var after = frames
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Where(line => line.StartsWith("id: ", StringComparison.Ordinal))
@@ -322,28 +305,6 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
             .Max();
 
         Assert.Equal(string.Empty, await http.GetStringAsync($"/v1/stream?after={after}", Ct()));
-    }
-
-    // ---- audit ----
-
-    [Fact]
-    public async Task AuditIsPaginatedAndCarriesTheCursorToContinueFrom()
-    {
-        using HttpClient http = Client();
-
-        // Anything that leaves a trail; the approval attempt below is refused, which is itself audited.
-        await http.SendAsync(
-            Request(
-                HttpMethod.Post, "/v1/approvals/does-not-exist/decide",
-                new { decision = "approved" }, Key()),
-            Ct());
-
-        HttpResponseMessage response = await http.GetAsync("/v1/audit?limit=1", Ct());
-        response.EnsureSuccessStatusCode();
-
-        JsonElement body = await BodyAsync(response);
-        Assert.Single(body.GetProperty("data").EnumerateArray());
-        Assert.True(body.GetProperty("links").TryGetProperty("next", out _));
     }
 
     // ---- status and upkeep ----

@@ -7,9 +7,14 @@ using Aurora.Core.Kernel;
 namespace Aurora.Server.Api;
 
 /// <summary>Request bodies for the RFC 10 write commands.</summary>
+/// <remarks>
+/// There is no <c>Type</c>. The ingress endpoint publishes exactly one declared event —
+/// <see cref="EventCatalogue.ExternalObservationReported"/> — because a surface outside Aurora
+/// choosing its own event type is a surface that can assert anything about anything (LAW-007).
+/// What it saw goes in the payload, where it reads as a report rather than as a fact.
+/// </remarks>
 public sealed record PublishEventBody(
-    string Type, string Sensitivity, int SchemaVersion = 1,
-    string? PayloadJson = null, string? PayloadRef = null, string? AggregateRef = null);
+    string Observation, string? SubjectRef = null, string? PayloadRef = null);
 
 public sealed record CreateGoalBody(
     string Title,
@@ -63,28 +68,32 @@ public static class ApiEndpoints
         var correlationId = ApiEnvelopes.CorrelationOf(request);
         var key = KeyOf(request);
 
-        if (!Sensitivity.IsKnown(body.Sensitivity))
+        if (string.IsNullOrWhiteSpace(body.Observation))
         {
             return Task.FromResult(BadRequest(
-                correlationId, "Unknown sensitivity class.", nameof(body.Sensitivity)));
+                correlationId, "An observation needs to say what was observed.", nameof(body.Observation)));
         }
 
-        // RFC 050 rule 3: classified material travels by reference, never as an open payload.
-        if (Sensitivity.RequiresReference(body.Sensitivity) && body.PayloadJson is not null)
-        {
-            return Task.FromResult(BadRequest(
-                correlationId,
-                $"A {body.Sensitivity} event must carry payload_ref, not payload_json.",
-                nameof(body.PayloadJson)));
-        }
+        EventContract contract = EventCatalogue
+            .For(EventCatalogue.Producers.Api)
+            .Single(c => c.Type == EventCatalogue.ExternalObservationReported);
 
         return ApiIdempotency.RunAsync(
             idempotency, principals.Current, key, body, correlationId,
             token => bus.PublishAsync(
                 new OutboxWrite(
-                    body.Type, body.SchemaVersion, Producer: "api", correlationId, body.Sensitivity,
-                    AggregateRef: body.AggregateRef,
-                    PayloadJson: body.PayloadJson, PayloadRef: body.PayloadRef,
+                    contract.Type, contract.SchemaVersion, contract.Producer, correlationId,
+                    contract.SensitivityClass,
+                    AggregateRef: body.SubjectRef,
+
+                    // Reported, and marked as reported. Nothing downstream treats this as
+                    // established: it is an observation from outside, which is what the ingress
+                    // endpoint can honestly produce.
+                    PayloadJson: body.PayloadRef is null
+                        ? AuroraJson.Serialize(
+                            new { observed = body.Observation, reported_by = principals.Current.ClientId })
+                        : null,
+                    PayloadRef: body.PayloadRef,
                     IdempotencyKey: key),
                 token),
             ct);

@@ -25,6 +25,8 @@ public sealed class MaintenanceService : IMaintenanceService
     private readonly IResourceModel _resources;
     private readonly IIdempotencyStore _idempotency;
     private readonly IApprovalStore _approvals;
+    private readonly IRetentionService _retention;
+    private readonly RetentionPolicy _retentionPolicy;
     private readonly IEventBus _bus;
     private readonly IClock _clock;
 
@@ -36,6 +38,8 @@ public sealed class MaintenanceService : IMaintenanceService
         IResourceModel resources,
         IIdempotencyStore idempotency,
         IApprovalStore approvals,
+        IRetentionService retention,
+        RetentionPolicy retentionPolicy,
         IEventBus bus,
         IClock clock)
     {
@@ -46,6 +50,8 @@ public sealed class MaintenanceService : IMaintenanceService
         _resources = resources;
         _idempotency = idempotency;
         _approvals = approvals;
+        _retention = retention;
+        _retentionPolicy = retentionPolicy;
         _bus = bus;
         _clock = clock;
     }
@@ -61,6 +67,12 @@ public sealed class MaintenanceService : IMaintenanceService
         // UNKNOWN is not a claim about what happened — it is the opposite, and it is what stops
         // those keys being wedged forever.
         var reconciled = await _idempotency.ReconcileStaleAsync(StaleAfter, ct).ConfigureAwait(false);
+
+        // Working by-products past their retention. Closed records only, and never the audit
+        // chain, memories, goals or missions — the pass that forgets must not be able to reach
+        // the record of what happened.
+        RetentionReport removed = await _retention
+            .ApplyAsync(_retentionPolicy, ct).ConfigureAwait(false);
 
         IReadOnlyList<ScheduleRun> due = await _scheduler.TickAsync(_clock.UtcNow, ct).ConfigureAwait(false);
 
@@ -96,7 +108,7 @@ public sealed class MaintenanceService : IMaintenanceService
         // is indistinguishable from one that stopped running.
         await _bus.PublishAsync(
             new OutboxWrite(
-                "MaintenancePassCompleted", 1, "maintenance", Guid.NewGuid().ToString("N"),
+                EventCatalogue.MaintenancePassCompleted, 1, EventCatalogue.Producers.Maintenance, Guid.NewGuid().ToString("N"),
                 Sensitivity.Private,
                 PayloadJson:
                     $$"""{"signals_expired":{{expired}},"needs":{{ranked.Count}},"due_runs":{{due.Count(r => r.Status == ScheduleRunStatus.Due)}},"resources":"{{resources.Status}}","posture":"{{situation.RiskPosture}}"}"""),
@@ -106,7 +118,7 @@ public sealed class MaintenanceService : IMaintenanceService
             Iso(_clock.UtcNow), expired, decayed, reconciled, failed.Count,
             due.Where(r => r.Status == ScheduleRunStatus.Due).Select(r => r.Id).ToList(),
             ranked.Select(n => n.Id).ToList(),
-            resources.Status, situation.RiskPosture,
+            resources.Status, situation.RiskPosture, removed,
             [.. snapshot.Unmeasured, .. resources.Unmeasured]);
     }
 

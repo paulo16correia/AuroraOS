@@ -149,4 +149,99 @@ public sealed class SandboxFileWriterTests
             Directory.Delete(linkedRoot);
         }
     }
+
+    // ---- docs/adr/0036: the residual TOCTOU risk, narrowed and made detectable ----
+
+    [Fact]
+    public async Task AWriteThatLandedOutsideTheSandboxIsRemovedAndReported()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Creating a directory symlink on Windows needs elevation or developer mode; the
+            // detection path is identical, so it is exercised on the platforms that allow the setup.
+            return;
+        }
+
+        var root = NewRoot();
+        var outside = Path.Combine(Path.GetTempPath(), $"aurora-outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outside);
+
+        try
+        {
+            var writer = new SandboxFileWriter(root);
+
+            // Aurora creates the directory itself; then it is swapped for a link to somewhere else,
+            // which is exactly the shape of the race that cannot be prevented portably.
+            await writer.WriteAsync("nested/first.txt", "one", CancellationToken.None);
+
+            var nested = Path.Combine(root, "nested");
+            Directory.Delete(nested, recursive: true);
+            Directory.CreateSymbolicLink(nested, outside);
+
+            SandboxViolationException refused = await Assert.ThrowsAsync<SandboxViolationException>(
+                () => writer.WriteAsync("nested/second.txt", "two", CancellationToken.None));
+
+            Assert.False(string.IsNullOrWhiteSpace(refused.Message));
+
+            // And nothing was left behind out there. A contained failure, not a silent escape.
+            Assert.False(File.Exists(Path.Combine(outside, "second.txt")));
+        }
+        finally
+        {
+            TryDeleteTree(root);
+            TryDeleteTree(outside);
+        }
+    }
+
+    [Fact]
+    public void TheSandboxRootIsRestrictedToItsOwnerRatherThanAssumedToBe()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = NewRoot();
+
+        try
+        {
+            _ = new SandboxFileWriter(root);
+
+            // ADR 0003 said the mitigation was operational — the root "should be" owner-only.
+            // Should is not a control, so Aurora applies it.
+            UnixFileMode mode = File.GetUnixFileMode(root);
+
+            Assert.Equal(UnixFileMode.None, mode & UnixFileMode.GroupWrite);
+            Assert.Equal(UnixFileMode.None, mode & UnixFileMode.OtherWrite);
+            Assert.Equal(UnixFileMode.None, mode & UnixFileMode.OtherRead);
+        }
+        finally
+        {
+            TryDeleteTree(root);
+        }
+    }
+
+    private static string NewRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"aurora-sbx-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    private static void TryDeleteTree(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
 }

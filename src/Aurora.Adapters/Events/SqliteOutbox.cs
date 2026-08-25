@@ -14,9 +14,14 @@ public sealed class SqliteOutbox : IOutbox
     /// <summary>ASCII Unit Separator delimiting the integrity pre-image fields.</summary>
     private const char UnitSeparator = (char)0x1F;
 
+    private readonly IEventCatalogue _catalogue;
     private readonly IClock _clock;
 
-    public SqliteOutbox(IClock clock) => _clock = clock;
+    public SqliteOutbox(IEventCatalogue catalogue, IClock clock)
+    {
+        _catalogue = catalogue;
+        _clock = clock;
+    }
 
     public async Task<DomainEvent> EnqueueAsync(OutboxWrite write, IDbTransactionScope scope, CancellationToken ct)
     {
@@ -74,7 +79,7 @@ public sealed class SqliteOutbox : IOutbox
     }
 
     /// <summary>Enforces the publication rules that RFC 050 states as mandatory.</summary>
-    private static void Validate(OutboxWrite write)
+    private void Validate(OutboxWrite write)
     {
         if (string.IsNullOrWhiteSpace(write.Type))
         {
@@ -89,6 +94,15 @@ public sealed class SqliteOutbox : IOutbox
         if (!Sensitivity.IsKnown(write.SensitivityClass))
         {
             throw new EventContractException($"Unknown sensitivity '{write.SensitivityClass}'.");
+        }
+
+        // LAW-007's verifiable control: each producer declares its events and their schema version.
+        // Checked here rather than documented, so an undeclared event cannot be published at all —
+        // which is what stops the bus becoming a place where anything can be asserted about
+        // anything, including by a caller reaching the ingress endpoint from outside.
+        if (!_catalogue.TryValidate(write, out var violation))
+        {
+            throw new EventContractException($"{violation} (LAW-007).");
         }
 
         var hasJson = !string.IsNullOrEmpty(write.PayloadJson);

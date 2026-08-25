@@ -6,6 +6,7 @@ using Aurora.Adapters.Needs;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Resources;
+using Aurora.Adapters.Retention;
 using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Signals;
 using Aurora.Adapters.Situation;
@@ -168,7 +169,7 @@ public sealed class StatusAndMaintenanceTests
         return new World(
             new SituationService(signals, needs, resources, quiet ?? QuietHours.Default, clock),
             signals, needs, resources,
-            new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock), clock);
+            new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock), clock);
     }
 
     private static Task<DomainEvent> FactAsync(World world) =>
@@ -301,7 +302,7 @@ public sealed class StatusAndMaintenanceTests
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-15T14:00:00+00:00"));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
         var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
@@ -313,6 +314,7 @@ public sealed class StatusAndMaintenanceTests
             resources,
             new InMemoryIdempotencyStore(),
             new FakeApprovalStore(),
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default,
             bus, clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
@@ -329,7 +331,7 @@ public sealed class StatusAndMaintenanceTests
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-15T08:00:00+00:00"));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
         var needs = new SqliteNeedsService(db.Factory, new SqlitePlanner(db.Factory, clock), clock);
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
@@ -344,7 +346,8 @@ public sealed class StatusAndMaintenanceTests
         var maintenance = new MaintenanceService(
             scheduler, signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
-            resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(), bus, clock);
+            resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(),
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, clock);
 
         clock.UtcNow = At("2026-01-15T09:00:00+00:00");
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
@@ -364,7 +367,7 @@ public sealed class StatusAndMaintenanceTests
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-15T14:00:00+00:00"));
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
-        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var signals = new SqliteSignalService(db.Factory, cycles, clock);
         var planner = new SqlitePlanner(db.Factory, clock);
         var needs = new SqliteNeedsService(db.Factory, planner, clock);
@@ -374,8 +377,8 @@ public sealed class StatusAndMaintenanceTests
             new SqliteScheduler(db.Factory, bus, cycles, clock),
             signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
-            resources, new InMemoryIdempotencyStore(),
-            new FakeApprovalStore(pending: 2), bus, clock);
+            resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(pending: 2),
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
 

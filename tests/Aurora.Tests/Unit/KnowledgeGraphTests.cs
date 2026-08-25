@@ -1,4 +1,5 @@
 using Aurora.Adapters.Knowledge;
+using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
@@ -16,7 +17,7 @@ public sealed class KnowledgeGraphTests
         SqliteTestDb db, DateTimeOffset? now = null)
     {
         var clock = new TestClock(now ?? DateTimeOffset.UnixEpoch);
-        var memories = new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), clock);
+        var memories = new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock);
         return (new SqliteKnowledgeGraph(db.Factory, memories, clock), memories);
     }
 

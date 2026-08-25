@@ -94,7 +94,7 @@ public sealed class KernelDispatcher
         // A tool call is a domain fact, so it is published rather than merely handled (LAW-007).
         DomainEvent ingress = await _bus.PublishAsync(
             new OutboxWrite(
-                "KernelCommandAccepted", 1, "kernel", correlationId, Sensitivity.Private,
+                EventCatalogue.KernelCommandAccepted, 1, EventCatalogue.Producers.Kernel, correlationId, Sensitivity.Private,
                 AggregateRef: $"capability/{resolved.Resolved.ActionId}",
                 PayloadJson: $$"""{"action_id":"{{resolved.Resolved.ActionId}}","via":"{{resolved.Resolved.Via}}"}""",
                 IdempotencyKey: correlationId),

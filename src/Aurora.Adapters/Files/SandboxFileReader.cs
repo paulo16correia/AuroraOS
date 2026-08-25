@@ -33,6 +33,10 @@ public sealed class SandboxFileReader : ISandboxFileReader
         var full = validated.FullPath!;
         SandboxGuard.EnsureNoLinkedComponents(_root, full);
 
+        // Reading through a swapped directory component discloses a file outside the sandbox, which
+        // is the same failure as writing to one. Checked the same way (docs/adr/0036).
+        SandboxGuard.EnsureResolvesInsideRoot(_root, full);
+
         if (!File.Exists(full))
         {
             throw new SandboxViolationException("File not found in the sandbox.");

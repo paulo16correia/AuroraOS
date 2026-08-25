@@ -94,7 +94,7 @@ public sealed class DailyReviewApplication : IReviewApplication
 
         DomainEvent ingress = await _bus.PublishAsync(
             new OutboxWrite(
-                "ReviewRequested", 1, "review", correlationId, Sensitivity.Private,
+                EventCatalogue.ReviewRequested, 1, EventCatalogue.Producers.Review, correlationId, Sensitivity.Private,
                 AggregateRef: $"review/{request.Principal.ClientId}",
                 PayloadJson: $$"""{"after":{{request.AfterAuditSequence}}}""",
                 IdempotencyKey: correlationId),

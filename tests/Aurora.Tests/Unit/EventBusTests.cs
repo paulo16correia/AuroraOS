@@ -35,7 +35,7 @@ public sealed class EventBusTests
     private static SqliteEventBus Bus(SqliteTestDb db)
     {
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
-        return new SqliteEventBus(db.Factory, new SqliteOutbox(clock), clock);
+        return new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
     }
 
     private static OutboxWrite Write(string type = "MemoryCreated", int schemaVersion = 1) =>
@@ -57,7 +57,7 @@ public sealed class EventBusTests
 
         await using (IDbTransactionScope scope = await bus.BeginAsync(Ct))
         {
-            await new SqliteOutbox(new TestClock(DateTimeOffset.UnixEpoch)).EnqueueAsync(Write(), scope, Ct);
+            await new SqliteOutbox(new PermissiveEventCatalogue(), new TestClock(DateTimeOffset.UnixEpoch)).EnqueueAsync(Write(), scope, Ct);
             await scope.CommitAsync(Ct);
         }
 
@@ -76,7 +76,7 @@ public sealed class EventBusTests
         // Disposed without committing: an event must never describe a change that did not happen.
         await using (IDbTransactionScope scope = await bus.BeginAsync(Ct))
         {
-            await new SqliteOutbox(new TestClock(DateTimeOffset.UnixEpoch)).EnqueueAsync(Write(), scope, Ct);
+            await new SqliteOutbox(new PermissiveEventCatalogue(), new TestClock(DateTimeOffset.UnixEpoch)).EnqueueAsync(Write(), scope, Ct);
         }
 
         var consumer = new RecordingConsumer("indexer");

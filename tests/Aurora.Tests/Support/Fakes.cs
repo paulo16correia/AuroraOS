@@ -216,7 +216,12 @@ public sealed class RecordingAuditStore : IAuditStore
 
     public Task<string?> HeadHashAsync(CancellationToken ct) =>
         Task.FromResult<string?>(Outcomes.Count == 0 ? null : $"audit-{Outcomes.Count}");
+
+    public Task<string> SealBreakAsync(string reason, string actor, CancellationToken ct) =>
+        AppendAsync(
+            new AuditEntry(actor, actor, "audit.chain_break", reason, "chain_break_acknowledged"), ct);
 }
+
 
 /// <summary>
 /// In-memory idempotency store implementing the real disposition semantics, for kernel tests.
@@ -309,4 +314,74 @@ public sealed class FakeResourceProbe(
 
     /// <summary>A host that reports nothing at all.</summary>
     public static FakeResourceProbe Blind() => new(null, null, null);
+}
+
+/// <summary>
+/// An Event Bus that records what was published and does nothing else.
+/// </summary>
+/// <remarks>
+/// For unit tests whose subject is not the bus. It still runs the declared-contract check, because
+/// a stub that accepted anything would hide the mistakes LAW-007's declaration exists to catch.
+/// </remarks>
+public sealed class RecordingEventBus : IEventBus
+{
+    public List<OutboxWrite> Published { get; } = [];
+
+    public Task<DomainEvent> PublishAsync(OutboxWrite write, CancellationToken ct)
+    {
+        if (!EventCatalogue.TryGet(write.Type, write.SchemaVersion, out EventContract? contract)
+            || contract!.Producer != write.Producer)
+        {
+            throw new EventContractException($"'{write.Type}' is not declared for '{write.Producer}'.");
+        }
+
+        Published.Add(write);
+
+        return Task.FromResult(new DomainEvent(
+            Guid.NewGuid().ToString("N"), write.Type, write.SchemaVersion, write.Producer,
+            "2026-01-01T00:00:00.0000000+00:00", write.CorrelationId, write.CausationId,
+            write.AggregateRef, write.PayloadJson, write.PayloadRef, write.SensitivityClass,
+            write.IdempotencyKey, "hash"));
+    }
+
+    public Task<IDbTransactionScope> BeginAsync(CancellationToken ct) =>
+        throw new NotSupportedException("This bus records publications; it owns no transaction.");
+
+    public Task<Subscription> SubscribeAsync(Subscription subscription, CancellationToken ct) =>
+        Task.FromResult(subscription);
+
+    public Task<int> PumpAsync(IEventConsumer consumer, CancellationToken ct) => Task.FromResult(0);
+
+    public Task<Delivery?> AckAsync(string deliveryId, CancellationToken ct) =>
+        Task.FromResult<Delivery?>(null);
+
+    public Task<IReadOnlyList<Delivery>> ReplayAsync(string subscriptionId, long cursor, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Delivery>>([]);
+
+    public Task<IReadOnlyList<Delivery>> DeadLettersAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Delivery>>([]);
+
+    public Task<IReadOnlyList<SequencedEvent>> ReadAsync(
+        long afterSequence, int limit, string maxSensitivity, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<SequencedEvent>>([]);
+}
+
+/// <summary>
+/// A catalogue that declares whatever it is asked about.
+/// </summary>
+/// <remarks>
+/// For tests whose subject is the bus mechanics — fan-out, retry, dead-lettering, replay — rather
+/// than the declaration itself. The declaration is checked against the real
+/// <see cref="DeclaredEventCatalogue"/> in its own tests, including that the server registers that
+/// one and not this.
+/// </remarks>
+public sealed class PermissiveEventCatalogue : IEventCatalogue
+{
+    public IReadOnlyList<EventContract> Declared => EventCatalogue.Declared;
+
+    public bool TryValidate(OutboxWrite write, out string? violation)
+    {
+        violation = null;
+        return true;
+    }
 }

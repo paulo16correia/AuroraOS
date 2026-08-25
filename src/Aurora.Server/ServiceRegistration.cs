@@ -21,6 +21,7 @@ using Aurora.Adapters.Maintenance;
 using Aurora.Adapters.Missions;
 using Aurora.Adapters.Needs;
 using Aurora.Adapters.Resources;
+using Aurora.Adapters.Retention;
 using Aurora.Adapters.Situation;
 using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Signals;
@@ -65,6 +66,7 @@ public static class ServiceRegistration
             LocalKeyFile.LoadOrCreate(options.VaultKeyPath, "Vault")));
         services.AddSingleton<IVault, SqliteVault>();
 
+        services.AddSingleton<IEventCatalogue, DeclaredEventCatalogue>();
         services.AddSingleton<IOutbox, SqliteOutbox>();
         services.AddSingleton<IEventBus, SqliteEventBus>();
         services.AddSingleton(ConsentSessionOptions.Default);
@@ -115,6 +117,10 @@ public static class ServiceRegistration
         services.AddSingleton<IResourceProbe, SystemResourceProbe>();
         services.AddSingleton<IResourceModel, SystemResourceModel>();
         services.AddSingleton<ISituationService, SituationService>();
+        // Ninety days of cycles, thirty of the rest. Working by-products only: ADR 0031 and 0033
+        // recorded that these grow without bound, and the audit chain is deliberately out of reach.
+        services.AddSingleton(RetentionPolicy.Default);
+        services.AddSingleton<IRetentionService, SqliteRetentionService>();
         services.AddSingleton<IMaintenanceService, MaintenanceService>();
 
         // What Aurora is for, decided by the person it is for (RFC 052).

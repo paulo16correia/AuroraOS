@@ -11,8 +11,75 @@ internal static class SandboxGuard
     internal static string ResolveRoot(string sandboxRoot)
     {
         Directory.CreateDirectory(sandboxRoot);
+        RestrictToOwner(sandboxRoot);
+
         var resolved = Directory.ResolveLinkTarget(sandboxRoot, returnFinalTarget: true);
         return Path.GetFullPath(resolved?.FullName ?? sandboxRoot);
+    }
+
+    /// <summary>
+    /// Makes a sandbox directory readable and writable by its owner alone.
+    /// </summary>
+    /// <remarks>
+    /// ADR 0003 named the residual TOCTOU risk and said the mitigation was operational: the root
+    /// "should be writable only by the Aurora process's own user". Should is not a control. This
+    /// applies it, so the assumption the hardening rests on is something Aurora does rather than
+    /// something it hopes an operator did.
+    /// <para>
+    /// A no-op on Windows, where <see cref="UnixFileMode"/> does not apply; there the equivalent is
+    /// the inherited ACL of a per-user application data directory, which is where the default root
+    /// lives.
+    /// </para>
+    /// </remarks>
+    internal static void RestrictToOwner(string directory)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetUnixFileMode(
+                directory,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
+        {
+            // A root Aurora cannot re-permission is one somebody else controls. Better to keep
+            // working with the lexical and link checks than to refuse to start over a mode bit.
+        }
+    }
+
+    /// <summary>
+    /// Confirms a path that now exists really resolves inside the root.
+    /// </summary>
+    /// <remarks>
+    /// The last line of defence, and the point of it is honesty about the race. .NET has no
+    /// portable <c>openat</c>/<c>O_NOFOLLOW</c>, so a directory component swapped between the check
+    /// and the write cannot be prevented outright — but it can be <i>detected</i>, and a write that
+    /// landed outside the sandbox can be undone and reported instead of quietly standing.
+    /// </remarks>
+    internal static void EnsureResolvesInsideRoot(string root, string fullPath)
+    {
+        var directory = Path.GetDirectoryName(fullPath);
+        if (directory is null)
+        {
+            throw new SandboxViolationException("Path has no parent directory.");
+        }
+
+        FileSystemInfo? real = Directory.ResolveLinkTarget(directory, returnFinalTarget: true);
+        var resolved = Path.GetFullPath(real?.FullName ?? directory);
+
+        var rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        if (!string.Equals(resolved, root, StringComparison.Ordinal)
+            && !resolved.StartsWith(rootWithSeparator, StringComparison.Ordinal))
+        {
+            throw new SandboxViolationException("The path resolved outside the sandbox.");
+        }
     }
 
     /// <summary>

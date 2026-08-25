@@ -156,67 +156,106 @@ public sealed class SqliteAuditStore : IAuditStore
         return rows;
     }
 
+    /// <summary>
+    /// The action id that marks a deliberate, acknowledged discontinuity in the chain.
+    /// </summary>
+    /// <remarks>
+    /// Not a capability. It appears in <c>action_id</c> because that is the field verification
+    /// already reads, and because the break should be as visible as any other line in the log.
+    /// </remarks>
+    public const string ChainBreakAction = "audit.chain_break";
+
+    public async Task<string> SealBreakAsync(string reason, string actor, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            // Nobody should be able to find an unexplained break in an audit log. Least of all
+            // one Aurora put there itself.
+            throw new InvalidOperationException("Sealing a break in the audit chain requires a reason.");
+        }
+
+        // Appended like any other record, so it is signed with the current key and chained from
+        // the current head. Verification recognises it and restarts from here; someone who can
+        // write to the database but does not hold the key cannot forge one.
+        return await AppendAsync(
+            new AuditEntry(
+                PrincipalClientId: actor,
+                PrincipalOsUser: actor,
+                ActionId: ChainBreakAction,
+                InputHash: Hashing.Sha256Hex(reason),
+                Outcome: "chain_break_acknowledged",
+                Risk: "High",
+                Via: "operator",
+                Decision: "acknowledged",
+                PolicyIds: null,
+                Reason: reason),
+            ct).ConfigureAwait(false);
+    }
+
     public async Task<AuditVerification> VerifyChainAsync(CancellationToken ct)
     {
-        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT sequence, record_id, principal_client_id, principal_os_user,
-                   action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
-                   risk, via, decision, policy_ids, reason
-            FROM audit_record
-            ORDER BY sequence ASC;
-            """;
+        IReadOnlyList<StoredRecord> records = await ReadChainAsync(ct).ConfigureAwait(false);
 
-        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        // A seal excuses everything before it, so it has to be found before the walk starts —
+        // otherwise verification stops at the first record the missing key can no longer explain
+        // and never reaches the marker that says why. A seal only counts when its own signature
+        // recomputes under the current key: someone with write access but no key cannot plant one.
+        var seam = -1;
+        for (var i = records.Count - 1; i >= 0; i--)
+        {
+            StoredRecord candidate = records[i];
+            if (candidate.Entry.ActionId != ChainBreakAction)
+            {
+                continue;
+            }
 
-        var isFirst = true;
+            var expected = ComputeRecordHash(
+                candidate.PreviousHash, candidate.Sequence, candidate.RecordId,
+                candidate.Entry, candidate.CreatedAt);
+
+            if (string.Equals(expected, candidate.RecordHash, StringComparison.Ordinal))
+            {
+                seam = i;
+                break;
+            }
+        }
+
+        long? breakAt = seam >= 0 ? records[seam].Sequence : null;
         var expectedPreviousHash = string.Empty;
         long headSequence = 0;
         var headHash = string.Empty;
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
-        {
-            var sequence = reader.GetInt64(0);
-            var recordId = reader.GetString(1);
-            var principalClientId = reader.GetString(2);
-            var principalOsUser = reader.GetString(3);
-            var actionId = reader.GetString(4);
-            var inputHash = reader.GetString(5);
-            var outcome = reader.GetString(6);
-            var createdAt = reader.GetString(7);
-            var previousHash = reader.GetString(8);
-            var recordHash = reader.GetString(9);
-            var entry = new AuditEntry(
-                principalClientId,
-                principalOsUser,
-                actionId,
-                inputHash,
-                outcome,
-                reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetString(11),
-                reader.IsDBNull(12) ? null : reader.GetString(12),
-                reader.IsDBNull(13) ? null : reader.GetString(13),
-                reader.IsDBNull(14) ? null : reader.GetString(14));
+        var isFirst = true;
 
-            // (a) first row must chain from the empty hash; (b) every later row from its predecessor.
-            var linkOk = isFirst
-                ? previousHash.Length == 0
-                : string.Equals(previousHash, expectedPreviousHash, StringComparison.Ordinal);
-            if (!linkOk)
-            {
-                return new AuditVerification(false, sequence);
-            }
+        for (var i = Math.Max(seam, 0); i < records.Count; i++)
+        {
+            StoredRecord record = records[i];
 
             // (c) the stored hash must match a recomputation over the stored fields.
-            var expectedHash = ComputeRecordHash(previousHash, sequence, recordId, entry, createdAt);
-            if (!string.Equals(expectedHash, recordHash, StringComparison.Ordinal))
+            var expectedHash = ComputeRecordHash(
+                record.PreviousHash, record.Sequence, record.RecordId, record.Entry, record.CreatedAt);
+
+            if (!string.Equals(expectedHash, record.RecordHash, StringComparison.Ordinal))
             {
-                return new AuditVerification(false, sequence);
+                return new AuditVerification(false, record.Sequence, null, breakAt);
             }
 
-            expectedPreviousHash = recordHash;
-            headSequence = sequence;
-            headHash = recordHash;
+            // (a) the first row chains from the empty hash, or from nothing at all when it is the
+            //     seal itself; (b) every later row from its predecessor.
+            if (!isFirst || i != seam)
+            {
+                var linkOk = isFirst
+                    ? record.PreviousHash.Length == 0
+                    : string.Equals(record.PreviousHash, expectedPreviousHash, StringComparison.Ordinal);
+
+                if (!linkOk)
+                {
+                    return new AuditVerification(false, record.Sequence, null, breakAt);
+                }
+            }
+
+            expectedPreviousHash = record.RecordHash;
+            headSequence = record.Sequence;
+            headHash = record.RecordHash;
             isFirst = false;
         }
 
@@ -230,18 +269,55 @@ public sealed class SqliteAuditStore : IAuditStore
                 return new AuditVerification(
                     false, headSequence + 1,
                     $"Audit log ends at {headSequence} but the anchor records {anchor.Sequence}; "
-                    + "records have been removed.");
+                    + "records have been removed.", breakAt);
             }
 
             if (anchor.Sequence == headSequence
                 && !string.Equals(anchor.RecordHash, headHash, StringComparison.Ordinal))
             {
                 return new AuditVerification(
-                    false, headSequence, "Head record does not match the external anchor.");
+                    false, headSequence, "Head record does not match the external anchor.", breakAt);
             }
         }
 
-        return new AuditVerification(true, null);
+        return new AuditVerification(true, null, null, breakAt);
+    }
+
+    /// <summary>One stored row, read before verification so the log can be examined in both directions.</summary>
+    private sealed record StoredRecord(
+        long Sequence, string RecordId, string CreatedAt, string PreviousHash, string RecordHash,
+        AuditEntry Entry);
+
+    private async Task<IReadOnlyList<StoredRecord>> ReadChainAsync(CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence, record_id, principal_client_id, principal_os_user,
+                   action_id, input_hash, outcome, created_at_utc, previous_hash, record_hash,
+                   risk, via, decision, policy_ids, reason
+            FROM audit_record
+            ORDER BY sequence ASC;
+            """;
+
+        var records = new List<StoredRecord>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            records.Add(new StoredRecord(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(7),
+                reader.GetString(8), reader.GetString(9),
+                new AuditEntry(
+                    reader.GetString(2), reader.GetString(3), reader.GetString(4),
+                    reader.GetString(5), reader.GetString(6),
+                    reader.IsDBNull(10) ? null : reader.GetString(10),
+                    reader.IsDBNull(11) ? null : reader.GetString(11),
+                    reader.IsDBNull(12) ? null : reader.GetString(12),
+                    reader.IsDBNull(13) ? null : reader.GetString(13),
+                    reader.IsDBNull(14) ? null : reader.GetString(14))));
+        }
+
+        return records;
     }
 
     /// <summary>

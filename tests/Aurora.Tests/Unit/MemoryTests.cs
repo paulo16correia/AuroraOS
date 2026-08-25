@@ -1,3 +1,4 @@
+using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
@@ -21,8 +22,12 @@ public sealed class MemoryTests
             throw new InvalidOperationException("index unavailable");
     }
 
-    private static SqliteMemoryService Service(SqliteTestDb db, IMemoryRanker? ranker = null) =>
-        new(db.Factory, ranker ?? new LexicalMemoryRanker(), new TestClock(DateTimeOffset.UnixEpoch));
+    private static SqliteMemoryService Service(SqliteTestDb db, IMemoryRanker? ranker = null)
+    {
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        return new SqliteMemoryService(
+            db.Factory, ranker ?? new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock);
+    }
 
     private static MemoryCandidate Candidate(
         string predicate = "prefers", string objectJson = """{"drink":"tea"}""",
