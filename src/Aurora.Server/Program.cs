@@ -1,5 +1,6 @@
 using Aurora.Adapters.Persistence;
 using Aurora.Core.Abstractions;
+using Aurora.Core.Contracts;
 using Aurora.Server;
 using Aurora.Server.Api;
 using Aurora.Server.Mcp;
@@ -12,7 +13,7 @@ var options = AuroraServerOptions.FromConfiguration(builder.Configuration);
 
 // Passphrase enrolment happens on this console, never over HTTP: the bearer token belongs to
 // the agent, so any endpoint it can reach is one the agent could use to enrol its own.
-if (PassphraseConsole.TryHandle(args, options))
+if (PassphraseConsole.TryHandle(args, options) || OperationsConsole.TryHandle(args, options))
 {
     return;
 }
@@ -40,6 +41,20 @@ var app = builder.Build();
 // Migrate, then fail closed if the existing audit chain fails its integrity check.
 app.Services.GetRequiredService<SqliteDatabase>().Initialize();
 var auditVerification = await app.Services.GetRequiredService<IAuditStore>().VerifyChainAsync(CancellationToken.None);
+
+// RFC 12 limit case: an incorrect clock blocks anything that depends on expiry. Approvals,
+// consent sessions and schedules are all promises about time, and a clock that has gone backwards
+// turns them into something else. Checked before serving rather than discovered afterwards.
+ClockVerdict clockVerdict = await app.Services.GetRequiredService<IClockGuard>()
+    .CheckAsync(CancellationToken.None);
+
+if (!clockVerdict.Trustworthy)
+{
+    throw new InvalidOperationException(
+        $"This machine's clock cannot be trusted: {clockVerdict.Detail}. Refusing to start. "
+        + "Synchronise the clock and start again; nothing here needs to be repaired.");
+}
+
 if (auditVerification is { Ok: true, AcknowledgedBreakAt: { } seam })
 {
     Console.WriteLine(
@@ -93,6 +108,28 @@ app.MapAuroraUi();
 // Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
 // NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
 // hand an untrusted reasoner a view of how often its requests are being refused.
+// Liveness, and nothing else: the process is up and answering. Unauthenticated on purpose so a
+// container runtime can poll it, and therefore carrying nothing worth reading — a health endpoint
+// is the most-scraped surface a system has.
+app.MapGet("/health/live", () => Results.Text("ok", "text/plain"));
+
+// Readiness, with detail, behind the same guard as everything else. RFC 12 rule 2: a release
+// passes its checks before receiving traffic, and this is what a deploy script asks.
+app.MapGet("/health", async (IHealthService health, CancellationToken ct) =>
+{
+    IReadOnlyList<HealthCheck> checks = await health.ReadAsync(ct);
+    var overall = HealthStatus.Worst(checks.Select(c => c.Status));
+
+    return Results.Json(
+        new { status = overall, schema_version = SqliteDatabase.TargetSchemaVersion, checks },
+
+        // A failing system answers 503 so a proxy or an orchestrator can act on it without
+        // parsing anything. WARN still serves: it means look, not stop.
+        statusCode: overall == HealthStatus.Fail
+            ? StatusCodes.Status503ServiceUnavailable
+            : StatusCodes.Status200OK);
+});
+
 app.MapGet("/metrics", async (
         IAuroraMetrics metrics, IApprovalStore approvals, IConsentSessionStore sessions, CancellationToken ct) =>
     Results.Json(metrics.Snapshot(

@@ -13,6 +13,7 @@ using Aurora.Adapters.Lifecycle;
 using Aurora.Adapters.Knowledge;
 using Aurora.Adapters.Memories;
 using Aurora.Adapters.Observations;
+using Aurora.Adapters.Operations;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
@@ -80,6 +81,10 @@ public static class ServiceRegistration
 
         // The person's credential, which the agent does not hold (RFC 11).
         services.AddSingleton<OperatorSessions>();
+
+        // Operations (RFC 12): can this build serve traffic, and can its clock be trusted.
+        services.AddSingleton<IClockGuard, AuditClockGuard>();
+        services.AddSingleton<IHealthService, AuroraHealthService>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

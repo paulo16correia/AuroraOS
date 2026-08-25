@@ -1,0 +1,60 @@
+# Aurora — reference deployment (RFC 12).
+#
+# Two services and one volume. The proxy terminates TLS and is the only thing with a published
+# port; Aurora is reachable only on the internal network, which is what keeps its loopback
+# assumption true on a machine that has an internet-facing address.
+
+name: aurora
+
+services:
+  proxy:
+    # Pin a digest before deploying — rule 2 fixes image versions, and a tag is a name that can be
+    # moved rather than a build that cannot. `ops/release.sh` writes the digests it used into the
+    # deployment manifest.
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge, internal]
+    depends_on:
+      aurora:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+
+  aurora:
+    build: .
+    image: aurora:local
+    restart: unless-stopped
+    # No published port. The proxy reaches it over the internal network and nothing else can.
+    expose: ["8080"]
+    networks: [internal]
+    volumes:
+      - aurora-data:/var/lib/aurora
+    environment:
+      # Supplied by the operator, never baked into the image.
+      Aurora__BearerToken: ${AURORA_BEARER_TOKEN:?set AURORA_BEARER_TOKEN}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # The tool process must have tighter limits than the core (RFC 12). Until connectors run out of
+    # process, these are the core's and are deliberately modest: an instance that needs more should
+    # be given more for a measured reason (rule 5), not by default.
+    mem_limit: 1g
+    pids_limit: 256
+
+volumes:
+  aurora-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  edge:
+  internal:
+    internal: true

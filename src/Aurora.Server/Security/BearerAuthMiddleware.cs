@@ -27,19 +27,26 @@ public sealed class BearerAuthMiddleware
     }
 
     /// <summary>
-    /// The one path that runs without a credential: exchanging a printed link for a session.
+    /// The only two paths that run without a credential, and why each one has to.
     /// </summary>
     /// <remarks>
     /// Named here rather than mapped earlier, because every endpoint executes after the whole
-    /// middleware pipeline regardless of where it was registered. The exemption is narrow and the
-    /// endpoint is not open: it refuses anything that is not an unexpired, unredeemed grant, and
-    /// the loopback guard still applies, so the link is only usable from this machine.
+    /// middleware pipeline regardless of where it was registered.
+    /// <list type="bullet">
+    /// <item><c>/ui/session</c> — the browser following a printed link has no credential yet;
+    /// that is what it came for. The endpoint refuses anything that is not an unexpired,
+    /// unredeemed grant.</item>
+    /// <item><c>/health/live</c> — a container runtime polls it and holds no token, and giving one
+    /// to a health probe would be handing out a credential to save a word. It answers "ok" and
+    /// nothing else, which is why it can be open at all.</item>
+    /// </list>
+    /// The loopback guard still applies to both, so neither is reachable from another machine.
     /// </remarks>
-    private const string SessionExchangePath = "/ui/session";
+    private static readonly string[] Unauthenticated = ["/ui/session", "/health/live"];
 
     public async Task InvokeAsync(HttpContext context, OperatorSessions sessions)
     {
-        if (context.Request.Path.Equals(SessionExchangePath, StringComparison.Ordinal))
+        if (Unauthenticated.Any(path => context.Request.Path.Equals(path, StringComparison.Ordinal)))
         {
             await _next(context);
             return;
