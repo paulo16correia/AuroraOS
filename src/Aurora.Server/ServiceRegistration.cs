@@ -33,6 +33,7 @@ using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Self;
 using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
+using Aurora.Adapters.Plugins;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Relationships;
@@ -127,6 +128,17 @@ public static class ServiceRegistration
 
         // What happened to this instance, cited rather than recalled (RFC 038).
         services.AddSingleton<ILifeHistory, SqliteLifeHistory>();
+
+        // Third parties on a security contract rather than as a privileged exception (RFC 060).
+        // The host runs them out of process; ADR 0048 states exactly what that does and does not
+        // isolate, because rule 2 is the rule most easily claimed and least easily kept.
+        services.AddSingleton<IPluginHost>(_ => new SubprocessPluginHost(options.PluginRoot));
+        services.AddSingleton<IPluginRegistry>(sp => new SqlitePluginRegistry(
+            sp.GetRequiredService<SqliteConnectionFactory>(),
+            sp.GetRequiredService<IPluginHost>(),
+            sp.GetRequiredService<IEventBus>(),
+            LocalKeyFile.LoadOrCreate(options.PluginKeyPath, "Plugin"),
+            sp.GetRequiredService<IClock>()));
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

@@ -23,6 +23,7 @@ Closes condition 5 of `docs/reviews/architecture-review-v1.0.md`.
 | `ExternalObservationReported` | 1 | `api` | PRIVATE | what an outside surface observed, as reported; unverified by construction | perception |
 | `ApprovalDecided` | 1 | `kernel` | PRIVATE | approval_id, the decision, and the action it was for | ui, audit, review |
 | `KernelCommandAccepted` | 1 | `kernel` | PRIVATE | action_id and how it was resolved | audit, review |
+| `PluginQuarantined` | 1 | `kernel` | PRIVATE | plugin_id and why it was held; never what the plugin returned | ui, audit, review |
 | `MaintenancePassCompleted` | 1 | `maintenance` | PRIVATE | counts of what one upkeep pass expired, noticed and reconciled | review, metrics |
 | `MemoryForgotten` | 1 | `memory` | PRIVATE | memory_id and what the retraction actually removed; never the content | ui, audit, reflection |
 | `MemoryRevised` | 1 | `memory` | PRIVATE | memory_id, the operation and who asked for it; never the content | ui, audit, reflection |

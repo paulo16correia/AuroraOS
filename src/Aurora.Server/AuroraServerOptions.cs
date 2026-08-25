@@ -48,6 +48,12 @@ public sealed class AuroraServerOptions
     /// <summary>File holding the ECDSA key that signs genome manifests (docs/adr/0017).</summary>
     public required string GenomeKeyPath { get; init; }
 
+    /// <summary>Where plugin working directories live, one per plugin.</summary>
+    public required string PluginRoot { get; init; }
+
+    /// <summary>File holding the key that verifies plugin manifest signatures (docs/adr/0048).</summary>
+    public required string PluginKeyPath { get; init; }
+
     /// <summary>
     /// File holding the key that encrypts deliberation traces (docs/adr/0040).
     /// </summary>
@@ -124,6 +130,12 @@ public sealed class AuroraServerOptions
         var deliberationKeyPath = config["Aurora:DeliberationKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.deliberation.key");
 
+        var pluginRoot = config["Aurora:PluginRoot"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "plugins");
+
+        var pluginKeyPath = config["Aurora:PluginKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.plugin.key");
+
         var vaultKeyPath = config["Aurora:VaultKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.vault.key");
 
@@ -166,6 +178,8 @@ public sealed class AuroraServerOptions
             SnapshotKeyPath = snapshotKeyPath,
             GenomeKeyPath = genomeKeyPath,
             DeliberationKeyPath = deliberationKeyPath,
+            PluginRoot = pluginRoot,
+            PluginKeyPath = pluginKeyPath,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

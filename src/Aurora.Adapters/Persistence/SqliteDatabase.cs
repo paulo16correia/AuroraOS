@@ -1027,6 +1027,23 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_episode_revision ON episode_revision(episode_id, at_utc);
 
+        CREATE TABLE IF NOT EXISTS plugin_installation (
+          id TEXT PRIMARY KEY,
+          plugin_id TEXT NOT NULL UNIQUE,
+          version TEXT NOT NULL,
+          publisher TEXT NOT NULL,
+          status TEXT NOT NULL,
+          granted_permissions TEXT NOT NULL,
+          manifest_json TEXT NOT NULL,
+          installed_at_utc TEXT NOT NULL,
+          updated_at_utc TEXT NOT NULL,
+          consecutive_failures INTEGER NOT NULL,
+          quarantine_reason TEXT NULL,
+          approval_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_plugin_status ON plugin_installation(status);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -1036,7 +1053,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 13;
+    public const int TargetSchemaVersion = 14;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1443,6 +1460,26 @@ public sealed class SqliteDatabase
             );
 
             CREATE INDEX IF NOT EXISTS idx_episode_revision ON episode_revision(episode_id, at_utc);
+            """,
+
+        // v14 — the plugin registry (docs/adr/0048). New table only.
+        [14] = """
+            CREATE TABLE IF NOT EXISTS plugin_installation (
+              id TEXT PRIMARY KEY,
+              plugin_id TEXT NOT NULL UNIQUE,
+              version TEXT NOT NULL,
+              publisher TEXT NOT NULL,
+              status TEXT NOT NULL,
+              granted_permissions TEXT NOT NULL,
+              manifest_json TEXT NOT NULL,
+              installed_at_utc TEXT NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              consecutive_failures INTEGER NOT NULL,
+              quarantine_reason TEXT NULL,
+              approval_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_plugin_status ON plugin_installation(status);
             """,
     };
 

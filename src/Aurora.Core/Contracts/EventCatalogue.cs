@@ -39,6 +39,7 @@ public static class EventCatalogue
     public const string MaintenancePassCompleted = "MaintenancePassCompleted";
     public const string ReviewRequested = "ReviewRequested";
     public const string ExternalObservationReported = "ExternalObservationReported";
+    public const string PluginQuarantined = "PluginQuarantined";
 
     /// <summary>Producers, named once so a typo cannot invent one.</summary>
     public static class Producers
@@ -95,6 +96,10 @@ public static class EventCatalogue
         new(ReviewRequested, 1, Producers.Review, Sensitivity.Private,
             "the audit cursor the review started from",
             ["audit"]),
+
+        new(PluginQuarantined, 1, Producers.Kernel, Sensitivity.Private,
+            "plugin_id and why it was held; never what the plugin returned",
+            ["ui", "audit", "review"]),
 
         // The one ingress type. A UI or channel normalises something it saw and reports it; it is
         // an observation, not a fact Aurora has accepted, and nothing subscribes to it as truth.
