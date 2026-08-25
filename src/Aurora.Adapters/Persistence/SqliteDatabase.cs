@@ -696,6 +696,52 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_schedule_run_schedule
           ON schedule_run(schedule_id, due_at_utc);
 
+        CREATE TABLE IF NOT EXISTS signal (
+          id TEXT PRIMARY KEY,
+          source_event_ref TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          severity TEXT NOT NULL,
+          urgency REAL NOT NULL,
+          relevance REAL NOT NULL,
+          confidence REAL NOT NULL,
+          target_refs TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          expires_at_utc TEXT NOT NULL,
+          interruptibility TEXT NOT NULL,
+          status TEXT NOT NULL,
+          reason_codes TEXT NOT NULL,
+          policy_refs TEXT NOT NULL,
+          dedupe_key TEXT NOT NULL,
+          resolution_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_signal_dedupe ON signal(dedupe_key, created_at_utc);
+        CREATE INDEX IF NOT EXISTS idx_signal_open ON signal(status, expires_at_utc);
+
+        CREATE TABLE IF NOT EXISTS need (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          subject_ref TEXT NOT NULL,
+          intensity REAL NOT NULL,
+          priority INTEGER NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          satisfaction_condition TEXT NOT NULL,
+          earliest_action_at_utc TEXT NULL,
+          expires_at_utc TEXT NULL,
+          recommended_goal_ref TEXT NULL,
+          status TEXT NOT NULL,
+          policy_constraints TEXT NOT NULL,
+          owner TEXT NOT NULL,
+          detected_at_utc TEXT NOT NULL,
+          satisfied_evidence_ref TEXT NULL
+        );
+
+        -- One OPEN need per subject is the invariant, and it is kept by the upsert rather than by
+        -- a unique key: the same subject legitimately produces many satisfied needs over time.
+        CREATE INDEX IF NOT EXISTS idx_need_subject ON need(subject_ref, status);
+
+        CREATE INDEX IF NOT EXISTS idx_need_open ON need(status, kind, priority);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -705,7 +751,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 3;
+    public const int TargetSchemaVersion = 4;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -761,6 +807,53 @@ public sealed class SqliteDatabase
 
             CREATE INDEX IF NOT EXISTS idx_schedule_run_schedule
               ON schedule_run(schedule_id, due_at_utc);
+            """,
+
+        // v4 — Signals and Needs (docs/adr/0033). New tables only.
+        [4] = """
+            CREATE TABLE IF NOT EXISTS signal (
+              id TEXT PRIMARY KEY,
+              source_event_ref TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              severity TEXT NOT NULL,
+              urgency REAL NOT NULL,
+              relevance REAL NOT NULL,
+              confidence REAL NOT NULL,
+              target_refs TEXT NOT NULL,
+              created_at_utc TEXT NOT NULL,
+              expires_at_utc TEXT NOT NULL,
+              interruptibility TEXT NOT NULL,
+              status TEXT NOT NULL,
+              reason_codes TEXT NOT NULL,
+              policy_refs TEXT NOT NULL,
+              dedupe_key TEXT NOT NULL,
+              resolution_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_signal_dedupe ON signal(dedupe_key, created_at_utc);
+            CREATE INDEX IF NOT EXISTS idx_signal_open ON signal(status, expires_at_utc);
+
+            CREATE TABLE IF NOT EXISTS need (
+              id TEXT PRIMARY KEY,
+              kind TEXT NOT NULL,
+              subject_ref TEXT NOT NULL,
+              intensity REAL NOT NULL,
+              priority INTEGER NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              satisfaction_condition TEXT NOT NULL,
+              earliest_action_at_utc TEXT NULL,
+              expires_at_utc TEXT NULL,
+              recommended_goal_ref TEXT NULL,
+              status TEXT NOT NULL,
+              policy_constraints TEXT NOT NULL,
+              owner TEXT NOT NULL,
+              detected_at_utc TEXT NOT NULL,
+              satisfied_evidence_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_need_subject ON need(subject_ref, status);
+
+            CREATE INDEX IF NOT EXISTS idx_need_open ON need(status, kind, priority);
             """,
     };
 

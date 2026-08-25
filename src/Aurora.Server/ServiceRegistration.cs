@@ -15,7 +15,9 @@ using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Pilot;
+using Aurora.Adapters.Needs;
 using Aurora.Adapters.Scheduling;
+using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
@@ -95,6 +97,11 @@ public static class ServiceRegistration
         // Rhythm, with no authority of its own: a tick produces due runs and events, and what
         // answers them goes through the cycle like anything else (RFC 026).
         services.AddSingleton<IScheduler, SqliteScheduler>();
+
+        // What deserves attention, and what is waiting on Aurora. Neither grants any authority:
+        // both change order and focus, and the cycle still decides what may happen (RFC 030, 031).
+        services.AddSingleton<ISignalService, SqliteSignalService>();
+        services.AddSingleton<INeedsService, SqliteNeedsService>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.
