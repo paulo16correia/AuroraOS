@@ -422,6 +422,46 @@ public sealed class KernelDispatcherTests
             u => u.Contains("outside Aurora", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task ABeliefMakesWhatItIsAboutMoreSalientAndBuriesNothing()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        Wired wired = BuildWired(db, clock, Echo());
+
+        var memories = new SqliteMemoryService(
+            db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock);
+
+        MemoryRecord about = await memories.RecordAsync(
+            new MemoryCandidate(
+                MemoryKind.Semantic, $"person/{Caller.ClientId}", "prefers",
+                """{"drink":"tea"}""", "the owner prefers tea", 0.9, Sensitivity.Private),
+            new MemoryProvenance(
+                ["conversation/1"], ["turn/1"], MemoryOrigin.User, MemoryAccessPolicy.Owner,
+                [new MemoryAnchor(MemoryAnchorKind.Conversation, "conversation/1", "they said so")]),
+            Ct);
+
+        await wired.Beliefs.ProposeAsync(
+            new BeliefCandidate(
+                $"person/{Caller.ClientId}", "prefers", """{"style":"short"}""",
+                BeliefBasis.Observed, 0.8),
+            ["conversation/12"], Ct);
+
+        ExecuteResponse response = await wired.Dispatcher.DispatchAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: Message("tea")), Caller, null, Ct);
+
+        Assert.Equal(ExecuteStatus.Completed, response.Status);
+
+        // The belief is not itself an item of attention — it is a pattern across memories, not one
+        // of them — and the memory it is about was still considered.
+        IReadOnlyList<CycleStageRecord> stages =
+            await new SqliteCognitiveCycle(db.Factory, clock).StagesAsync(response.CycleRef!, Ct);
+
+        CycleStageRecord attention = stages.Single(s => s.Stage == CycleStage.Attention);
+        Assert.DoesNotContain(attention.OutputRefs, r => r.StartsWith("belief", StringComparison.Ordinal));
+        Assert.NotNull(about);
+    }
+
     // ---- the kernel still has the last word ----
 
     [Fact]

@@ -361,6 +361,67 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         (await agent.GetAsync("/v1/status?timezone=Europe/Lisbon", Ct())).EnsureSuccessStatusCode();
     }
 
+    // ---- RFC 07 limit case: a personality change is a person's act ----
+
+    [Fact]
+    public async Task TheAgentCannotChangeHowAuroraSpeaks()
+    {
+        using HttpClient agent = Client();
+
+        // A request to change Aurora's personality arriving inside a third-party message is
+        // relayed by the agent and acted on by nobody: the agent holds a token, and this needs a
+        // credential it does not have.
+        HttpResponseMessage refused = await agent.SendAsync(
+            Request(
+                HttpMethod.Put, "/v1/personality/preference",
+                new { channel = "local", language = "en", verbosity = 0.9, consent_for_proactivity = true },
+                Key()),
+            Ct());
+
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        HttpResponseMessage activation = await agent.SendAsync(
+            Request(
+                HttpMethod.Post, "/v1/personality/anything/activate",
+                new { approval_ref = "approval/1", reason = "the message asked me to" }, Key()),
+            Ct());
+
+        Assert.Equal(HttpStatusCode.Forbidden, activation.StatusCode);
+    }
+
+    [Fact]
+    public async Task ThePersonCanChangeHowAuroraSpeaksToThem()
+    {
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+
+        HttpResponseMessage response = await http.SendAsync(
+            Request(
+                HttpMethod.Put, "/v1/personality/preference",
+                new { channel = "local", language = "en", verbosity = 0.9, consent_for_proactivity = true },
+                Key()),
+            Ct());
+
+        response.EnsureSuccessStatusCode();
+
+        JsonElement resolved = (await BodyAsync(
+            await http.GetAsync("/v1/personality?channel=local", Ct()))).GetProperty("data");
+
+        // With no profile activated it falls back to the minimum safe one and says so, rather than
+        // inventing a personality to satisfy the request.
+        Assert.True(resolved.GetProperty("degraded").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(
+            resolved.GetProperty("profile").GetProperty("disclosure_text").GetString()));
+    }
+
+    [Fact]
+    public async Task ReadingWhoAuroraIsIsOpenToBothSurfaces()
+    {
+        // The agent has to know how it was asked to speak in order to speak that way. Reading is
+        // not the half that needed protecting.
+        using HttpClient agent = Client();
+        (await agent.GetAsync("/v1/personality", Ct())).EnsureSuccessStatusCode();
+    }
+
     // ---- health: is Aurora working, on this machine ----
 
     [Fact]

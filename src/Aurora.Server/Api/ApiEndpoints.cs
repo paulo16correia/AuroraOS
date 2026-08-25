@@ -30,6 +30,12 @@ public sealed record DecideApprovalBody(string Decision, string? Passphrase = nu
 
 public sealed record CorrectMemoryBody(string Reason);
 
+public sealed record CommunicationPreferenceBody(
+    string Channel, string Language, double Verbosity, bool ConsentForProactivity,
+    string? QuietHours = null);
+
+public sealed record ActivateProfileBody(string ApprovalRef, string Reason);
+
 /// <summary>
 /// The operator and UI surface (RFC 10).
 /// </summary>
@@ -57,6 +63,9 @@ public static class ApiEndpoints
         app.MapGet("/v1/stream", StreamAsync);
         app.MapGet("/v1/status", ReadStatusAsync);
         app.MapGet("/v1/catalog", ReadCatalog);
+        app.MapGet("/v1/personality", ReadPersonalityAsync);
+        app.MapPut("/v1/personality/preference", SetCommunicationPreferenceAsync);
+        app.MapPost("/v1/personality/{id}/activate", ActivatePersonalityAsync);
         app.MapGet("/v1/cycles/{id}/why", ExplainAsync);
         app.MapPost("/v1/maintenance", RunMaintenanceAsync);
         return app;
@@ -281,6 +290,73 @@ public static class ApiEndpoints
         IReadOnlyList<Thought> thoughts = await deliberation.ThoughtsForCycleAsync(id, ct);
 
         return Results.Json(ApiEnvelopes.Ok(thoughts, correlationId));
+    }
+
+    // ---- who Aurora is: read by anyone with the panel, changed only by a person ----
+
+    private static async Task<IResult> ReadPersonalityAsync(
+        string? channel, HttpRequest request,
+        IPersonalityService personality, IPrincipalAccessor principals, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        ResolvedProfile resolved = await personality.ResolveAsync(
+            principals.Current.ClientId, channel ?? "local", DateTimeOffset.UtcNow, ct);
+
+        return Results.Json(ApiEnvelopes.Ok(resolved, correlationId));
+    }
+
+    /// <summary>
+    /// Changes how Aurora speaks to somebody.
+    /// </summary>
+    /// <remarks>
+    /// Operator only, and this is where RFC 07's limit case is actually closed: a request to change
+    /// Aurora's personality arriving inside a third-party message is ignored unless there is
+    /// authenticated delegation. The agent relays such a message; it does not hold the credential
+    /// that acts on one, so relaying is all it can do.
+    /// </remarks>
+    private static async Task<IResult> SetCommunicationPreferenceAsync(
+        CommunicationPreferenceBody body, HttpContext context,
+        IPersonalityService personality, IIdempotencyStore idempotency,
+        IPrincipalAccessor principals, CancellationToken ct)
+    {
+        HttpRequest request = context.Request;
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
+
+        return await ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), body, correlationId,
+            token => personality.SetPreferenceAsync(
+                new CommunicationPreference(
+                    principals.Current.ClientId, body.Channel, body.Language,
+                    body.Verbosity, body.QuietHours, "{}", body.ConsentForProactivity, ""),
+                token),
+            ct);
+    }
+
+    /// <summary>Makes a drafted identity the active one. The owner's decision, and nobody else's.</summary>
+    private static async Task<IResult> ActivatePersonalityAsync(
+        string id, ActivateProfileBody body, HttpContext context,
+        IPersonalityService personality, IIdempotencyStore idempotency,
+        IPrincipalAccessor principals, CancellationToken ct)
+    {
+        HttpRequest request = context.Request;
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
+
+        return await ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), new { id, body.Reason }, correlationId,
+            token => personality.ActivateAsync(
+                id, body.ApprovalRef, principals.Current.OsUser, body.Reason, token),
+            ct);
     }
 
     // ---- status and upkeep ----

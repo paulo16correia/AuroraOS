@@ -36,11 +36,14 @@ public sealed class SqlitePersonalityService : IPersonalityService
         ActiveFromUtc: "0001-01-01T00:00:00.0000000+00:00", ActiveToUtc: null, ProfileStatus.Active);
 
     private readonly SqliteConnectionFactory _factory;
+    private readonly IRelationshipModel _relationships;
     private readonly IClock _clock;
 
-    public SqlitePersonalityService(SqliteConnectionFactory factory, IClock clock)
+    public SqlitePersonalityService(
+        SqliteConnectionFactory factory, IRelationshipModel relationships, IClock clock)
     {
         _factory = factory;
+        _relationships = relationships;
         _clock = clock;
     }
 
@@ -85,7 +88,44 @@ public sealed class SqlitePersonalityService : IPersonalityService
             ? preference.Language
             : active.DefaultLocale;
 
+        // What the person prefers about tone, shaping how Aurora speaks. Presentational only —
+        // resolving under that effect is what makes an inferred preference usable here at all,
+        // and the same preference could not authorise anything (RFC 029 rule 2).
+        voice = await ShapedByPreferenceAsync(voice, ownerId, ct).ConfigureAwait(false);
+
         return new ResolvedProfile(active, preference, voice, locale, Degraded: false, "resolved");
+    }
+
+    /// <summary>
+    /// Applies what the person prefers about tone, within the profile's own settings.
+    /// </summary>
+    /// <remarks>
+    /// A habit shapes how something is said and never what may be done. Asking under
+    /// <see cref="PreferenceEffect.Presentational"/> is the whole of that distinction: it is the
+    /// one effect an inferred preference may act on without being confirmed, and the answer would
+    /// be different for anything else.
+    /// </remarks>
+    private async Task<Voice> ShapedByPreferenceAsync(
+        Voice voice, string ownerId, CancellationToken ct)
+    {
+        PreferenceResolution tone = await _relationships
+            .ResolveAsync(ownerId, PreferenceDimension.Tone, PreferenceEffect.Presentational, ct)
+            .ConfigureAwait(false);
+
+        if (!tone.MayActWithoutConfirmation || tone.Preferences.Count == 0)
+        {
+            return voice;
+        }
+
+        // The strongest applicable one. Explicit sorts first out of ResolveAsync, so what somebody
+        // said outranks what Aurora noticed here too.
+        Preference strongest = tone.Preferences[0];
+
+        return strongest.ValueJson.Contains("blunt", StringComparison.OrdinalIgnoreCase)
+            ? voice with { Formality = Math.Min(voice.Formality, 0.3), Conciseness = 1.0 }
+            : strongest.ValueJson.Contains("formal", StringComparison.OrdinalIgnoreCase)
+                ? voice with { Formality = Math.Max(voice.Formality, 0.8) }
+                : voice;
     }
 
     private ResolvedProfile Fallback(string ownerId, string channel, string reason) =>

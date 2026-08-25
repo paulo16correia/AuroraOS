@@ -147,9 +147,26 @@ public sealed class KernelDispatcher
         MemorySearchResult recalled = await _memories
             .SearchAsync(query, access, new MemoryFilters(), ct).ConfigureAwait(false);
 
+        // What Aurora believes about the subject makes what it recalls about that subject more
+        // salient (RFC 028's flow ends at "Active Belief → attention"). The belief does not become
+        // an item of attention itself — it is a pattern across memories, not one of them — so it
+        // moves the score of what it is about and nothing else.
+        BeliefSupport believedAbout = await _beliefs.SupportAsync(
+            $"person/{principal.ClientId}", BeliefPurpose.Ordinary, access, ct).ConfigureAwait(false);
+
+        var believedSubjects = believedAbout.Beliefs
+            .Select(b => b.SubjectRef)
+            .ToHashSet(StringComparer.Ordinal);
+
         var candidates = recalled.Matches
             .Select(m => new AttentionItem(
-                m.Memory.Id, AttentionKind.Memory, m.Score, 0.3, 0.3, 0.3,
+                m.Memory.Id, AttentionKind.Memory,
+
+                // Bounded, and only ever upward. A belief cannot bury a memory that contradicts
+                // it — which is exactly what a belief left to lower scores would do to its own
+                // counter-evidence.
+                believedSubjects.Contains(m.Memory.SubjectRef) ? Math.Min(1.0, m.Score + 0.2) : m.Score,
+                0.3, 0.3, 0.3,
                 m.Memory.Confidence, 0.9, m.Memory.SensitivityClass, TokenCost: 50))
             .ToList();
 
@@ -194,9 +211,9 @@ public sealed class KernelDispatcher
             cycle.Id, $"Should {resolved.Resolved.ActionId} run, as asked?",
             _clock.UtcNow + DeliberationWindow, ct).ConfigureAwait(false);
 
-        // What Aurora believes about the person, brought in as hypotheses rather than as findings.
-        // An action that reaches outside Aurora asks under a high-risk purpose, which comes back
-        // saying the beliefs may inform the decision and may not carry it (RFC 028 rule 2).
+        // Asked again, under the purpose this action actually has. The same beliefs answered a
+        // different question for attention; whether they may carry a decision depends on what the
+        // decision is, so the answer is not reusable (RFC 028 rule 2).
         BeliefSupport support = await _beliefs.SupportAsync(
             $"person/{principal.ClientId}",
             resolved.HasExternalEffect ? BeliefPurpose.SensitiveContent : BeliefPurpose.Ordinary,

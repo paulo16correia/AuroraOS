@@ -1,5 +1,8 @@
 using System.Globalization;
 using Aurora.Adapters.Personality;
+using Aurora.Adapters.Knowledge;
+using Aurora.Adapters.Memories;
+using Aurora.Adapters.Relationships;
 using Aurora.Adapters.Persistence;
 using Aurora.Core.Contracts;
 using Aurora.Tests.Support;
@@ -17,11 +20,23 @@ public sealed class PersonalityTests
     private static DateTimeOffset At(string iso) =>
         DateTimeOffset.Parse(iso, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
 
-    private static (SqlitePersonalityService Service, MessageComposer Composer, TestClock Clock) Build(
+    private static (SqlitePersonalityService Service, MessageComposer Composer,
+        SqliteRelationshipModel Relationships, TestClock Clock) Build(
         SqliteTestDb db, string now = "2026-01-15T09:00:00+00:00")
     {
         var clock = new TestClock(At(now));
-        return (new SqlitePersonalityService(db.Factory, clock), new MessageComposer(), clock);
+        var relationships = new SqliteRelationshipModel(
+            db.Factory,
+            new SqliteKnowledgeGraph(
+                db.Factory,
+                new SqliteMemoryService(
+                    db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
+                clock),
+            clock);
+
+        return (
+            new SqlitePersonalityService(db.Factory, relationships, clock),
+            new MessageComposer(), relationships, clock);
     }
 
     private static PersonalityProfile Candidate() =>
@@ -39,7 +54,7 @@ public sealed class PersonalityTests
     public async Task ChangingWhoAuroraIsNeedsTheOwnerSApproval()
     {
         using var db = new SqliteTestDb();
-        var (service, _, _) = Build(db);
+        var (service, _, _, _) = Build(db);
 
         PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
         Assert.Equal(ProfileStatus.Draft, draft.Status);
@@ -58,7 +73,7 @@ public sealed class PersonalityTests
     public async Task TheOutgoingProfileIsRetiredRatherThanDeleted()
     {
         using var db = new SqliteTestDb();
-        var (service, _, clock) = Build(db);
+        var (service, _, _, clock) = Build(db);
 
         PersonalityProfile first = await service.ProposeAsync(Candidate(), Ct);
         await service.ActivateAsync(first.Id, "approval/1", "paulo", "first", Ct);
@@ -80,7 +95,7 @@ public sealed class PersonalityTests
     public async Task AnIdentityChangeRecordsWhoAndWhy()
     {
         using var db = new SqliteTestDb();
-        var (service, _, _) = Build(db);
+        var (service, _, _, _) = Build(db);
         PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
 
         await Assert.ThrowsAsync<PersonalityException>(() =>
@@ -96,7 +111,7 @@ public sealed class PersonalityTests
     public async Task WithNoProfileAuroraUsesTheMinimumSafeOneAndSaysItIsDegraded()
     {
         using var db = new SqliteTestDb();
-        var (service, _, clock) = Build(db);
+        var (service, _, _, clock) = Build(db);
 
         ResolvedProfile resolved = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
 
@@ -113,7 +128,7 @@ public sealed class PersonalityTests
     public async Task TheDefaultIsPortugueseAndAnUnsupportedLanguageFallsBackRatherThanBeingClaimed()
     {
         using var db = new SqliteTestDb();
-        var (service, _, clock) = Build(db);
+        var (service, _, _, clock) = Build(db);
 
         PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
         await service.ActivateAsync(draft.Id, "approval/1", "paulo", "first", Ct);
@@ -136,7 +151,7 @@ public sealed class PersonalityTests
     public async Task ProactivityIsSomethingSomebodyOptsInto()
     {
         using var db = new SqliteTestDb();
-        var (service, _, clock) = Build(db);
+        var (service, _, _, clock) = Build(db);
 
         PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
         await service.ActivateAsync(draft.Id, "approval/1", "paulo", "first", Ct);
@@ -162,7 +177,7 @@ public sealed class PersonalityTests
     public async Task AMessageThatManufacturesPressureIsRefusedRatherThanSoftened(string text)
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         ResolvedProfile profile = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
 
@@ -198,7 +213,7 @@ public sealed class PersonalityTests
     public async Task ARiskIsNotReshapedByTheVoiceAndDoesNotGetBuriedMidParagraph()
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         ResolvedProfile profile = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
 
@@ -218,7 +233,7 @@ public sealed class PersonalityTests
     public async Task AProfileCannotMakeAClaimItForbadeItself()
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
         await service.ActivateAsync(draft.Id, "approval/1", "paulo", "first", Ct);
@@ -237,7 +252,7 @@ public sealed class PersonalityTests
     public async Task OnADifficultSubjectAuroraSaysWhatItIsAndStopsBeingLight()
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         PersonalityProfile draft = await service.ProposeAsync(
             Candidate() with { Voice = new Voice(0.5, 0.7, Humour: 0.8, Proactivity: 0.9) }, Ct);
@@ -268,7 +283,7 @@ public sealed class PersonalityTests
     public async Task AnEscalationAlwaysCarriesTheDisclosureWithIt()
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         ResolvedProfile profile = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
 
@@ -287,7 +302,7 @@ public sealed class PersonalityTests
     public async Task AnOrdinaryLocalAnswerDoesNotReciteADisclosureEveryTime()
     {
         using var db = new SqliteTestDb();
-        var (service, composer, clock) = Build(db);
+        var (service, composer, _, clock) = Build(db);
 
         ResolvedProfile profile = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
 
@@ -298,5 +313,57 @@ public sealed class PersonalityTests
         // stops being read, which defeats the point of having one.
         Assert.False(draft.DisclosureRequired);
         Assert.Single(draft.Segments);
+    }
+
+    // ---- RFC 029 meets RFC 07: a habit shapes how something is said ----
+
+    [Fact]
+    public async Task WhatThePersonPrefersAboutToneShapesTheVoice()
+    {
+        using var db = new SqliteTestDb();
+        var (service, _, relationships, clock) = Build(db);
+
+        PersonalityProfile draft = await service.ProposeAsync(
+            Candidate() with { Voice = Voice.Default with { Formality = 0.5 } }, Ct);
+        await service.ActivateAsync(draft.Id, "approval/1", "paulo", "first", Ct);
+
+        Assert.Equal(
+            0.5, (await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct)).EffectiveVoice.Formality, 2);
+
+        await relationships.SetExplicitAsync(
+            "paulo", "paulo", PreferenceDimension.Tone, """{"tone":"blunt"}""",
+            ["conversation/9"], Ct);
+
+        ResolvedProfile shaped = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
+
+        // A habit shapes how something is said. The same preference could not authorise anything,
+        // which is why it is resolved under the presentational effect and no other.
+        Assert.True(shaped.EffectiveVoice.Formality <= 0.3);
+        Assert.Equal(1.0, shaped.EffectiveVoice.Conciseness, 2);
+    }
+
+    [Fact]
+    public async Task AnInferredTonePreferenceStillOnlyShapesPresentation()
+    {
+        using var db = new SqliteTestDb();
+        var (service, _, relationships, clock) = Build(db);
+
+        PersonalityProfile draft = await service.ProposeAsync(Candidate(), Ct);
+        await service.ActivateAsync(draft.Id, "approval/1", "paulo", "first", Ct);
+
+        await relationships.InferAsync(
+            new Preference(
+                "", "paulo", "paulo", PreferenceDimension.Tone, """{"tone":"formal"}""",
+                0.8, PreferenceBasis.Observed, [], "{}", PreferenceStatus.Active, "", true),
+            ["conversation/3"], Ct);
+
+        ResolvedProfile shaped = await service.ResolveAsync("paulo", "local", clock.UtcNow, Ct);
+        Assert.True(shaped.EffectiveVoice.Formality >= 0.8);
+
+        // And the very same preference buys nothing that reaches outside Aurora.
+        PreferenceResolution acting = await relationships.ResolveAsync(
+            "paulo", PreferenceDimension.Tone, PreferenceEffect.ExternalCommunication, Ct);
+
+        Assert.False(acting.MayActWithoutConfirmation);
     }
 }
