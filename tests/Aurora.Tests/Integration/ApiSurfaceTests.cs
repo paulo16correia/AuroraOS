@@ -361,7 +361,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         (await agent.GetAsync("/v1/status?timezone=Europe/Lisbon", Ct())).EnsureSuccessStatusCode();
     }
 
-    // ---- RFC 12: what a deploy asks before sending traffic ----
+    // ---- health: is Aurora working, on this machine ----
 
     [Fact]
     public async Task LivenessAnswersWithoutACredentialAndSaysNothingElse()
@@ -371,13 +371,13 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         HttpResponseMessage response = await anonymous.GetAsync("/health/live", Ct());
         response.EnsureSuccessStatusCode();
 
-        // A container runtime polls this and holds no token. Giving one to a health probe would be
-        // handing out a credential to save a word — so it answers one word instead.
+        // Reachable only from loopback, and carrying one word. It exists so something can ask
+        // "are you up" without being handed a credential to find out.
         Assert.Equal("ok", (await response.Content.ReadAsStringAsync(Ct())).Trim());
     }
 
     [Fact]
-    public async Task ReadinessCarriesDetailAndStaysBehindTheGuard()
+    public async Task HealthCarriesDetailAndStaysBehindTheGuard()
     {
         using HttpClient anonymous = _factory.CreateClient();
         Assert.Equal(
@@ -390,11 +390,8 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
 
         Assert.Equal(6, body.GetProperty("checks").GetArrayLength());
         Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("status").GetString()));
-
-        // Rule 2: a release runs the schema it was built for, and a deploy script can ask.
         Assert.True(body.GetProperty("schema_version").GetInt32() > 0);
 
-        // A failing system answers 503 so a proxy can act without parsing anything.
         Assert.True(
             body.GetProperty("status").GetString() == "FAIL"
                 ? response.StatusCode == HttpStatusCode.ServiceUnavailable

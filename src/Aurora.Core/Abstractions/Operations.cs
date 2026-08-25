@@ -3,13 +3,13 @@ using Aurora.Core.Contracts;
 namespace Aurora.Core.Abstractions;
 
 /// <summary>
-/// Reports whether Aurora is working, component by component (RFC 12).
+/// Reports whether Aurora is working, component by component.
 /// </summary>
 /// <remarks>
-/// Rule 2 requires a release to pass checks <i>before receiving traffic</i>, so this has to be
-/// answerable by a process that has just started and holds nothing but a socket. It therefore
-/// checks reachable facts — can the database be read, does the audit chain verify, is the clock
-/// sane — rather than asking components how they feel.
+/// Answerable by a process that has just started and holds nothing but a socket, so it checks
+/// reachable facts — can the database be read, does the audit chain verify, is the clock sane —
+/// rather than asking components how they feel. A component that has stopped working is exactly
+/// the one whose opinion is worthless.
 /// </remarks>
 public interface IHealthService
 {
@@ -17,7 +17,7 @@ public interface IHealthService
 }
 
 /// <summary>
-/// Whether this machine's clock can be trusted for anything that expires (RFC 12 limit case).
+/// Whether this machine's clock can be trusted for anything that expires.
 /// </summary>
 /// <remarks>
 /// Approvals expire, consent sessions expire, signals expire, schedules fire. Every one of those is

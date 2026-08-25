@@ -1,6 +1,6 @@
 # Aurora OS — RFC 13: Roadmap, Milestones, and Acceptance
 
-**State:** Normative · **Depends on:** RFC 00–12
+**State:** Normative · **Depends on:** RFC 00–11
 
 ## Objective
 
@@ -47,8 +47,8 @@ Risk.review() -> RiskRegisterEntry[]
 | M2 — Memory | fixable memory and initial graph | provenance/ACL; propagated elimination; visible conflicts |
 | M3 — Planning | persistent goals and tasks | dependencies, approval, cancellation and acceptance criteria |
 | M4 — Pilot tool | low risk connector | end-to-end policy, vault, reconciliation and logging |
-| M5 — Operation | VPS and Control UI | backup restored; alerts; navigable permissions and audit |
-| M6 — Expansion | gradual external channels | security tests per connector; revocable automation |
+| M5 — Operation | Control panel and continuity | backup restored; navigable permissions and audit |
+| M6 — Expansion | gradual local capabilities | security tests per connector; revocable automation |
 
 ## Mandatory rules
 

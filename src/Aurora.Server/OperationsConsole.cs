@@ -8,7 +8,7 @@ using Aurora.Core.Contracts;
 namespace Aurora.Server;
 
 /// <summary>
-/// Backup and restore-testing, from the server host's console (RFC 12 rule 3).
+/// Backup and restore-testing, from Aurora's own console.
 /// </summary>
 /// <remarks>
 /// Not an HTTP endpoint. A backup is a copy of everything Aurora knows, and an endpoint that
@@ -72,7 +72,7 @@ public static class OperationsConsole
     }
 
     /// <summary>
-    /// Proves a backup restores, in a directory that is not the live one (RFC 12 rule 3).
+    /// Proves a backup restores, in a directory that is not the live one.
     /// </summary>
     /// <remarks>
     /// A backup nobody has restored is a belief about a file. The isolated target is a temporary

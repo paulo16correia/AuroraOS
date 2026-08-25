@@ -8,7 +8,7 @@ using Microsoft.Data.Sqlite;
 namespace Aurora.Adapters.Operations;
 
 /// <summary>
-/// Component-by-component health (RFC 12).
+/// Component-by-component health.
 /// </summary>
 /// <remarks>
 /// Every check reads a fact. Nothing here asks a component whether it thinks it is fine, because a
@@ -61,8 +61,8 @@ public sealed class AuroraHealthService : IHealthService
         var version = Convert.ToInt32(
             await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
 
-        // Rule 2: a release runs a schema it was built for. Serving traffic against a database the
-        // build does not expect is how a "reversible" migration becomes an incident.
+        // A build serves the schema it was written for. Running against a database it does not
+        // expect is how an upgrade quietly becomes data loss.
         return version == SqliteDatabase.TargetSchemaVersion
             ? (HealthStatus.Pass, $"schema {version}")
             : (HealthStatus.Fail,

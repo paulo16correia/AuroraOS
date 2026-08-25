@@ -70,20 +70,4 @@ public sealed class ServerOptionsTests
         }
     }
 
-    [Fact]
-    public void BindingBeyondLoopbackWithoutNamingTheHostIsRefused()
-    {
-        // The binding and the Host guard are one control. Reachable from the network while still
-        // judging every request against a guard that only knows loopback is the combination that
-        // looks like it works and does not.
-        InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
-            () => From(("Aurora:BindAddress", "0.0.0.0")));
-
-        Assert.Contains("Aurora:AllowedHosts", refused.Message, StringComparison.Ordinal);
-
-        AuroraServerOptions options = From(
-            ("Aurora:BindAddress", "0.0.0.0"), ("Aurora:AllowedHosts", "aurora.example.com"));
-
-        Assert.Equal(["aurora.example.com"], options.AllowedHosts);
-    }
 }

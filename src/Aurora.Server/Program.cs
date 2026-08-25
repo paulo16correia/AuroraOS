@@ -21,17 +21,9 @@ if (PassphraseConsole.TryHandle(args, options) || OperationsConsole.TryHandle(ar
 // Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
-    // Loopback on a desktop install; a container has to bind its whole namespace or the proxy
-    // cannot reach it. Binding beyond loopback without declaring the allowed hosts is refused
-    // when the options are read, so this cannot quietly become an open port.
-    if (options.BindAddress is "127.0.0.1" or "localhost")
-    {
-        kestrel.ListenLocalhost(options.Port);
-    }
-    else
-    {
-        kestrel.Listen(System.Net.IPAddress.Parse(options.BindAddress), options.Port);
-    }
+    // Loopback, always. Aurora runs on the machine that owns its data and is reachable from
+    // nowhere else — the whole security model rests on that rather than on a firewall.
+    kestrel.ListenLocalhost(options.Port);
     // Resource guard: reject oversized bodies at the transport before any parsing/canonicalization.
     kestrel.Limits.MaxRequestBodySize = 64 * 1024;
 });
@@ -52,7 +44,7 @@ var app = builder.Build();
 app.Services.GetRequiredService<SqliteDatabase>().Initialize();
 var auditVerification = await app.Services.GetRequiredService<IAuditStore>().VerifyChainAsync(CancellationToken.None);
 
-// RFC 12 limit case: an incorrect clock blocks anything that depends on expiry. Approvals,
+// An incorrect clock blocks anything that depends on expiry. Approvals,
 // consent sessions and schedules are all promises about time, and a clock that has gone backwards
 // turns them into something else. Checked before serving rather than discovered afterwards.
 ClockVerdict clockVerdict = await app.Services.GetRequiredService<IClockGuard>()
@@ -118,13 +110,12 @@ app.MapAuroraUi();
 // Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
 // NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
 // hand an untrusted reasoner a view of how often its requests are being refused.
-// Liveness, and nothing else: the process is up and answering. Unauthenticated on purpose so a
-// container runtime can poll it, and therefore carrying nothing worth reading — a health endpoint
-// is the most-scraped surface a system has.
+// Liveness, and nothing else: the process is up and answering. Reachable from loopback without a
+// credential, and therefore carrying nothing worth reading.
 app.MapGet("/health/live", () => Results.Text("ok", "text/plain"));
 
-// Readiness, with detail, behind the same guard as everything else. RFC 12 rule 2: a release
-// passes its checks before receiving traffic, and this is what a deploy script asks.
+// Health with detail, behind the same guard as everything else. What the control panel shows,
+// and what somebody asks before trusting an answer Aurora just gave them.
 app.MapGet("/health", async (IHealthService health, CancellationToken ct) =>
 {
     IReadOnlyList<HealthCheck> checks = await health.ReadAsync(ct);
@@ -133,8 +124,8 @@ app.MapGet("/health", async (IHealthService health, CancellationToken ct) =>
     return Results.Json(
         new { status = overall, schema_version = SqliteDatabase.TargetSchemaVersion, checks },
 
-        // A failing system answers 503 so a proxy or an orchestrator can act on it without
-        // parsing anything. WARN still serves: it means look, not stop.
+        // A failing system answers 503 so a caller can act on it without parsing anything.
+        // WARN still serves: it means look, not stop.
         statusCode: overall == HealthStatus.Fail
             ? StatusCodes.Status503ServiceUnavailable
             : StatusCodes.Status200OK);

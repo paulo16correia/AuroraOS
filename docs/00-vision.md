@@ -31,7 +31,7 @@ The desired result is a cognitive personal operating system: a platform on which
 3. Represent important relationships through a knowledge graph, allowing you to navigate between related entities and explain the origin of the connections.
 4. Convert larger requests into verifiable goals, plans, tasks, dependencies and states.
 5. Use digital tools through uniform contracts, granular permissions and execution records.6. Progressively integrate external channels, including email, Discord, calendar, files, browser and development systems.
-7. Allow continuous operation on a VPS, with observability, backups, recovery and secure updates.
+7. Allow continuous operation on the owner's own machine, with observability, backups and recovery.
 8. Allow you to switch AI models and suppliers without losing Aurora's data or operational identity.
 
 ### 3.2 Engineering objectives
@@ -51,7 +51,7 @@ The following points are explicitly outside the initial scope:
 - Store credentials or secrets in prompts, messages, unencrypted logs or searchable memory.
 - Substitute professional medical, legal, financial or security advice.
 - Build a surveillance solution, indiscriminate data collection or hidden third-party monitoring.
-- Give the entity unlimited administrative access to the VPS, personal accounts or third-party services.
+- Give the entity unlimited administrative access to the host machine, personal accounts or third-party services.
 - Promising that all information will be automatically recalled with perfect accuracy.
 - Simultaneously resolve all integrations and interfaces before validating core memory, policy, and controlled execution.
 
@@ -177,9 +177,9 @@ The project will be considered successful in stages, not by an isolated visual d
 
 ### 9.1 Technical restrictions
 
-- The first implementation should be able to run on a modest VPS, using external AI services for inference when necessary.
+- The implementation runs on the owner's own machine, using external AI services for inference only when necessary.
 - PostgreSQL will be the main transactional source in the initial phase; Vector and graph research can start in the same ecosystem or in separate services only when justifiable.
-- The architecture must be containerizable and support configuration variables per environment.
+- The architecture is configured by environment variables and binds loopback only; it is reachable from nowhere but the machine that owns its data.
 - The system must tolerate temporary API failures, usage limits, restarts and interrupted tasks.
 
 ### 9.2 Security and privacy restrictions
@@ -238,9 +238,9 @@ Introduce persistent goals, tasks, dependencies, post-execution reflection, and 
 
 Add a low-risk integration and a limited set of actions, for example reading a calendar or preparing email drafts. Validate policies, secret vault, logging, and disaster recovery before expanding capabilities.
 
-### Phase 5 — Operation on VPS and control panel
+### Phase 5 — Continuity and control panel
 
-Prepare containers, backups, monitoring, alerts, updates and a dashboard for memories, goals, tools, permissions and auditing.
+Prepare backups, restore testing, health observation and a panel for memories, goals, tools, permissions and auditing.
 
 ### Phase 6 — Ecosystem and limited autonomyAdd Discord, email, browser, documents and development services gradually. Recurring automations will only be activated by explicit rules, with restricted scope, cost limits, pause mechanism and periodic review.
 

@@ -5,7 +5,7 @@ using Aurora.Core.Contracts;
 namespace Aurora.Adapters.Operations;
 
 /// <summary>
-/// Checks the clock against the one monotonic thing Aurora already keeps (RFC 12).
+/// Checks the clock against the one monotonic thing Aurora already keeps.
 /// </summary>
 /// <remarks>
 /// No NTP, no network, no trusted third party: the audit log is append-only and its timestamps only

@@ -21,4 +21,4 @@ A module, capability or Application is not completed when it “works locally”
 
 ## Evidence
 
-Each completed item references tests, dashboards, deployment logs or documentation. Absence of evidence leaves the item open; an exception is only valid with ADR/risk accepted and expiration date.
+Each completed item references tests, the control panel, the audit journal or documentation. Absence of evidence leaves the item open; an exception is only valid with ADR/risk accepted and expiration date.

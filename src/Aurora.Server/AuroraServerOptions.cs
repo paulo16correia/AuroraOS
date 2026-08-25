@@ -22,27 +22,6 @@ public sealed class AuroraServerOptions
     public required string SandboxRoot { get; init; }
 
     /// <summary>
-    /// The address Kestrel binds. Loopback by default, which is the desktop install.
-    /// </summary>
-    /// <remarks>
-    /// A container has to bind <c>0.0.0.0</c> or nothing outside its own namespace can reach it —
-    /// including the reverse proxy. Doing that without also naming <see cref="AllowedHosts"/> is
-    /// refused at startup: the loopback binding and the Host guard are one control, and quietly
-    /// keeping half of it would be worse than having neither.
-    /// </remarks>
-    public string BindAddress { get; init; } = "127.0.0.1";
-
-    /// <summary>
-    /// Host names this instance answers to, beyond loopback.
-    /// </summary>
-    /// <remarks>
-    /// Empty on a desktop install, where loopback is the whole story. Behind a proxy the forwarded
-    /// Host is the public name, so it has to be named — an allowlist the operator writes, rather
-    /// than a guard that switches itself off when it becomes inconvenient.
-    /// </remarks>
-    public IReadOnlyList<string> AllowedHosts { get; init; } = [];
-
-    /// <summary>
     /// Whether the sandbox file capabilities are offered in the catalog.
     /// </summary>
     /// <remarks>
@@ -118,25 +97,6 @@ public sealed class AuroraServerOptions
 
         var sandboxFilesEnabled = config.GetValue<bool?>("Aurora:SandboxFilesEnabled") ?? true;
 
-        var bindAddress = config["Aurora:BindAddress"];
-        bindAddress = string.IsNullOrWhiteSpace(bindAddress) ? "127.0.0.1" : bindAddress.Trim();
-
-        var allowedHosts = (config["Aurora:AllowedHosts"] ?? string.Empty)
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-
-        var isLoopback = bindAddress is "127.0.0.1" or "::1" or "localhost";
-
-        // Fail closed on the combination that looks like it works and does not: reachable from the
-        // network, and still judging every request against a guard that only knows loopback.
-        if (!isLoopback && allowedHosts.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Aurora:BindAddress is '{bindAddress}', so this instance is reachable beyond "
-                + "loopback. Name the host(s) it answers to in Aurora:AllowedHosts — the binding "
-                + "and the Host guard are one control and cannot be half-applied.");
-        }
-
         var sandboxRoot = config["Aurora:SandboxRoot"];
         if (string.IsNullOrWhiteSpace(sandboxRoot))
         {
@@ -203,8 +163,6 @@ public sealed class AuroraServerOptions
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
             SandboxFilesEnabled = sandboxFilesEnabled,
-            BindAddress = bindAddress,
-            AllowedHosts = allowedHosts,
             SnapshotKeyPath = snapshotKeyPath,
             GenomeKeyPath = genomeKeyPath,
             DeliberationKeyPath = deliberationKeyPath,
