@@ -4,6 +4,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Development;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
@@ -117,6 +118,11 @@ public static class ServiceRegistration
         // informal instruction cannot become an invisible rule nobody can find (RFC 07).
         services.AddSingleton<IPersonalityService, SqlitePersonalityService>();
         services.AddSingleton<IComposer, MessageComposer>();
+
+        // Operational maturity, earned rather than accrued. A stage changes how much of Aurora's
+        // own caution sits on top of the rules, and never the rules (RFC 037).
+        services.AddSingleton(SqliteDevelopmentModel.DefaultProfile);
+        services.AddSingleton<IDevelopmentModel, SqliteDevelopmentModel>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

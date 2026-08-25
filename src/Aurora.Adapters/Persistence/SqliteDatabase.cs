@@ -968,6 +968,31 @@ public sealed class SqliteDatabase
           approved_at_utc TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS development_state (
+          mind_id TEXT PRIMARY KEY,
+          current_stage_id TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          assessment_at_utc TEXT NOT NULL,
+          status TEXT NOT NULL,
+          restricted_scopes TEXT NOT NULL,
+          reason TEXT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS development_proposal (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          from_stage_id TEXT NOT NULL,
+          to_stage_id TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          rationale TEXT NOT NULL,
+          proposed_at_utc TEXT NOT NULL,
+          status TEXT NOT NULL,
+          approval_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_development_proposal
+          ON development_proposal(mind_id, proposed_at_utc);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -977,7 +1002,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 11;
+    public const int TargetSchemaVersion = 12;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1321,6 +1346,34 @@ public sealed class SqliteDatabase
               reason TEXT NOT NULL,
               approved_at_utc TEXT NOT NULL
             );
+            """,
+
+        // v12 — the development model (docs/adr/0046). New tables only.
+        [12] = """
+            CREATE TABLE IF NOT EXISTS development_state (
+              mind_id TEXT PRIMARY KEY,
+              current_stage_id TEXT NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              assessment_at_utc TEXT NOT NULL,
+              status TEXT NOT NULL,
+              restricted_scopes TEXT NOT NULL,
+              reason TEXT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS development_proposal (
+              id TEXT PRIMARY KEY,
+              mind_id TEXT NOT NULL,
+              from_stage_id TEXT NOT NULL,
+              to_stage_id TEXT NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              rationale TEXT NOT NULL,
+              proposed_at_utc TEXT NOT NULL,
+              status TEXT NOT NULL,
+              approval_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_development_proposal
+              ON development_proposal(mind_id, proposed_at_utc);
             """,
     };
 
