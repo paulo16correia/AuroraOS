@@ -57,6 +57,9 @@ exist:
   step 8. They are not registered in the catalog; `Aurora:SandboxFilesEnabled`
   defaults to `false`. The code and its tests remain, so the path hardening stays
   covered and the capability can be offered unchanged once steps 3–7 exist.
+  **Superseded by `docs/adr/0037`:** steps 3–7 now exist, the review's conditions
+  are closed and the residual TOCTOU risk is addressed, so the owner unfroze them
+  and the default is now `true`.
 - **`memory.remember` / `memory.recall`** store notes. The specification's Memory
   (RFC 03) is a record with provenance; the model is re-founded at step 6.
 - **The MCP surface** is RFC 10 and belongs at step 10. It remains available as

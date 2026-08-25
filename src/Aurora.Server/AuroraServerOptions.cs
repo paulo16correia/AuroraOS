@@ -20,12 +20,19 @@ public sealed class AuroraServerOptions
     public required string SandboxRoot { get; init; }
 
     /// <summary>
-    /// Whether the sandbox file capabilities are registered in the catalog. Default false since
-    /// the re-baseline (docs/adr/0012): they are step 8 of the frozen implementation order and
-    /// their prerequisites (steps 3-7) do not exist yet. The code and tests stay; the capability
-    /// is simply not offered.
+    /// Whether the sandbox file capabilities are offered in the catalog.
     /// </summary>
-    public bool SandboxFilesEnabled { get; init; }
+    /// <remarks>
+    /// Frozen off by the re-baseline (docs/adr/0012) because they were built at step 8 before
+    /// steps 3–7 existed; unfrozen by the owner's decision in docs/adr/0037, now that those steps
+    /// do exist and the review's conditions are closed. Default true.
+    /// <para>
+    /// Still a switch, because turning them off is a legitimate thing to want: an instance that
+    /// has no business touching files should not offer to. Nothing about the switch is what makes
+    /// them safe — the approval gate is, and that gate applies on every single call.
+    /// </para>
+    /// </remarks>
+    public bool SandboxFilesEnabled { get; init; } = true;
 
     /// <summary>
     /// How long a reservation may sit in EXECUTING before startup reconciliation calls it
@@ -76,7 +83,7 @@ public sealed class AuroraServerOptions
             dbPath = Path.Combine(dir, "aurora.db");
         }
 
-        var sandboxFilesEnabled = config.GetValue<bool?>("Aurora:SandboxFilesEnabled") ?? false;
+        var sandboxFilesEnabled = config.GetValue<bool?>("Aurora:SandboxFilesEnabled") ?? true;
 
         var sandboxRoot = config["Aurora:SandboxRoot"];
         if (string.IsNullOrWhiteSpace(sandboxRoot))

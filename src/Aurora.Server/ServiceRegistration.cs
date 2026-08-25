@@ -179,8 +179,10 @@ public static class ServiceRegistration
         services.AddSingleton<ICapability, EchoSayCapability>();
         services.AddSingleton<ICapability, RememberNoteCapability>();
         services.AddSingleton<ICapability, RecallNotesCapability>();
-        // Frozen by the re-baseline (docs/adr/0012): filesystem capabilities are step 8 of the
-        // frozen implementation order and were built before steps 3-7 existed. Off by default.
+        // Unfrozen by the owner's decision (docs/adr/0037). Both are MEDIUM and approval-gated, so
+        // being in the catalog is not permission to use them: every call still needs a persisted
+        // approval scoped to that exact input. Aurora offering to read a file and Aurora reading
+        // one are different events, and only the first of them happens without being asked.
         if (options.SandboxFilesEnabled)
         {
             services.AddSingleton<ICapability, WriteSandboxFileCapability>();
