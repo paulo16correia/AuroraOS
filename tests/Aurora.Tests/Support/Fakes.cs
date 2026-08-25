@@ -229,8 +229,17 @@ public sealed class RecordingAuditStore : IAuditStore
 /// </summary>
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
+    /// <summary>
+    /// Not implemented, and returning nothing rather than pretending.
+    /// </summary>
+    /// <remarks>
+    /// This fake keeps no timestamps, so it cannot judge staleness. A test whose subject is what a
+    /// restart left behind needs <c>SqliteIdempotencyStore</c>; using this one would be reading a
+    /// stub's zero as a finding.
+    /// </remarks>
     public Task<int> ReconcileStaleAsync(TimeSpan staleAfter, CancellationToken ct) => Task.FromResult(0);
 
+    /// <inheritdoc cref="ReconcileStaleAsync"/>
     public Task<IReadOnlyList<string>> ListUnknownAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<string>>([]);
 

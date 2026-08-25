@@ -1,6 +1,7 @@
 using System.Net;
 using Aurora.Server.Security;
 using Microsoft.Extensions.DependencyInjection;
+using Aurora.Core.Abstractions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
@@ -36,6 +37,14 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         // a test that silently depended on that default would stop covering the capabilities the
         // day somebody changed it.
         builder.UseSetting("Aurora:SandboxFilesEnabled", "true");
+
+        // A deterministic host. Without this the integration tests read the machine's real disk,
+        // so a developer with a full drive watches Aurora correctly refuse every effectful action
+        // and incorrectly conclude the tests are broken.
+        builder.ConfigureServices(services =>
+        {
+            services.AddSingleton<IResourceProbe>(new StubResourceProbe());
+        });
     }
 
     /// <summary>
@@ -111,4 +120,10 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
             // Best-effort cleanup.
         }
     }
+}
+
+/// <summary>A host that is comfortably idle, so integration tests are about Aurora.</summary>
+internal sealed class StubResourceProbe : IResourceProbe
+{
+    public ResourceReading Read() => new(CpuFraction: 0.1, MemoryFraction: 0.2, DiskFraction: 0.3);
 }

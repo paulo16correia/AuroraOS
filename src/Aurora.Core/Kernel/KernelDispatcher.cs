@@ -47,6 +47,7 @@ public sealed class KernelDispatcher
     private readonly IObservationService _observations;
     private readonly IDeliberationService _deliberation;
     private readonly IBeliefSystem _beliefs;
+    private readonly ISelfModel _self;
     private readonly AttentionPolicy _attentionPolicy;
     private readonly IClock _clock;
 
@@ -62,6 +63,7 @@ public sealed class KernelDispatcher
         IObservationService observations,
         IDeliberationService deliberation,
         IBeliefSystem beliefs,
+        ISelfModel self,
         AttentionPolicy attentionPolicy,
         IClock clock)
     {
@@ -76,6 +78,7 @@ public sealed class KernelDispatcher
         _observations = observations;
         _deliberation = deliberation;
         _beliefs = beliefs;
+        _self = self;
         _attentionPolicy = attentionPolicy;
         _clock = clock;
     }
@@ -234,7 +237,29 @@ public sealed class KernelDispatcher
                 ]),
             ct).ConfigureAwait(false);
 
-        Decision decision = await DecideAsync(resolved, cycle, ingress, recalled, ct).ConfigureAwait(false);
+        // RFC 027 rule 1: a decision that proposes a tool consults the Self first. Installed,
+        // permitted and safe-right-now are three separate answers, and an option priced without
+        // them is a promise made before checking whether it can be kept.
+        CapabilityAssessment assessment = await _self
+            .CanAsync(resolved.Resolved.ActionId, principal, ct).ConfigureAwait(false);
+
+        await _deliberation.AdvanceAsync(
+            deliberation.Id, DeliberationPhase.Compare,
+            new DeliberationStep(
+                Assertions:
+                [
+                    new Assertion(
+                        $"{resolved.Resolved.ActionId} is "
+                        + $"{(assessment.Installed ? "installed" : "not installed")}, "
+                        + $"{(assessment.Permitted ? "permitted" : "not permitted")}, "
+                        + $"{(assessment.SafeNow ? "safe now" : "not safe now")}",
+                        [$"self/{resolved.Resolved.ActionId}"], 1.0),
+                ],
+                Uncertainty: assessment.Available ? [] : [assessment.Reason]),
+            ct).ConfigureAwait(false);
+
+        Decision decision = await DecideAsync(
+            resolved, cycle, ingress, recalled, assessment, ct).ConfigureAwait(false);
 
         await _deliberation.AdvanceAsync(
             deliberation.Id, DeliberationPhase.Decide,
@@ -403,7 +428,7 @@ public sealed class KernelDispatcher
     /// </remarks>
     private async Task<Decision> DecideAsync(
         ActionResolution resolved, CognitiveCycle cycle, DomainEvent ingress,
-        MemorySearchResult recalled, CancellationToken ct)
+        MemorySearchResult recalled, CapabilityAssessment assessment, CancellationToken ct)
     {
         var instructed = resolved.Resolved.Via == ResolutionVia.Explicit;
 
@@ -430,7 +455,11 @@ public sealed class KernelDispatcher
                 // produces, at the Policy stage below.
                 Permitted: true,
                 Reversible: !resolved.HasExternalEffect),
-            Prerequisites: [], BlockingReasons: []);
+            Prerequisites: [],
+
+            // Not merely priced lower: an option the Self says cannot run now is not an option.
+            // Offering it and letting cost decide would be deciding to do something impossible.
+            BlockingReasons: assessment.SafeNow ? [] : [assessment.Reason]);
 
         var ask = new DecisionOption(
             DecisionMode.Ask,

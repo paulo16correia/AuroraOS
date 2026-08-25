@@ -5,6 +5,10 @@ using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
 using Aurora.Adapters.Observations;
+using Aurora.Adapters.Operations;
+using Aurora.Adapters.Resources;
+using Aurora.Adapters.Scheduling;
+using Aurora.Adapters.Self;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.World;
 using Aurora.Core.Abstractions;
@@ -79,6 +83,7 @@ public sealed class KernelDispatcherTests
             new SqliteObservationService(db.Factory, clock),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
+            Self(db, clock, capability),
             AttentionPolicy.Default,
             clock);
 
@@ -90,6 +95,24 @@ public sealed class KernelDispatcherTests
         SqliteTestDb db, SqliteCognitiveCycle cycles, TestClock clock) =>
         new(db.Factory, cycles,
             new Adapters.Vault.AesGcmSecretProtector(Enumerable.Repeat((byte)7, 32).ToArray()), clock);
+
+    /// <summary>A real Self over the same registry, so the dispatcher's check is the real one.</summary>
+    private static SqliteSelfModel Self(SqliteTestDb db, TestClock clock, FakeCapability capability)
+    {
+        var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
+        var audit = new SqliteAuditStore(
+            db.Factory, clock, new byte[32],
+            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}")));
+        var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
+
+        return new SqliteSelfModel(
+            db.Factory, new FakeRegistry(capability), new FakePolicy(true), resources,
+            new AuroraHealthService(
+                db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
+                new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock),
+                clock),
+            new InMemoryIdempotencyStore(), clock);
+    }
 
     private static SqliteBeliefSystem Beliefs(SqliteTestDb db, TestClock clock) =>
         new(db.Factory, BeliefPolicy.Default, clock);
@@ -194,7 +217,8 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
-            deliberation, Beliefs(db, clock), AttentionPolicy.Default, clock);
+            deliberation, Beliefs(db, clock), Self(db, clock, Echo()),
+            AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
             new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);
@@ -242,7 +266,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
-            deliberation, beliefs, AttentionPolicy.Default, clock);
+            deliberation, beliefs, Self(db, clock, capability), AttentionPolicy.Default, clock);
 
         return new Wired(dispatcher, deliberation, beliefs);
     }
@@ -340,6 +364,64 @@ public sealed class KernelDispatcherTests
         Assert.Equal(1, effectful.ExecuteCount);
     }
 
+    // ---- RFC 027 rule 1: a decision that proposes a tool consults the Self ----
+
+    [Fact]
+    public async Task AnActionTheSelfSaysIsNotSafeNowIsNotEvenAnOption()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        var cycle = new SqliteCognitiveCycle(db.Factory, clock);
+        FakeCapability effectful = Effectful();
+        SqliteDeliberationService deliberation = Deliberation(db, cycle, clock);
+
+        var bus = TestBus.Over(db.Factory, clock);
+        var audit = new SqliteAuditStore(
+            db.Factory, clock, new byte[32],
+            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}")));
+
+        // A machine with no disk left. Reading is unaffected; reaching outside it is not.
+        var resources = new SystemResourceModel(new FakeResourceProbe(disk: 0.99), clock);
+
+        var self = new SqliteSelfModel(
+            db.Factory, new FakeRegistry(effectful), new FakePolicy(true), resources,
+            new AuroraHealthService(
+                db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
+                new SqliteScheduler(db.Factory, bus, cycle, clock), clock),
+            new InMemoryIdempotencyStore(), clock);
+
+        var kernel = new AuroraKernel(
+            new FakeReasoner(null), new FakeRegistry(effectful), new FakeValidator(true),
+            new FakePolicy(true), new FakeConsent(true), new FakeApprovalStore(),
+            new DirectExecutor(), audit, new InMemoryIdempotencyStore(),
+            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(), bus);
+
+        var dispatcher = new KernelDispatcher(
+            kernel, cycle, bus,
+            new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
+            new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
+            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), bus, clock),
+            new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
+            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteObservationService(db.Factory, clock),
+            deliberation, Beliefs(db, clock), self, AttentionPolicy.Default, clock);
+
+        ExecuteResponse response = await dispatcher.DispatchAsync(
+            new ExecuteRequest(ActionId: "mail.send", Input: Message("hi")), Caller, null, Ct);
+
+        // Not priced lower and outvoted — blocked. An option the Self says cannot run now is not
+        // an option, and offering it would be deciding to do something impossible.
+        Assert.Equal(ExecuteStatus.Asked, response.Status);
+        Assert.Equal(0, effectful.ExecuteCount);
+
+        Thought explanation = Assert.Single(
+            await deliberation.ThoughtsForCycleAsync(response.CycleRef!, Ct));
+
+        Assert.Contains(
+            explanation.Uncertainty,
+            u => u.Contains("outside Aurora", StringComparison.Ordinal));
+    }
+
     // ---- the kernel still has the last word ----
 
     [Fact]
@@ -372,6 +454,7 @@ public sealed class KernelDispatcherTests
             decisions, new SqliteObservationService(db.Factory, clock),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
+            Self(db, clock, capability),
             AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(

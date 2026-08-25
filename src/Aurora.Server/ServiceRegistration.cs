@@ -27,6 +27,7 @@ using Aurora.Adapters.Resources;
 using Aurora.Adapters.Retention;
 using Aurora.Adapters.Situation;
 using Aurora.Adapters.Scheduling;
+using Aurora.Adapters.Self;
 using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Policy;
@@ -106,6 +107,10 @@ public static class ServiceRegistration
 
         services.AddSingleton<IClockGuard, AuditClockGuard>();
         services.AddSingleton<IHealthService, AuroraHealthService>();
+
+        // What Aurora knows about itself, observed rather than assumed. Installed, permitted and
+        // safe-right-now are three separate answers here, and none implies another (RFC 027).
+        services.AddSingleton<ISelfModel, SqliteSelfModel>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

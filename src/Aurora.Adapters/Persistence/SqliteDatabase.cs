@@ -905,6 +905,26 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_preference_owner
           ON preference(owner_ref, dimension, status);
 
+        CREATE TABLE IF NOT EXISTS self_model (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          identity_ref TEXT NOT NULL,
+          personality_ref TEXT NULL,
+          capability_snapshot_json TEXT NOT NULL,
+          resource_snapshot_json TEXT NOT NULL,
+          operational_state TEXT NOT NULL,
+          active_cycle_ids TEXT NOT NULL,
+          current_focus_ref TEXT NULL,
+          health_summary TEXT NOT NULL,
+          health_observed_at_utc TEXT NOT NULL,
+          recent_activity_refs TEXT NOT NULL,
+          observed_at_utc TEXT NOT NULL,
+          paused_reason TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_self_version ON self_model(mind_id, version DESC);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -914,7 +934,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 9;
+    public const int TargetSchemaVersion = 10;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1190,6 +1210,29 @@ public sealed class SqliteDatabase
 
             CREATE INDEX IF NOT EXISTS idx_preference_owner
               ON preference(owner_ref, dimension, status);
+            """,
+
+        // v10 — the self model (docs/adr/0043). New table only.
+        [10] = """
+            CREATE TABLE IF NOT EXISTS self_model (
+              id TEXT PRIMARY KEY,
+              mind_id TEXT NOT NULL,
+              version INTEGER NOT NULL,
+              identity_ref TEXT NOT NULL,
+              personality_ref TEXT NULL,
+              capability_snapshot_json TEXT NOT NULL,
+              resource_snapshot_json TEXT NOT NULL,
+              operational_state TEXT NOT NULL,
+              active_cycle_ids TEXT NOT NULL,
+              current_focus_ref TEXT NULL,
+              health_summary TEXT NOT NULL,
+              health_observed_at_utc TEXT NOT NULL,
+              recent_activity_refs TEXT NOT NULL,
+              observed_at_utc TEXT NOT NULL,
+              paused_reason TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_self_version ON self_model(mind_id, version DESC);
             """,
     };
 
