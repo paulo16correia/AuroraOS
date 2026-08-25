@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Aurora.Adapters.Beliefs;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Events;
@@ -77,6 +78,7 @@ public sealed class KernelDispatcherTests
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
             Deliberation(db, cycle, clock),
+            Beliefs(db, clock),
             AttentionPolicy.Default,
             clock);
 
@@ -88,6 +90,9 @@ public sealed class KernelDispatcherTests
         SqliteTestDb db, SqliteCognitiveCycle cycles, TestClock clock) =>
         new(db.Factory, cycles,
             new Adapters.Vault.AesGcmSecretProtector(Enumerable.Repeat((byte)7, 32).ToArray()), clock);
+
+    private static SqliteBeliefSystem Beliefs(SqliteTestDb db, TestClock clock) =>
+        new(db.Factory, BeliefPolicy.Default, clock);
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });
@@ -189,7 +194,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
-            deliberation, AttentionPolicy.Default, clock);
+            deliberation, Beliefs(db, clock), AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
             new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);
@@ -205,6 +210,91 @@ public sealed class KernelDispatcherTests
         Assert.Contains("Because:", explanation.UserExplanation, StringComparison.Ordinal);
         Assert.Contains("Sources:", explanation.UserExplanation, StringComparison.Ordinal);
         Assert.NotEmpty(explanation.EvidenceRefs);
+    }
+
+    // ---- beliefs inform the deliberation, and never carry an effectful action (RFC 028 rule 2) ----
+
+    private sealed record Wired(
+        KernelDispatcher Dispatcher, SqliteDeliberationService Deliberation, SqliteBeliefSystem Beliefs);
+
+    private static Wired BuildWired(SqliteTestDb db, TestClock clock, FakeCapability capability)
+    {
+        var cycle = new SqliteCognitiveCycle(db.Factory, clock);
+        SqliteDeliberationService deliberation = Deliberation(db, cycle, clock);
+        SqliteBeliefSystem beliefs = Beliefs(db, clock);
+
+        var kernel = new AuroraKernel(
+            new FakeReasoner(null), new FakeRegistry(capability), new FakeValidator(true),
+            new FakePolicy(true), new FakeConsent(true), new FakeApprovalStore(),
+            new DirectExecutor(),
+            new SqliteAuditStore(
+                db.Factory, clock, new byte[32],
+                new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
+            new InMemoryIdempotencyStore(),
+            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
+            TestBus.Over(db.Factory, clock));
+
+        var dispatcher = new KernelDispatcher(
+            kernel, cycle, TestBus.Over(db.Factory, clock),
+            new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
+            new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
+            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
+            new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
+            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteObservationService(db.Factory, clock),
+            deliberation, beliefs, AttentionPolicy.Default, clock);
+
+        return new Wired(dispatcher, deliberation, beliefs);
+    }
+
+    [Fact]
+    public async Task ABeliefAboutThePersonInformsTheExplanation()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        Wired wired = BuildWired(db, clock, Echo());
+
+        await wired.Beliefs.ProposeAsync(
+            new BeliefCandidate(
+                $"person/{Caller.ClientId}", "prefers", """{"style":"short answers"}""",
+                BeliefBasis.Observed, 0.8),
+            ["conversation/12"], Ct);
+
+        ExecuteResponse response = await wired.Dispatcher.DispatchAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);
+
+        Thought explanation = Assert.Single(
+            await wired.Deliberation.ThoughtsForCycleAsync(response.CycleRef!, Ct));
+
+        // The belief arrives as a hypothesis with its own evidence, not as a fact about the person.
+        Assert.Contains("conversation/12", explanation.EvidenceRefs);
+    }
+
+    [Fact]
+    public async Task ABeliefCannotCarryAnActionThatReachesOutsideAurora()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        FakeCapability effectful = Effectful();
+        Wired wired = BuildWired(db, clock, effectful);
+
+        await wired.Beliefs.ProposeAsync(
+            new BeliefCandidate(
+                $"person/{Caller.ClientId}", "would want", """{"action":"mail sent"}""",
+                BeliefBasis.Inferred, 0.99),
+            ["conversation/12"], Ct);
+
+        ExecuteResponse response = await wired.Dispatcher.DispatchAsync(
+            new ExecuteRequest(ActionId: "mail.send", Input: Message("hi")), Caller, null, Ct);
+
+        Thought explanation = Assert.Single(
+            await wired.Deliberation.ThoughtsForCycleAsync(response.CycleRef!, Ct));
+
+        // However confident the belief is, the record says it may inform this and may not carry it.
+        // A 0.99 guess about what somebody would want is still a guess about a person.
+        Assert.Contains(
+            explanation.Uncertainty,
+            u => u.Contains("may not carry it", StringComparison.Ordinal));
     }
 
     // ---- the decision is real: it has a branch that refuses to act ----
@@ -281,6 +371,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             decisions, new SqliteObservationService(db.Factory, clock),
             Deliberation(db, cycle, clock),
+            Beliefs(db, clock),
             AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(

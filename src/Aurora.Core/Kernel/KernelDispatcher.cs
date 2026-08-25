@@ -20,6 +20,10 @@ namespace Aurora.Core.Kernel;
 /// </remarks>
 public sealed class KernelDispatcher
 {
+    /// <summary>The local owner's reach, used for both recall and belief support.</summary>
+    private static MemoryAccessContext AccessFor(Principal principal) =>
+        new(principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Private);
+
     /// <summary>
     /// How long a deliberation about one capability call may take.
     /// </summary>
@@ -42,6 +46,7 @@ public sealed class KernelDispatcher
     private readonly IDecisionEngine _decisions;
     private readonly IObservationService _observations;
     private readonly IDeliberationService _deliberation;
+    private readonly IBeliefSystem _beliefs;
     private readonly AttentionPolicy _attentionPolicy;
     private readonly IClock _clock;
 
@@ -56,6 +61,7 @@ public sealed class KernelDispatcher
         IDecisionEngine decisions,
         IObservationService observations,
         IDeliberationService deliberation,
+        IBeliefSystem beliefs,
         AttentionPolicy attentionPolicy,
         IClock clock)
     {
@@ -69,6 +75,7 @@ public sealed class KernelDispatcher
         _decisions = decisions;
         _observations = observations;
         _deliberation = deliberation;
+        _beliefs = beliefs;
         _attentionPolicy = attentionPolicy;
         _clock = clock;
     }
@@ -131,8 +138,7 @@ public sealed class KernelDispatcher
         CognitiveCycle cycle, DomainEvent ingress, string correlationId, CancellationToken ct)
     {
         // --- Attention --------------------------------------------------------------------
-        var access = new MemoryAccessContext(
-            principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Private);
+        MemoryAccessContext access = AccessFor(principal);
 
         var query = request.Objective ?? resolved.Resolved.ActionId;
         MemorySearchResult recalled = await _memories
@@ -185,6 +191,19 @@ public sealed class KernelDispatcher
             cycle.Id, $"Should {resolved.Resolved.ActionId} run, as asked?",
             _clock.UtcNow + DeliberationWindow, ct).ConfigureAwait(false);
 
+        // What Aurora believes about the person, brought in as hypotheses rather than as findings.
+        // An action that reaches outside Aurora asks under a high-risk purpose, which comes back
+        // saying the beliefs may inform the decision and may not carry it (RFC 028 rule 2).
+        BeliefSupport support = await _beliefs.SupportAsync(
+            $"person/{principal.ClientId}",
+            resolved.HasExternalEffect ? BeliefPurpose.SensitiveContent : BeliefPurpose.Ordinary,
+            access, ct).ConfigureAwait(false);
+
+        var believed = support.Beliefs
+            .Select(b => new Assertion(
+                $"{b.SubjectRef} {b.Predicate} {b.ObjectJson}", b.EvidenceForRefs, b.Confidence))
+            .ToList();
+
         await _deliberation.AdvanceAsync(
             deliberation.Id, DeliberationPhase.Retrieve,
             new DeliberationStep(
@@ -198,11 +217,21 @@ public sealed class KernelDispatcher
                             ? "running this reaches outside Aurora"
                             : "running this reaches nothing outside Aurora",
                         [$"capability/{resolved.Resolved.ActionId}"], 1.0),
+                    .. believed,
                 ],
                 CandidateRefs: recalled.Matches.Select(m => m.Memory.Id).ToList(),
-                Uncertainty: recalled.Confident
-                    ? []
-                    : ["memory search was degraded, so absence is not established"]),
+                Uncertainty:
+                [
+                    .. recalled.Confident
+                        ? Array.Empty<string>()
+                        : ["memory search was degraded, so absence is not established"],
+
+                    // Recorded even when there are no beliefs to qualify, because the reason a
+                    // pattern may not carry a decision is worth reading either way.
+                    .. support.MayBeSoleBasis
+                        ? Array.Empty<string>()
+                        : new[] { support.Reason },
+                ]),
             ct).ConfigureAwait(false);
 
         Decision decision = await DecideAsync(resolved, cycle, ingress, recalled, ct).ConfigureAwait(false);

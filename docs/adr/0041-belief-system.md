@@ -69,9 +69,17 @@ weakened would be a fact**, which is the confusion this whole system exists to p
 User-stated beliefs decay and can be challenged too. Rule 4 says a direct statement may prevail, not
 that it stops needing to be true.
 
-## Not yet wired into attention
+## Wired into the deliberation, which is where a hypothesis belongs
 
-The RFC's flow ends at "Active Belief → attention/decision", and this stops one step short: nothing
-consults beliefs when ranking attention or pricing a decision option yet. That is a deliberate
-seam — the belief store is complete and testable on its own, and wiring it into the cycle changes
-what Aurora decides, which deserves its own change rather than riding along inside this one.
+The RFC's flow ends at "Active Belief → attention/decision". Beliefs now enter through the
+deliberation the dispatcher opens for every MCP call — as **assertions carrying their own evidence**,
+which is exactly what RFC 025 already treats as a hypothesis. They did not need a new mechanism;
+they needed the one that already distinguishes a supported claim from an unsupported one.
+
+An action that reaches outside Aurora asks for support under a high-risk purpose, so the answer
+comes back `MayBeSoleBasis: false` and that reason is recorded in the thought's uncertainty — where
+a person reading "why did you do that" can see that a pattern informed it and did not decide it.
+
+What is still not wired is attention *ranking*: a belief does not yet change which memories are
+brought into working memory. That one changes what Aurora attends to rather than what it can say
+about a decision, and it is a smaller and more separable change than it looks.
