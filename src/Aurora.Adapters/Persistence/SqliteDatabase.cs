@@ -993,6 +993,40 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_development_proposal
           ON development_proposal(mind_id, proposed_at_utc);
 
+        CREATE TABLE IF NOT EXISTS life_episode (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          occurred_at_utc TEXT NOT NULL,
+          occurred_until_utc TEXT NULL,
+          title TEXT NOT NULL,
+          narrative_summary TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          significance TEXT NOT NULL,
+          status TEXT NOT NULL,
+          sensitivity_class TEXT NOT NULL,
+          proposed_at_utc TEXT NOT NULL,
+          verified_at_utc TEXT NULL,
+          retracted_reason TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_episode_mind
+          ON life_episode(mind_id, status, occurred_at_utc);
+
+        -- Rule 3: the text is correctable and the evidence is not, so the trail records only what
+        -- was actually allowed to change.
+        CREATE TABLE IF NOT EXISTS episode_revision (
+          id TEXT PRIMARY KEY,
+          episode_id TEXT NOT NULL,
+          previous_summary TEXT NOT NULL,
+          new_summary TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_episode_revision ON episode_revision(episode_id, at_utc);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -1002,7 +1036,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 12;
+    public const int TargetSchemaVersion = 13;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1374,6 +1408,41 @@ public sealed class SqliteDatabase
 
             CREATE INDEX IF NOT EXISTS idx_development_proposal
               ON development_proposal(mind_id, proposed_at_utc);
+            """,
+
+        // v13 — the life history (docs/adr/0047). New tables only.
+        [13] = """
+            CREATE TABLE IF NOT EXISTS life_episode (
+              id TEXT PRIMARY KEY,
+              mind_id TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              occurred_at_utc TEXT NOT NULL,
+              occurred_until_utc TEXT NULL,
+              title TEXT NOT NULL,
+              narrative_summary TEXT NOT NULL,
+              evidence_refs TEXT NOT NULL,
+              significance TEXT NOT NULL,
+              status TEXT NOT NULL,
+              sensitivity_class TEXT NOT NULL,
+              proposed_at_utc TEXT NOT NULL,
+              verified_at_utc TEXT NULL,
+              retracted_reason TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_episode_mind
+              ON life_episode(mind_id, status, occurred_at_utc);
+
+            CREATE TABLE IF NOT EXISTS episode_revision (
+              id TEXT PRIMARY KEY,
+              episode_id TEXT NOT NULL,
+              previous_summary TEXT NOT NULL,
+              new_summary TEXT NOT NULL,
+              actor TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_episode_revision ON episode_revision(episode_id, at_utc);
             """,
     };
 

@@ -14,6 +14,7 @@ using Aurora.Adapters.Files;
 using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Lifecycle;
 using Aurora.Adapters.Knowledge;
+using Aurora.Adapters.LifeHistory;
 using Aurora.Adapters.Memories;
 using Aurora.Adapters.Observations;
 using Aurora.Adapters.Operations;
@@ -123,6 +124,9 @@ public static class ServiceRegistration
         // own caution sits on top of the rules, and never the rules (RFC 037).
         services.AddSingleton(SqliteDevelopmentModel.DefaultProfile);
         services.AddSingleton<IDevelopmentModel, SqliteDevelopmentModel>();
+
+        // What happened to this instance, cited rather than recalled (RFC 038).
+        services.AddSingleton<ILifeHistory, SqliteLifeHistory>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));
