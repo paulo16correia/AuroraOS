@@ -784,6 +784,57 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_curiosity_open ON curiosity_proposal(status, review_at_utc);
         CREATE INDEX IF NOT EXISTS idx_curiosity_subject ON curiosity_proposal(subject_ref, status);
 
+        CREATE TABLE IF NOT EXISTS deliberation (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          active_question TEXT NOT NULL,
+          unresolved_questions TEXT NOT NULL,
+          candidate_refs TEXT NOT NULL,
+          assertions TEXT NOT NULL,
+          uncertainty TEXT NOT NULL,
+          next_step TEXT NULL,
+          status TEXT NOT NULL,
+          trace_ref TEXT NULL,
+          retention_until_utc TEXT NOT NULL,
+          started_at_utc TEXT NOT NULL,
+          deadline_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_deliberation_cycle ON deliberation(cycle_id, status);
+
+        -- Protected technical material (RFC 025 rule 4). Encrypted at rest, kept briefly, and
+        -- deliberately unreadable through any interface: nothing returns a trace to a caller.
+        CREATE TABLE IF NOT EXISTS deliberation_trace (
+          trace_ref TEXT PRIMARY KEY,
+          deliberation_id TEXT NOT NULL,
+          nonce BLOB NOT NULL,
+          ciphertext BLOB NOT NULL,
+          tag BLOB NOT NULL,
+          written_at_utc TEXT NOT NULL,
+          retention_until_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_trace_retention ON deliberation_trace(retention_until_utc);
+
+        CREATE TABLE IF NOT EXISTS thought (
+          id TEXT PRIMARY KEY,
+          cycle_id TEXT NOT NULL,
+          deliberation_id TEXT NOT NULL,
+          intent TEXT NOT NULL,
+          objective_ref TEXT NULL,
+          evidence_refs TEXT NOT NULL,
+          assumptions TEXT NOT NULL,
+          options TEXT NOT NULL,
+          uncertainty TEXT NOT NULL,
+          recommended_option TEXT NOT NULL,
+          user_explanation TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_thought_cycle ON thought(cycle_id, created_at_utc);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -793,7 +844,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 6;
+    public const int TargetSchemaVersion = 7;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -943,6 +994,58 @@ public sealed class SqliteDatabase
 
             CREATE INDEX IF NOT EXISTS idx_curiosity_open ON curiosity_proposal(status, review_at_utc);
             CREATE INDEX IF NOT EXISTS idx_curiosity_subject ON curiosity_proposal(subject_ref, status);
+            """,
+
+        // v7 — internal deliberation (docs/adr/0040). New tables only.
+        [7] = """
+            CREATE TABLE IF NOT EXISTS deliberation (
+              id TEXT PRIMARY KEY,
+              cycle_id TEXT NOT NULL,
+              phase TEXT NOT NULL,
+              active_question TEXT NOT NULL,
+              unresolved_questions TEXT NOT NULL,
+              candidate_refs TEXT NOT NULL,
+              assertions TEXT NOT NULL,
+              uncertainty TEXT NOT NULL,
+              next_step TEXT NULL,
+              status TEXT NOT NULL,
+              trace_ref TEXT NULL,
+              retention_until_utc TEXT NOT NULL,
+              started_at_utc TEXT NOT NULL,
+              deadline_at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_deliberation_cycle ON deliberation(cycle_id, status);
+
+            CREATE TABLE IF NOT EXISTS deliberation_trace (
+              trace_ref TEXT PRIMARY KEY,
+              deliberation_id TEXT NOT NULL,
+              nonce BLOB NOT NULL,
+              ciphertext BLOB NOT NULL,
+              tag BLOB NOT NULL,
+              written_at_utc TEXT NOT NULL,
+              retention_until_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_trace_retention ON deliberation_trace(retention_until_utc);
+
+            CREATE TABLE IF NOT EXISTS thought (
+              id TEXT PRIMARY KEY,
+              cycle_id TEXT NOT NULL,
+              deliberation_id TEXT NOT NULL,
+              intent TEXT NOT NULL,
+              objective_ref TEXT NULL,
+              evidence_refs TEXT NOT NULL,
+              assumptions TEXT NOT NULL,
+              options TEXT NOT NULL,
+              uncertainty TEXT NOT NULL,
+              recommended_option TEXT NOT NULL,
+              user_explanation TEXT NOT NULL,
+              status TEXT NOT NULL,
+              created_at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_thought_cycle ON thought(cycle_id, created_at_utc);
             """,
     };
 

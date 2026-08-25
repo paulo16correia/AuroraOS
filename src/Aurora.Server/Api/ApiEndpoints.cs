@@ -57,6 +57,7 @@ public static class ApiEndpoints
         app.MapGet("/v1/stream", StreamAsync);
         app.MapGet("/v1/status", ReadStatusAsync);
         app.MapGet("/v1/catalog", ReadCatalog);
+        app.MapGet("/v1/cycles/{id}/why", ExplainAsync);
         app.MapPost("/v1/maintenance", RunMaintenanceAsync);
         return app;
     }
@@ -263,6 +264,24 @@ public static class ApiEndpoints
     /// </remarks>
     private static IResult ReadCatalog(string? query, HttpRequest request, AuroraKernel kernel) =>
         Results.Json(ApiEnvelopes.Ok(kernel.Catalog(query), ApiEnvelopes.CorrelationOf(request)));
+
+    /// <summary>
+    /// Why Aurora did what it did during one cycle (RFC 025).
+    /// </summary>
+    /// <remarks>
+    /// Returns explanations — reason, sources, what happened next — and never the working notes
+    /// behind them. Those are encrypted, expire in a week, and no interface can reach them; a
+    /// transcript of intermediate reasoning is not an explanation, and handing one over would be
+    /// answering a different question than the one asked.
+    /// </remarks>
+    private static async Task<IResult> ExplainAsync(
+        string id, HttpRequest request, IDeliberationService deliberation, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+        IReadOnlyList<Thought> thoughts = await deliberation.ThoughtsForCycleAsync(id, ct);
+
+        return Results.Json(ApiEnvelopes.Ok(thoughts, correlationId));
+    }
 
     // ---- status and upkeep ----
 

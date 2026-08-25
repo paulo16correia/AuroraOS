@@ -20,6 +20,15 @@ namespace Aurora.Core.Kernel;
 /// </remarks>
 public sealed class KernelDispatcher
 {
+    /// <summary>
+    /// How long a deliberation about one capability call may take.
+    /// </summary>
+    /// <remarks>
+    /// Short, because this deliberation is bounded by a request somebody is waiting on. RFC 025
+    /// requires a deadline; this is the honest one for work that happens inside a single call.
+    /// </remarks>
+    private static readonly TimeSpan DeliberationWindow = TimeSpan.FromMinutes(5);
+
     /// <summary>The policy under which the cycle records a permitted capability call.</summary>
     private const string CapabilityPolicy = "policy.capability_authorized_by_kernel";
 
@@ -32,6 +41,7 @@ public sealed class KernelDispatcher
     private readonly IWorldModel _world;
     private readonly IDecisionEngine _decisions;
     private readonly IObservationService _observations;
+    private readonly IDeliberationService _deliberation;
     private readonly AttentionPolicy _attentionPolicy;
     private readonly IClock _clock;
 
@@ -45,6 +55,7 @@ public sealed class KernelDispatcher
         IWorldModel world,
         IDecisionEngine decisions,
         IObservationService observations,
+        IDeliberationService deliberation,
         AttentionPolicy attentionPolicy,
         IClock clock)
     {
@@ -57,6 +68,7 @@ public sealed class KernelDispatcher
         _world = world;
         _decisions = decisions;
         _observations = observations;
+        _deliberation = deliberation;
         _attentionPolicy = attentionPolicy;
         _clock = clock;
     }
@@ -166,12 +178,61 @@ public sealed class KernelDispatcher
             .ConfigureAwait(false);
 
         // --- Decision ---------------------------------------------------------------------
+        // Deliberated rather than merely decided (RFC 025). The cycle already recorded *that* a
+        // decision happened; this is what lets Aurora say why afterwards, from its own record
+        // rather than from a model asked to reconstruct it.
+        DeliberationState deliberation = await _deliberation.StartAsync(
+            cycle.Id, $"Should {resolved.Resolved.ActionId} run, as asked?",
+            _clock.UtcNow + DeliberationWindow, ct).ConfigureAwait(false);
+
+        await _deliberation.AdvanceAsync(
+            deliberation.Id, DeliberationPhase.Retrieve,
+            new DeliberationStep(
+                Assertions:
+                [
+                    new Assertion(
+                        $"{resolved.Resolved.ActionId} was resolved {resolved.Resolved.Via}",
+                        [ingress.EventId], resolved.Resolved.Confidence),
+                    new Assertion(
+                        resolved.HasExternalEffect
+                            ? "running this reaches outside Aurora"
+                            : "running this reaches nothing outside Aurora",
+                        [$"capability/{resolved.Resolved.ActionId}"], 1.0),
+                ],
+                CandidateRefs: recalled.Matches.Select(m => m.Memory.Id).ToList(),
+                Uncertainty: recalled.Confident
+                    ? []
+                    : ["memory search was degraded, so absence is not established"]),
+            ct).ConfigureAwait(false);
+
         Decision decision = await DecideAsync(resolved, cycle, ingress, recalled, ct).ConfigureAwait(false);
+
+        await _deliberation.AdvanceAsync(
+            deliberation.Id, DeliberationPhase.Decide,
+            new DeliberationStep(
+                ResolvedQuestions: [$"Should {resolved.Resolved.ActionId} run, as asked?"],
+                NextStep: decision.Mode),
+            ct).ConfigureAwait(false);
+
+        Thought thought = await _deliberation.SummariseAsync(
+            deliberation.Id,
+            new ThoughtRequest(
+                Intent: resolved.Resolved.ActionId,
+                RecommendedOption: decision.SelectedOption.RationaleSummary,
+                Options: decision.AlternativesConsidered
+                    .Select(o => o.RationaleSummary)
+                    .Prepend(decision.SelectedOption.RationaleSummary)
+                    .ToList(),
+                Assumptions: decision.Uncertainty),
+            ct).ConfigureAwait(false);
+
+        await _deliberation.CloseAsync(
+            deliberation.Id, DeliberationDisposition.Concluded, ct).ConfigureAwait(false);
 
         await _cycle.AdvanceAsync(
             cycle.Id, CycleStage.Decision,
             recalled.Matches.Select(m => m.Memory.Id).Append(ingress.EventId).ToList(),
-            [decision.Id], decision.Id, ct).ConfigureAwait(false);
+            [decision.Id, thought.Id], decision.Id, ct).ConfigureAwait(false);
 
         if (!DecisionMode.HasExternalEffect(decision.Mode))
         {

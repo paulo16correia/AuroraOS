@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
 using Aurora.Adapters.Observations;
@@ -75,11 +76,18 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
             new SqliteObservationService(db.Factory, clock),
+            Deliberation(db, cycle, clock),
             AttentionPolicy.Default,
             clock);
 
         return (dispatcher, cycle, capability);
     }
+
+    /// <summary>A real deliberation service: the dispatcher's explanation has to actually be written.</summary>
+    private static SqliteDeliberationService Deliberation(
+        SqliteTestDb db, SqliteCognitiveCycle cycles, TestClock clock) =>
+        new(db.Factory, cycles,
+            new Adapters.Vault.AesGcmSecretProtector(Enumerable.Repeat((byte)7, 32).ToArray()), clock);
 
     private static JsonElement Message(string text) =>
         JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["message"] = text });
@@ -152,6 +160,51 @@ public sealed class KernelDispatcherTests
         // effect, not reconstructed around it.
         Assert.True(order.IndexOf(CycleStage.Decision) < order.IndexOf(CycleStage.Policy));
         Assert.True(order.IndexOf(CycleStage.Policy) < order.IndexOf(CycleStage.Executor));
+    }
+
+    [Fact]
+    public async Task AnExecutedCallLeavesAnExplanationOfWhyItRan()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        var cycle = new SqliteCognitiveCycle(db.Factory, clock);
+        SqliteDeliberationService deliberation = Deliberation(db, cycle, clock);
+
+        var kernel = new AuroraKernel(
+            new FakeReasoner(null), new FakeRegistry(Echo()), new FakeValidator(true),
+            new FakePolicy(true), new FakeConsent(true), new FakeApprovalStore(),
+            new DirectExecutor(),
+            new SqliteAuditStore(
+                db.Factory, clock, new byte[32],
+                new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
+            new InMemoryIdempotencyStore(),
+            new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
+            TestBus.Over(db.Factory, clock));
+
+        var dispatcher = new KernelDispatcher(
+            kernel, cycle, TestBus.Over(db.Factory, clock),
+            new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
+            new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
+            new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
+            new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
+            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteObservationService(db.Factory, clock),
+            deliberation, AttentionPolicy.Default, clock);
+
+        ExecuteResponse response = await dispatcher.DispatchAsync(
+            new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);
+
+        Assert.Equal(ExecuteStatus.Completed, response.Status);
+
+        Thought explanation = Assert.Single(
+            await deliberation.ThoughtsForCycleAsync(response.CycleRef!, Ct));
+
+        // The cycle already recorded *that* a decision happened. This is what lets Aurora say why
+        // afterwards, from its own record rather than from a model asked to reconstruct it.
+        Assert.Equal("echo.say", explanation.Intent);
+        Assert.Contains("Because:", explanation.UserExplanation, StringComparison.Ordinal);
+        Assert.Contains("Sources:", explanation.UserExplanation, StringComparison.Ordinal);
+        Assert.NotEmpty(explanation.EvidenceRefs);
     }
 
     // ---- the decision is real: it has a branch that refuses to act ----
@@ -227,6 +280,7 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             decisions, new SqliteObservationService(db.Factory, clock),
+            Deliberation(db, cycle, clock),
             AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(

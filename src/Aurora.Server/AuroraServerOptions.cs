@@ -69,6 +69,16 @@ public sealed class AuroraServerOptions
     /// <summary>File holding the ECDSA key that signs genome manifests (docs/adr/0017).</summary>
     public required string GenomeKeyPath { get; init; }
 
+    /// <summary>
+    /// File holding the key that encrypts deliberation traces (docs/adr/0040).
+    /// </summary>
+    /// <remarks>
+    /// Its own key, not the vault's. They protect different things for different reasons and last
+    /// for different lengths of time; sharing one would mean a trace kept for a week and a secret
+    /// kept indefinitely stand or fall together.
+    /// </remarks>
+    public required string DeliberationKeyPath { get; init; }
+
     /// <summary>File holding the key that encrypts vault secrets at rest (docs/adr/0014).</summary>
     public required string VaultKeyPath { get; init; }
 
@@ -151,6 +161,9 @@ public sealed class AuroraServerOptions
         var genomeKeyPath = config["Aurora:GenomeKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.genome.key");
 
+        var deliberationKeyPath = config["Aurora:DeliberationKeyPath"]
+            ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.deliberation.key");
+
         var vaultKeyPath = config["Aurora:VaultKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.vault.key");
 
@@ -194,6 +207,7 @@ public sealed class AuroraServerOptions
             AllowedHosts = allowedHosts,
             SnapshotKeyPath = snapshotKeyPath,
             GenomeKeyPath = genomeKeyPath,
+            DeliberationKeyPath = deliberationKeyPath,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

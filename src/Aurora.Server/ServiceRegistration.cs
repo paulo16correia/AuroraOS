@@ -3,6 +3,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Vault;
@@ -83,6 +84,16 @@ public static class ServiceRegistration
         services.AddSingleton<OperatorSessions>();
 
         // Operations (RFC 12): can this build serve traffic, and can its clock be trusted.
+        // Internal deliberation (RFC 025), with its own key: the trace is protected technical
+        // material kept for a week, and the vault's secrets are kept indefinitely. Sharing a key
+        // would mean they stand or fall together.
+        services.AddSingleton<IDeliberationService>(sp => new SqliteDeliberationService(
+            sp.GetRequiredService<SqliteConnectionFactory>(),
+            sp.GetRequiredService<ICognitiveCycle>(),
+            new AesGcmSecretProtector(
+                LocalKeyFile.LoadOrCreate(options.DeliberationKeyPath, "Deliberation")),
+            sp.GetRequiredService<IClock>()));
+
         services.AddSingleton<IClockGuard, AuditClockGuard>();
         services.AddSingleton<IHealthService, AuroraHealthService>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
