@@ -18,6 +18,7 @@ using Aurora.Adapters.Observations;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
+using Aurora.Adapters.Personality;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Pilot;
 using Aurora.Adapters.Maintenance;
@@ -111,6 +112,11 @@ public static class ServiceRegistration
         // What Aurora knows about itself, observed rather than assumed. Installed, permitted and
         // safe-right-now are three separate answers here, and none implies another (RFC 027).
         services.AddSingleton<ISelfModel, SqliteSelfModel>();
+
+        // How Aurora sounds, versioned and auditable — kept here rather than in a prompt, so an
+        // informal instruction cannot become an invisible rule nobody can find (RFC 07).
+        services.AddSingleton<IPersonalityService, SqlitePersonalityService>();
+        services.AddSingleton<IComposer, MessageComposer>();
         services.AddSingleton<IServerIdentity, ProcessServerIdentity>();
         services.AddSingleton<IInstanceLifecycle, SqliteInstanceLifecycle>();
         services.AddSingleton<IGenomeSigner>(_ => EcdsaGenomeSigner.FromKeyFile(options.GenomeKeyPath));

@@ -925,6 +925,49 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_self_version ON self_model(mind_id, version DESC);
 
+        CREATE TABLE IF NOT EXISTS personality_profile (
+          id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          languages TEXT NOT NULL,
+          default_locale TEXT NOT NULL,
+          voice_json TEXT NOT NULL,
+          values_list TEXT NOT NULL,
+          prohibited_claims TEXT NOT NULL,
+          interaction_rules TEXT NOT NULL,
+          disclosure_text TEXT NOT NULL,
+          escalation_rules TEXT NOT NULL,
+          active_from_utc TEXT NOT NULL,
+          active_to_utc TEXT NULL,
+          status TEXT NOT NULL,
+          approval_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_profile_status ON personality_profile(status, version DESC);
+
+        CREATE TABLE IF NOT EXISTS communication_preference (
+          owner_id TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          language TEXT NOT NULL,
+          verbosity REAL NOT NULL,
+          quiet_hours TEXT NULL,
+          accessibility_json TEXT NOT NULL,
+          consent_for_proactivity INTEGER NOT NULL,
+          updated_at_utc TEXT NOT NULL,
+          PRIMARY KEY (owner_id, channel)
+        );
+
+        -- Rule 1: how the identity got to where it is, and who agreed to each step.
+        CREATE TABLE IF NOT EXISTS identity_change (
+          id TEXT PRIMARY KEY,
+          profile_id TEXT NOT NULL,
+          old_version INTEGER NOT NULL,
+          new_version INTEGER NOT NULL,
+          actor TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          approved_at_utc TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -934,7 +977,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 10;
+    public const int TargetSchemaVersion = 11;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1233,6 +1276,51 @@ public sealed class SqliteDatabase
             );
 
             CREATE INDEX IF NOT EXISTS idx_self_version ON self_model(mind_id, version DESC);
+            """,
+
+        // v11 — communication identity (docs/adr/0044). New tables only.
+        [11] = """
+            CREATE TABLE IF NOT EXISTS personality_profile (
+              id TEXT PRIMARY KEY,
+              version INTEGER NOT NULL,
+              name TEXT NOT NULL,
+              languages TEXT NOT NULL,
+              default_locale TEXT NOT NULL,
+              voice_json TEXT NOT NULL,
+              values_list TEXT NOT NULL,
+              prohibited_claims TEXT NOT NULL,
+              interaction_rules TEXT NOT NULL,
+              disclosure_text TEXT NOT NULL,
+              escalation_rules TEXT NOT NULL,
+              active_from_utc TEXT NOT NULL,
+              active_to_utc TEXT NULL,
+              status TEXT NOT NULL,
+              approval_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_profile_status ON personality_profile(status, version DESC);
+
+            CREATE TABLE IF NOT EXISTS communication_preference (
+              owner_id TEXT NOT NULL,
+              channel TEXT NOT NULL,
+              language TEXT NOT NULL,
+              verbosity REAL NOT NULL,
+              quiet_hours TEXT NULL,
+              accessibility_json TEXT NOT NULL,
+              consent_for_proactivity INTEGER NOT NULL,
+              updated_at_utc TEXT NOT NULL,
+              PRIMARY KEY (owner_id, channel)
+            );
+
+            CREATE TABLE IF NOT EXISTS identity_change (
+              id TEXT PRIMARY KEY,
+              profile_id TEXT NOT NULL,
+              old_version INTEGER NOT NULL,
+              new_version INTEGER NOT NULL,
+              actor TEXT NOT NULL,
+              reason TEXT NOT NULL,
+              approved_at_utc TEXT NOT NULL
+            );
             """,
     };
 
