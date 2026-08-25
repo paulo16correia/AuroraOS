@@ -12,6 +12,16 @@ public interface IPlanner
     Task<Plan> CreateAsync(
         GoalRequest request, IReadOnlyList<TaskRequest> tasks, CancellationToken ct);
 
+    /// <summary>
+    /// Records a stated intention as a DRAFT goal, with no plan (RFC 10).
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="CreateAsync"/> because arriving at a goal and deciding how to
+    /// pursue it are two acts. A goal posted from outside is a request, not an instruction to
+    /// start work; it waits in DRAFT until planning is a decision Aurora has actually made.
+    /// </remarks>
+    Task<Goal> DraftAsync(GoalRequest request, CancellationToken ct);
+
     /// <summary>Supersedes the active plan with a new revision, carrying assumptions forward.</summary>
     Task<PlanRevision> ReplanAsync(
         string goalId, string trigger, IReadOnlyList<TaskRequest> tasks, CancellationToken ct);

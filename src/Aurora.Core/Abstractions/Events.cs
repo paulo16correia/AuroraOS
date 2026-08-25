@@ -103,4 +103,15 @@ public interface IEventBus
 
     /// <summary>The auditable dead-letter queue; nothing is ever silently discarded (rule 4).</summary>
     Task<IReadOnlyList<Delivery>> DeadLettersAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Reads committed events after a cursor, for the authorized stream of RFC 10.
+    /// </summary>
+    /// <remarks>
+    /// Filtering happens here rather than in the caller (RFC 10 rule 3), and an event above the
+    /// caller's ceiling is omitted entirely rather than returned redacted — a redacted entry still
+    /// discloses that something classified happened, which rule 4 does not permit.
+    /// </remarks>
+    Task<IReadOnlyList<SequencedEvent>> ReadAsync(
+        long afterSequence, int limit, string maxSensitivity, CancellationToken ct);
 }

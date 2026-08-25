@@ -1,0 +1,317 @@
+using System.Text;
+using Aurora.Core;
+using Aurora.Core.Abstractions;
+using Aurora.Core.Contracts;
+using Aurora.Core.Kernel;
+
+namespace Aurora.Server.Api;
+
+/// <summary>Request bodies for the RFC 10 write commands.</summary>
+public sealed record PublishEventBody(
+    string Type, string Sensitivity, int SchemaVersion = 1,
+    string? PayloadJson = null, string? PayloadRef = null, string? AggregateRef = null);
+
+public sealed record CreateGoalBody(
+    string Title,
+    string Outcome,
+    IReadOnlyList<string>? SuccessCriteria = null,
+    IReadOnlyList<string>? Assumptions = null,
+    int Priority = 3,
+    string? DeadlineAtUtc = null,
+    string? ApprovalPolicyId = null);
+
+public sealed record DecideApprovalBody(string Decision, string? Passphrase = null);
+
+public sealed record CorrectMemoryBody(string Reason);
+
+/// <summary>
+/// The operator and UI surface (RFC 10).
+/// </summary>
+/// <remarks>
+/// Deliberately separate from the MCP surface. MCP is the door the model knocks on; this is the
+/// door a person uses. Keeping them apart is what lets the person decide, revoke and inspect what
+/// the model may do — collapsing them into one endpoint set would hand the agent the controls
+/// meant to govern it.
+/// </remarks>
+public static class ApiEndpoints
+{
+    /// <summary>Default page size for the paginated reads; the stores clamp the ceiling.</summary>
+    private const int DefaultPageSize = 50;
+
+    public static WebApplication MapAuroraApi(this WebApplication app)
+    {
+        app.MapPost("/v1/events", PublishEventAsync);
+        app.MapPost("/v1/goals", CreateGoalAsync);
+        app.MapGet("/v1/goals/{id}", ReadGoalAsync);
+        app.MapPost("/v1/approvals/{id}/decide", DecideApprovalAsync);
+        app.MapGet("/v1/memories", SearchMemoriesAsync);
+        app.MapPatch("/v1/memories/{id}", CorrectMemoryAsync);
+        app.MapDelete("/v1/memories/{id}", ForgetMemoryAsync);
+        app.MapGet("/v1/audit", ReadAuditAsync);
+        app.MapGet("/v1/stream", StreamAsync);
+        return app;
+    }
+
+    // ---- events: normalized ingress ----
+
+    private static Task<IResult> PublishEventAsync(
+        PublishEventBody body, HttpRequest request,
+        IEventBus bus, IIdempotencyStore idempotency, IPrincipalAccessor principals, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+        var key = KeyOf(request);
+
+        if (!Sensitivity.IsKnown(body.Sensitivity))
+        {
+            return Task.FromResult(BadRequest(
+                correlationId, "Unknown sensitivity class.", nameof(body.Sensitivity)));
+        }
+
+        // RFC 050 rule 3: classified material travels by reference, never as an open payload.
+        if (Sensitivity.RequiresReference(body.Sensitivity) && body.PayloadJson is not null)
+        {
+            return Task.FromResult(BadRequest(
+                correlationId,
+                $"A {body.Sensitivity} event must carry payload_ref, not payload_json.",
+                nameof(body.PayloadJson)));
+        }
+
+        return ApiIdempotency.RunAsync(
+            idempotency, principals.Current, key, body, correlationId,
+            token => bus.PublishAsync(
+                new OutboxWrite(
+                    body.Type, body.SchemaVersion, Producer: "api", correlationId, body.Sensitivity,
+                    AggregateRef: body.AggregateRef,
+                    PayloadJson: body.PayloadJson, PayloadRef: body.PayloadRef,
+                    IdempotencyKey: key),
+                token),
+            ct);
+    }
+
+    // ---- goals ----
+
+    private static Task<IResult> CreateGoalAsync(
+        CreateGoalBody body, HttpRequest request,
+        IPlanner planner, IIdempotencyStore idempotency, IPrincipalAccessor principals, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+        Principal principal = principals.Current;
+
+        var goal = new GoalRequest(
+            body.Title, body.Outcome, OwnerId: principal.ClientId,
+            body.SuccessCriteria ?? [], body.Assumptions ?? [],
+            body.Priority, DeadlineAtUtc: body.DeadlineAtUtc, ApprovalPolicyId: body.ApprovalPolicyId);
+
+        // DRAFT, and no tasks from outside. A goal arriving over HTTP is something the person wants,
+        // not work Aurora has agreed to do; how it decomposes is the Planner's decision, and a caller
+        // handing in its own task list would be planning around the engine rather than through it.
+        return ApiIdempotency.RunAsync(
+            idempotency, principal, KeyOf(request), body, correlationId,
+            token => planner.DraftAsync(goal, token), ct);
+    }
+
+    private static async Task<IResult> ReadGoalAsync(
+        string id, HttpRequest request,
+        IPlanner planner, ITaskService tasks, IPrincipalAccessor principals, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        Goal? goal = await planner.GetGoalAsync(id, ct);
+
+        // Rule 4 again: someone else's goal answers the same way a nonexistent one does.
+        if (goal is null || !string.Equals(goal.OwnerId, principals.Current.ClientId, StringComparison.Ordinal))
+        {
+            return NotFound(correlationId, "No such goal.");
+        }
+
+        Plan? plan = await planner.GetActivePlanAsync(id, ct);
+        IReadOnlyList<PlannedTask> planned = await tasks.ForGoalAsync(id, ct);
+
+        return Results.Json(ApiEnvelopes.Ok(new { goal, plan, tasks = planned }, correlationId));
+    }
+
+    // ---- approvals: this is where the person decides ----
+
+    private static Task<IResult> DecideApprovalAsync(
+        string id, DecideApprovalBody body, HttpRequest request,
+        AuroraKernel kernel, IIdempotencyStore idempotency, IPrincipalAccessor principals,
+        CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        // Through the Kernel rather than straight to the store, so an approval decided here is
+        // subject to the same passphrase check and leaves the same audit trail as one decided
+        // over MCP. Two surfaces, one decision path.
+        return ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), new { id, body.Decision }, correlationId,
+            token => kernel.ApproveAsync(
+                new ApproveRequest(id, body.Decision, body.Passphrase), principals.Current, token),
+            ct);
+    }
+
+    // ---- memories: search, correct, forget ----
+
+    private static async Task<IResult> SearchMemoriesAsync(
+        string? q, string? kind, string? subject, HttpRequest request,
+        IMemoryService memories, IPrincipalAccessor principals, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        // Rule 3: authorization is applied here, on the server. A client never receives everything
+        // and filters locally, because that is not filtering — it is disclosure with extra steps.
+        MemorySearchResult result = await memories.SearchAsync(
+            q ?? string.Empty, AccessFor(principals.Current),
+            new MemoryFilters(Kind: kind, SubjectRef: subject), ct);
+
+        return Results.Json(ApiEnvelopes.Ok(result, correlationId));
+    }
+
+    private static async Task<IResult> CorrectMemoryAsync(
+        string id, CorrectMemoryBody body, HttpRequest request,
+        IMemoryService memories, IIdempotencyStore idempotency, IPrincipalAccessor principals,
+        CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (await HiddenAsync(memories, principals, id, ct))
+        {
+            return NotFound(correlationId, "No such memory.");
+        }
+
+        return await ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), new { id, body.Reason }, correlationId,
+            token => memories.ReviseAsync(
+                id, RevisionOperation.Correct, MemoryOrigin.User, body.Reason, token),
+            ct);
+    }
+
+    private static async Task<IResult> ForgetMemoryAsync(
+        string id, HttpRequest request,
+        IMemoryService memories, IIdempotencyStore idempotency, IPrincipalAccessor principals,
+        CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        if (await HiddenAsync(memories, principals, id, ct))
+        {
+            return NotFound(correlationId, "No such memory.");
+        }
+
+        // The tombstone reports what forgetting actually removed, rather than claiming it removed
+        // everything (RFC 03). That answer is the point of the endpoint, so it is returned as-is.
+        return await ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), new { id, op = "forget" }, correlationId,
+            token => memories.ForgetAsync(id, MemoryOrigin.User, token), ct);
+    }
+
+    // ---- audit ----
+
+    private static async Task<IResult> ReadAuditAsync(
+        long? after, int? limit, HttpRequest request, IAuditStore audit, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+        var size = limit ?? DefaultPageSize;
+        IReadOnlyList<AuditRecordView> page = await audit.QueryAsync(after ?? 0, size, ct);
+
+        var links = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (page.Count > 0)
+        {
+            links["next"] = $"/v1/audit?after={page[^1].Sequence}&limit={size}";
+        }
+
+        return Results.Json(ApiEnvelopes.Ok(page, correlationId, links));
+    }
+
+    // ---- stream ----
+
+    private static async Task StreamAsync(
+        HttpContext context, long? after, IEventBus bus, CancellationToken ct)
+    {
+        // SSE rather than WebSocket: the stream is one-way by design. A client that could send on
+        // this channel would have a second command path that skips the checks the commands carry.
+        context.Response.ContentType = "text/event-stream";
+        context.Response.Headers.CacheControl = "no-cache";
+
+        var cursor = after ?? 0;
+
+        // Resume by cursor with bounded retention: the client keeps the last id it saw and asks for
+        // what follows, so a dropped connection costs a reconnect and not a gap.
+        while (!ct.IsCancellationRequested)
+        {
+            IReadOnlyList<SequencedEvent> page = await bus.ReadAsync(
+                cursor, DefaultPageSize, StreamCeiling, ct);
+
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            foreach (SequencedEvent item in page)
+            {
+                var frame = new StringBuilder()
+                    .Append("id: ").Append(item.Sequence).Append('\n')
+                    .Append("event: ").Append(item.Event.Type).Append('\n')
+                    .Append("data: ").Append(AuroraJson.Serialize(item.Event)).Append("\n\n")
+                    .ToString();
+
+                await context.Response.WriteAsync(frame, ct);
+                cursor = item.Sequence;
+            }
+
+            await context.Response.Body.FlushAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// The ceiling for the event stream.
+    /// </summary>
+    /// <remarks>
+    /// PRIVATE, not the owner's full CONFIDENTIAL reach. A stream is a standing subscription that
+    /// keeps delivering long after the operator stopped watching it, so it is held one class below
+    /// what a deliberate request can reach; classified material is read through the endpoint that
+    /// asks for it by name.
+    /// </remarks>
+    private const string StreamCeiling = Sensitivity.Private;
+
+    /// <summary>
+    /// Whether a memory should be treated as absent for this caller.
+    /// </summary>
+    /// <remarks>
+    /// RFC 10 rule 4: an unauthorized caller must not learn that a sensitive resource exists. So a
+    /// memory outside their reach answers 404 rather than 403 — a refusal would confirm it is there.
+    /// </remarks>
+    private static async Task<bool> HiddenAsync(
+        IMemoryService memories, IPrincipalAccessor principals, string id, CancellationToken ct)
+    {
+        MemoryRecord? memory = await memories.GetAsync(id, ct);
+        if (memory is null)
+        {
+            return true;
+        }
+
+        MemoryAccessContext access = AccessFor(principals.Current);
+
+        return !access.AccessPolicyIds.Contains(memory.AccessPolicyId, StringComparer.Ordinal)
+            || Sensitivity.Rank(memory.SensitivityClass) > Sensitivity.Rank(access.MaxSensitivity);
+    }
+
+    /// <summary>
+    /// The local owner's reach. Single-principal by construction on a local deployment; a hosted
+    /// Aurora would resolve the policy set per caller instead of assuming one.
+    /// </summary>
+    private static MemoryAccessContext AccessFor(Principal principal) =>
+        new(principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Confidential);
+
+    private static string? KeyOf(HttpRequest request) =>
+        request.Headers.TryGetValue("Idempotency-Key", out var key) ? key.ToString() : null;
+
+    private static IResult NotFound(string correlationId, string message) =>
+        Results.Json(
+            ApiEnvelopes.Fail(correlationId, ApiErrorCode.NotFound, message),
+            statusCode: StatusCodes.Status404NotFound);
+
+    private static IResult BadRequest(string correlationId, string message, string field) =>
+        Results.Json(
+            ApiEnvelopes.Fail(correlationId, ApiErrorCode.Invalid, message, field: field),
+            statusCode: StatusCodes.Status400BadRequest);
+}

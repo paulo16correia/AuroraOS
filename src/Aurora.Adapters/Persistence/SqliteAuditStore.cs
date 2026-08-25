@@ -126,6 +126,36 @@ public sealed class SqliteAuditStore : IAuditStore
         return await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
     }
 
+    public async Task<IReadOnlyList<AuditRecordView>> QueryAsync(
+        long afterSequence, int limit, CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence, record_id, principal_client_id, action_id, outcome, created_at_utc,
+                   record_hash, risk, via, decision, policy_ids, reason
+              FROM audit_record WHERE sequence > @after ORDER BY sequence ASC LIMIT @limit;
+            """;
+        command.Parameters.AddWithValue("@after", afterSequence);
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 200));
+
+        var rows = new List<AuditRecordView>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            rows.Add(new AuditRecordView(
+                reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), reader.GetString(5), reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.IsDBNull(10) ? null : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetString(11)));
+        }
+
+        return rows;
+    }
+
     public async Task<AuditVerification> VerifyChainAsync(CancellationToken ct)
     {
         await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);

@@ -52,6 +52,9 @@ public sealed record DomainEvent(
     string? IdempotencyKey,
     string IntegrityHash);
 
+/// <summary>A committed event together with the cursor a stream resumes from.</summary>
+public sealed record SequencedEvent(long Sequence, DomainEvent Event);
+
 public static class DeliveryMode
 {
     /// <summary>Redelivered until acknowledged; the consumer must be idempotent (RFC 050 rule 2).</summary>

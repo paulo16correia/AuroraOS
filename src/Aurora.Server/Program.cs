@@ -1,6 +1,7 @@
 using Aurora.Adapters.Persistence;
 using Aurora.Core.Abstractions;
 using Aurora.Server;
+using Aurora.Server.Api;
 using Aurora.Server.Mcp;
 using Aurora.Server.Security;
 
@@ -22,6 +23,10 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     // Resource guard: reject oversized bodies at the transport before any parsing/canonicalization.
     kestrel.Limits.MaxRequestBodySize = 64 * 1024;
 });
+
+// One wire contract for the whole surface: minimal-API binding and responses use the same
+// snake_case rules as the payloads Aurora stores and replays.
+builder.Services.ConfigureHttpJsonOptions(json => Aurora.Core.AuroraJson.Apply(json.SerializerOptions));
 
 builder.Services.AddAurora(options);
 builder.Services
@@ -56,6 +61,11 @@ app.UseMiddleware<LoopbackGuardMiddleware>();
 app.UseMiddleware<BearerAuthMiddleware>();
 
 app.MapMcp("/mcp");
+
+// The operator and UI surface (RFC 10), behind the same loopback + bearer guard. Separate from
+// MCP on purpose: these are the endpoints a person uses to decide, correct and inspect what
+// Aurora did, and they must not be reachable as agent tools.
+app.MapAuroraApi();
 
 // Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
 // NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would

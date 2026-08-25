@@ -62,6 +62,18 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
             .ConfigureAwait(false);
     }
 
+    public async Task<Goal> DraftAsync(GoalRequest request, CancellationToken ct)
+    {
+        var goal = new Goal(
+            Guid.NewGuid().ToString("N"), request.Title, request.Outcome, request.OwnerId,
+            Math.Clamp(request.Priority, 1, 5), GoalStatus.Draft,
+            request.ConstraintsJson, request.SuccessCriteria, request.DeadlineAtUtc,
+            request.BudgetJson, request.CreatedFromRef, request.ApprovalPolicyId);
+
+        await SaveGoalAsync(goal, ct).ConfigureAwait(false);
+        return goal;
+    }
+
     public async Task<PlanRevision> ReplanAsync(
         string goalId, string trigger, IReadOnlyList<TaskRequest> tasks, CancellationToken ct)
     {

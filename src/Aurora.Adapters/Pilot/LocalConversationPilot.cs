@@ -83,7 +83,7 @@ public sealed class LocalConversationPilot : IPilotApplication
 
         // --- Attention --------------------------------------------------------------------
         var access = new MemoryAccessContext(
-            request.Principal.ClientId, ["policy/owner"], Sensitivity.Private);
+            request.Principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Private);
 
         MemorySearchResult recalled = await _memories
             .SearchAsync(request.Utterance, access, new MemoryFilters(), ct).ConfigureAwait(false);

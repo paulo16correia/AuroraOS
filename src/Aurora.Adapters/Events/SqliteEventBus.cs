@@ -262,6 +262,44 @@ public sealed class SqliteEventBus : IEventBus
             reader.IsDBNull(9) ? null : reader.GetString(9));
     }
 
+    public async Task<IReadOnlyList<SequencedEvent>> ReadAsync(
+        long afterSequence, int limit, string maxSensitivity, CancellationToken ct)
+    {
+        var ceiling = Sensitivity.IsKnown(maxSensitivity) ? maxSensitivity : Sensitivity.Public;
+        var permitted = new[] { Sensitivity.Public, Sensitivity.Private, Sensitivity.Confidential, Sensitivity.Secret }
+            .Where(s => Sensitivity.Rank(s) <= Sensitivity.Rank(ceiling))
+            .ToArray();
+
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+
+        var placeholders = string.Join(',', permitted.Select((_, i) => "@s" + i));
+        command.CommandText = $"""
+            SELECT sequence, event_id, type, schema_version, producer, occurred_at_utc, correlation_id,
+                   causation_id, aggregate_ref, payload_json, payload_ref, sensitivity,
+                   idempotency_key, integrity_hash
+              FROM domain_event
+             WHERE sequence > @after AND sensitivity IN ({placeholders})
+             ORDER BY sequence ASC
+             LIMIT @limit;
+            """;
+        command.Parameters.AddWithValue("@after", afterSequence);
+        command.Parameters.AddWithValue("@limit", Math.Clamp(limit, 1, 200));
+        for (var i = 0; i < permitted.Length; i++)
+        {
+            command.Parameters.AddWithValue("@s" + i, permitted[i]);
+        }
+
+        var page = new List<SequencedEvent>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            page.Add(new SequencedEvent(reader.GetInt64(0), ReadEvent(reader)));
+        }
+
+        return page;
+    }
+
     private async Task<IReadOnlyList<(long Sequence, DomainEvent Event)>> PendingAsync(
         Subscription subscription, CancellationToken ct)
     {
@@ -287,16 +325,7 @@ public sealed class SqliteEventBus : IEventBus
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            events.Add((reader.GetInt64(0), new DomainEvent(
-                reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4),
-                reader.GetString(5), reader.GetString(6),
-                reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.IsDBNull(8) ? null : reader.GetString(8),
-                reader.IsDBNull(9) ? null : reader.GetString(9),
-                reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.GetString(11),
-                reader.IsDBNull(12) ? null : reader.GetString(12),
-                reader.GetString(13))));
+            events.Add((reader.GetInt64(0), ReadEvent(reader)));
         }
 
         return events;
@@ -399,4 +428,16 @@ public sealed class SqliteEventBus : IEventBus
 
         return rows;
     }
+
+    /// <summary>Maps the shared <c>domain_event</c> projection; both readers select the same columns.</summary>
+    private static DomainEvent ReadEvent(SqliteDataReader reader) =>
+        new(reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4),
+            reader.GetString(5), reader.GetString(6),
+            reader.IsDBNull(7) ? null : reader.GetString(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9),
+            reader.IsDBNull(10) ? null : reader.GetString(10),
+            reader.GetString(11),
+            reader.IsDBNull(12) ? null : reader.GetString(12),
+            reader.GetString(13));
 }

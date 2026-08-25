@@ -31,6 +31,13 @@ public static class MemoryOrigin
     public const string Import = "IMPORT";
 }
 
+/// <summary>Access policies a memory can be filed under (RFC 03).</summary>
+public static class MemoryAccessPolicy
+{
+    /// <summary>The person this Aurora belongs to. The only policy a local deployment issues.</summary>
+    public const string Owner = "policy/owner";
+}
+
 public static class RevisionOperation
 {
     public const string Create = "CREATE";

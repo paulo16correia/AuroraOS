@@ -424,8 +424,10 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Timeout()));
-        Assert.True(doc.RootElement.GetProperty("executionsByOutcome").GetProperty("completed").GetInt64() >= 1);
-        Assert.True(doc.RootElement.GetProperty("pendingApprovals").GetInt32() >= 1);
+        // snake_case, like every other Aurora wire contract: /metrics used to answer in camelCase
+        // because it fell through to the host default rather than because anything chose that.
+        Assert.True(doc.RootElement.GetProperty("executions_by_outcome").GetProperty("completed").GetInt64() >= 1);
+        Assert.True(doc.RootElement.GetProperty("pending_approvals").GetInt32() >= 1);
     }
 
     // ---- It.2 consent sessions, read-only reuse (docs/adr/0010) ----

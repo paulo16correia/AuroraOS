@@ -209,6 +209,10 @@ public sealed class RecordingAuditStore : IAuditStore
     public Task<AuditVerification> VerifyChainAsync(CancellationToken ct) =>
         Task.FromResult(new AuditVerification(true, null));
 
+    public Task<IReadOnlyList<AuditRecordView>> QueryAsync(
+        long afterSequence, int limit, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<AuditRecordView>>([]);
+
     public Task<string?> HeadHashAsync(CancellationToken ct) =>
         Task.FromResult<string?>(Outcomes.Count == 0 ? null : $"audit-{Outcomes.Count}");
 }

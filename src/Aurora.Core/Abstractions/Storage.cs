@@ -25,6 +25,21 @@ public sealed record AuditEntry(
     string? PolicyIds = null,
     string? Reason = null);
 
+/// <summary>One journal row as read back, with its position so a client can page.</summary>
+public sealed record AuditRecordView(
+    long Sequence,
+    string RecordId,
+    string PrincipalClientId,
+    string ActionId,
+    string Outcome,
+    string CreatedAtUtc,
+    string RecordHash,
+    string? Risk,
+    string? Via,
+    string? Decision,
+    string? PolicyIds,
+    string? Reason);
+
 /// <summary>Append-only, hash-chained audit log. Integrity failure is fail-closed.</summary>
 public interface IAuditStore
 {
@@ -39,6 +54,12 @@ public interface IAuditStore
     /// restore can tell which audit position the snapshot belongs to (RFC 043).
     /// </summary>
     Task<string?> HeadHashAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Reads the journal forward from a cursor, for the auditable query surface (RFC 10).
+    /// Returns records, never secrets: the journal holds hashes and outcomes by design.
+    /// </summary>
+    Task<IReadOnlyList<AuditRecordView>> QueryAsync(long afterSequence, int limit, CancellationToken ct);
 }
 
 /// <summary>Idempotency ledger keyed by (principal client, idempotency_key).</summary>
