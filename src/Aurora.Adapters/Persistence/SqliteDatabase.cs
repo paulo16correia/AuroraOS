@@ -656,6 +656,46 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_session_live
           ON consent_session(principal_client_id, server_boot_id, policy_version, status);
 
+        CREATE TABLE IF NOT EXISTS schedule (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          trigger_kind TEXT NOT NULL,
+          timezone TEXT NOT NULL,
+          expression TEXT NOT NULL,
+          next_run_at_utc TEXT NULL,
+          last_run_at_utc TEXT NULL,
+          target TEXT NOT NULL,
+          payload_ref TEXT NULL,
+          approval_ref TEXT NULL,
+          enabled INTEGER NOT NULL,
+          quiet_hours_policy TEXT NOT NULL,
+          missed_run_policy TEXT NOT NULL,
+          status TEXT NOT NULL,
+          disabled_reason TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_schedule_due
+          ON schedule(status, enabled, next_run_at_utc);
+
+        CREATE TABLE IF NOT EXISTS schedule_run (
+          id TEXT PRIMARY KEY,
+          schedule_id TEXT NOT NULL,
+          due_at_utc TEXT NOT NULL,
+          started_at_utc TEXT NULL,
+          finished_at_utc TEXT NULL,
+          status TEXT NOT NULL,
+          cycle_id TEXT NULL,
+          result_ref TEXT NULL,
+          -- One row per occurrence, not per attempt. This is what makes the hour that repeats at
+          -- the end of DST run once instead of twice (RFC 026).
+          idempotency_key TEXT NOT NULL UNIQUE,
+          FOREIGN KEY (schedule_id) REFERENCES schedule(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_schedule_run_schedule
+          ON schedule_run(schedule_id, due_at_utc);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -665,7 +705,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 2;
+    public const int TargetSchemaVersion = 3;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -679,6 +719,48 @@ public sealed class SqliteDatabase
             ALTER TABLE audit_record RENAME COLUMN principal_windows_user TO principal_os_user;
             ALTER TABLE approval RENAME COLUMN principal_windows_user TO principal_os_user;
             ALTER TABLE consent_session RENAME COLUMN principal_windows_user TO principal_os_user;
+            """,
+
+        // v3 — the Scheduler (docs/adr/0032). New tables only, so an existing database gains them
+        // without touching a row it already holds.
+        [3] = """
+            CREATE TABLE IF NOT EXISTS schedule (
+              id TEXT PRIMARY KEY,
+              owner_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              trigger_kind TEXT NOT NULL,
+              timezone TEXT NOT NULL,
+              expression TEXT NOT NULL,
+              next_run_at_utc TEXT NULL,
+              last_run_at_utc TEXT NULL,
+              target TEXT NOT NULL,
+              payload_ref TEXT NULL,
+              approval_ref TEXT NULL,
+              enabled INTEGER NOT NULL,
+              quiet_hours_policy TEXT NOT NULL,
+              missed_run_policy TEXT NOT NULL,
+              status TEXT NOT NULL,
+              disabled_reason TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_schedule_due
+              ON schedule(status, enabled, next_run_at_utc);
+
+            CREATE TABLE IF NOT EXISTS schedule_run (
+              id TEXT PRIMARY KEY,
+              schedule_id TEXT NOT NULL,
+              due_at_utc TEXT NOT NULL,
+              started_at_utc TEXT NULL,
+              finished_at_utc TEXT NULL,
+              status TEXT NOT NULL,
+              cycle_id TEXT NULL,
+              result_ref TEXT NULL,
+              idempotency_key TEXT NOT NULL UNIQUE,
+              FOREIGN KEY (schedule_id) REFERENCES schedule(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_schedule_run_schedule
+              ON schedule_run(schedule_id, due_at_utc);
             """,
     };
 

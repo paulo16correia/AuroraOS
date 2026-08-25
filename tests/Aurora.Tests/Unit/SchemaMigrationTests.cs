@@ -113,5 +113,20 @@ public sealed class SchemaMigrationTests : IDisposable
         using var read = check.CreateCommand();
         read.CommandText = "SELECT principal_os_user FROM audit_record WHERE record_id = 'r1';";
         Assert.Equal("someone", read.ExecuteScalar());
+
+        // And every later migration ran too, not only the one this test was written for.
+        Assert.True(TableExists(Factory, "schedule"));
+        Assert.True(TableExists(Factory, "schedule_run"));
+    }
+
+    private static bool TableExists(SqliteConnectionFactory factory, string table)
+    {
+        using var connection = factory.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = @name;";
+        command.Parameters.AddWithValue("@name", table);
+
+        return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
 }
