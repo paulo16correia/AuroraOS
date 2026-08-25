@@ -835,6 +835,39 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_thought_cycle ON thought(cycle_id, created_at_utc);
 
+        CREATE TABLE IF NOT EXISTS belief (
+          id TEXT PRIMARY KEY,
+          subject_ref TEXT NOT NULL,
+          predicate TEXT NOT NULL,
+          object_json TEXT NOT NULL,
+          scope_json TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          evidence_for_refs TEXT NOT NULL,
+          evidence_against_refs TEXT NOT NULL,
+          basis TEXT NOT NULL,
+          status TEXT NOT NULL,
+          valid_from_utc TEXT NOT NULL,
+          review_at_utc TEXT NOT NULL,
+          last_evaluated_at_utc TEXT NOT NULL,
+          decision_impact TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_belief_subject ON belief(subject_ref, status);
+        CREATE INDEX IF NOT EXISTS idx_belief_review ON belief(status, review_at_utc);
+
+        -- Kept rather than folded into the belief: a prediction that failed is not erased, and the
+        -- record of having believed something wrong is the useful part (RFC 028).
+        CREATE TABLE IF NOT EXISTS belief_update (
+          id TEXT PRIMARY KEY,
+          belief_id TEXT NOT NULL,
+          observation_ref TEXT NOT NULL,
+          delta_confidence REAL NOT NULL,
+          reason TEXT NOT NULL,
+          applied_at_utc TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_belief_update ON belief_update(belief_id, applied_at_utc);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -844,7 +877,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 7;
+    public const int TargetSchemaVersion = 8;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1046,6 +1079,40 @@ public sealed class SqliteDatabase
             );
 
             CREATE INDEX IF NOT EXISTS idx_thought_cycle ON thought(cycle_id, created_at_utc);
+            """,
+
+        // v8 — the belief system (docs/adr/0041). New tables only.
+        [8] = """
+            CREATE TABLE IF NOT EXISTS belief (
+              id TEXT PRIMARY KEY,
+              subject_ref TEXT NOT NULL,
+              predicate TEXT NOT NULL,
+              object_json TEXT NOT NULL,
+              scope_json TEXT NOT NULL,
+              confidence REAL NOT NULL,
+              evidence_for_refs TEXT NOT NULL,
+              evidence_against_refs TEXT NOT NULL,
+              basis TEXT NOT NULL,
+              status TEXT NOT NULL,
+              valid_from_utc TEXT NOT NULL,
+              review_at_utc TEXT NOT NULL,
+              last_evaluated_at_utc TEXT NOT NULL,
+              decision_impact TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_belief_subject ON belief(subject_ref, status);
+            CREATE INDEX IF NOT EXISTS idx_belief_review ON belief(status, review_at_utc);
+
+            CREATE TABLE IF NOT EXISTS belief_update (
+              id TEXT PRIMARY KEY,
+              belief_id TEXT NOT NULL,
+              observation_ref TEXT NOT NULL,
+              delta_confidence REAL NOT NULL,
+              reason TEXT NOT NULL,
+              applied_at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_belief_update ON belief_update(belief_id, applied_at_utc);
             """,
     };
 

@@ -1,4 +1,5 @@
 using Aurora.Adapters.Applications;
+using Aurora.Adapters.Beliefs;
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
@@ -93,6 +94,10 @@ public static class ServiceRegistration
             new AesGcmSecretProtector(
                 LocalKeyFile.LoadOrCreate(options.DeliberationKeyPath, "Deliberation")),
             sp.GetRequiredService<IClock>()));
+
+        // Patterns Aurora thinks it sees, kept apart from the memories it saw them in (RFC 028).
+        services.AddSingleton(BeliefPolicy.Default);
+        services.AddSingleton<IBeliefSystem, SqliteBeliefSystem>();
 
         services.AddSingleton<IClockGuard, AuditClockGuard>();
         services.AddSingleton<IHealthService, AuroraHealthService>();
