@@ -86,7 +86,18 @@ public sealed record Goal(
     string BudgetJson,
     string? CreatedFromRef,
     string? ApprovalPolicyId,
-    string? BlockedReason = null);
+    string? BlockedReason = null,
+    /// <summary>The mission this goal serves, when it serves one (RFC 052 rule 2).</summary>
+    string? MissionRef = null,
+    /// <summary>
+    /// When an unaligned goal must be looked at again.
+    /// </summary>
+    /// <remarks>
+    /// Rule 2 allows a persistent goal to belong to no mission only if it is marked ad-hoc with a
+    /// review date. This is that date; a goal with neither a mission nor one of these would be a
+    /// standing commitment nobody owns.
+    /// </remarks>
+    string? AdHocReviewAtUtc = null);
 
 public sealed record PlannedTask(
     string Id,
@@ -126,7 +137,9 @@ public sealed record GoalRequest(
     string BudgetJson = "{}",
     string? DeadlineAtUtc = null,
     string? CreatedFromRef = null,
-    string? ApprovalPolicyId = null);
+    string? ApprovalPolicyId = null,
+    /// <summary>The mission this goal serves. Null means it will be marked ad-hoc (RFC 052).</summary>
+    string? MissionRef = null);
 
 /// <summary>A task the caller wants in the plan.</summary>
 public sealed record TaskRequest(

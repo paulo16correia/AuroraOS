@@ -29,12 +29,14 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
                           || request.SuccessCriteria.Count == 0;
 
         var goalId = Guid.NewGuid().ToString("N");
+        var status = needsDiscovery ? GoalStatus.Draft : GoalStatus.Active;
         var goal = new Goal(
             goalId, request.Title, request.Outcome, request.OwnerId,
-            Math.Clamp(request.Priority, 1, 5),
-            needsDiscovery ? GoalStatus.Draft : GoalStatus.Active,
+            Math.Clamp(request.Priority, 1, 5), status,
             request.ConstraintsJson, request.SuccessCriteria, request.DeadlineAtUtc,
-            request.BudgetJson, request.CreatedFromRef, request.ApprovalPolicyId);
+            request.BudgetJson, request.CreatedFromRef, request.ApprovalPolicyId,
+            BlockedReason: null, MissionRef: request.MissionRef,
+            AdHocReviewAtUtc: AdHocReviewFor(request, status));
 
         await SaveGoalAsync(goal, ct).ConfigureAwait(false);
 
@@ -68,11 +70,30 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
             Guid.NewGuid().ToString("N"), request.Title, request.Outcome, request.OwnerId,
             Math.Clamp(request.Priority, 1, 5), GoalStatus.Draft,
             request.ConstraintsJson, request.SuccessCriteria, request.DeadlineAtUtc,
-            request.BudgetJson, request.CreatedFromRef, request.ApprovalPolicyId);
+            request.BudgetJson, request.CreatedFromRef, request.ApprovalPolicyId,
+            BlockedReason: null, MissionRef: request.MissionRef);
 
         await SaveGoalAsync(goal, ct).ConfigureAwait(false);
         return goal;
     }
+
+    /// <summary>How long an unaligned goal may stand before somebody has to look at it again.</summary>
+    private static readonly TimeSpan AdHocReview = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// The review date a goal gets when it belongs to no mission.
+    /// </summary>
+    /// <remarks>
+    /// RFC 052 rule 2: a persistent goal is either aligned to a mission or marked ad-hoc with a
+    /// review date. Assigning the date rather than refusing the goal keeps the invariant without
+    /// putting a mission in the caller's mouth — what the rule is actually preventing is a standing
+    /// commitment that nobody owns and nobody ever looks at again. A DRAFT goal gets none, because
+    /// it is not yet a commitment.
+    /// </remarks>
+    private string? AdHocReviewFor(GoalRequest request, string status) =>
+        status == GoalStatus.Active && request.MissionRef is null
+            ? Iso(_clock.UtcNow + AdHocReview)
+            : null;
 
     public async Task<PlanRevision> ReplanAsync(
         string goalId, string trigger, IReadOnlyList<TaskRequest> tasks, CancellationToken ct)
@@ -459,15 +480,19 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
         ExecuteAsync("""
             INSERT INTO goal
                 (id, title, outcome, owner_id, priority, status, constraints_json, success_criteria,
-                 deadline_at_utc, budget_json, created_from_ref, approval_policy_id, blocked_reason)
-            VALUES (@id, @t, @o, @owner, @p, @s, @c, @sc, @d, @b, @from, @policy, NULL);
+                 deadline_at_utc, budget_json, created_from_ref, approval_policy_id, blocked_reason,
+                 mission_ref, ad_hoc_review_at_utc)
+            VALUES (@id, @t, @o, @owner, @p, @s, @c, @sc, @d, @b, @from, @policy, NULL,
+                    @mission, @adhoc);
             """, ct,
             ("@id", g.Id), ("@t", g.Title), ("@o", g.Outcome), ("@owner", g.OwnerId),
             ("@p", g.Priority), ("@s", g.Status), ("@c", g.ConstraintsJson),
             ("@sc", string.Join('\n', g.SuccessCriteria)),
             ("@d", (object?)g.DeadlineAtUtc ?? DBNull.Value), ("@b", g.BudgetJson),
             ("@from", (object?)g.CreatedFromRef ?? DBNull.Value),
-            ("@policy", (object?)g.ApprovalPolicyId ?? DBNull.Value));
+            ("@policy", (object?)g.ApprovalPolicyId ?? DBNull.Value),
+            ("@mission", (object?)g.MissionRef ?? DBNull.Value),
+            ("@adhoc", (object?)g.AdHocReviewAtUtc ?? DBNull.Value));
 
     private async Task ExecuteAsync(string sql, CancellationToken ct, params (string Name, object Value)[] args)
     {
@@ -484,7 +509,8 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
 
     private const string GoalSelect = """
         SELECT id, title, outcome, owner_id, priority, status, constraints_json, success_criteria,
-               deadline_at_utc, budget_json, created_from_ref, approval_policy_id, blocked_reason
+               deadline_at_utc, budget_json, created_from_ref, approval_policy_id, blocked_reason,
+               mission_ref, ad_hoc_review_at_utc
           FROM goal
         """;
 
@@ -500,7 +526,8 @@ public sealed class SqlitePlanner : IPlanner, ITaskService, ITaskScheduler
         r.GetString(6), r.GetString(7).Split('\n', StringSplitOptions.RemoveEmptyEntries),
         r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9),
         r.IsDBNull(10) ? null : r.GetString(10), r.IsDBNull(11) ? null : r.GetString(11),
-        r.IsDBNull(12) ? null : r.GetString(12));
+        r.IsDBNull(12) ? null : r.GetString(12),
+        r.IsDBNull(13) ? null : r.GetString(13), r.IsDBNull(14) ? null : r.GetString(14));
 
     private static PlannedTask ReadTask(SqliteDataReader r) => new(
         r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5),

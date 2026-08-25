@@ -73,6 +73,41 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Contains("aurora_approve", names);
         Assert.Contains("aurora_converse", names);
         Assert.Contains("aurora_cycle", names);
+        Assert.Contains("aurora_review", names);
+    }
+
+    [Fact]
+    public async Task Review_ReportsWhatHappenedFromAuroraSOwnRecords()
+    {
+        await using var client = await ConnectAsync();
+
+        // Something for it to find.
+        await client.CallToolAsync(
+            "aurora_execute",
+            new Dictionary<string, object?>
+            {
+                ["action_id"] = "echo.say",
+                ["input"] = new Dictionary<string, object?> { ["message"] = "something to review" },
+            },
+            cancellationToken: Timeout());
+
+        var result = await client.CallToolAsync(
+            "aurora_review",
+            new Dictionary<string, object?> { ["timezone"] = "Europe/Lisbon" },
+            cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+
+        // Reads Aurora's own records, touches nothing outside, and still goes through the cycle:
+        // a briefing is a claim about what happened, not a query result.
+        Assert.True(
+            doc.RootElement.GetProperty("findings").GetProperty("audit_entries").GetInt32() >= 1);
+        Assert.Contains(
+            "POLICY",
+            doc.RootElement.GetProperty("stages_run").EnumerateArray().Select(s => s.GetString()));
+        Assert.Contains(
+            "MEMORY",
+            doc.RootElement.GetProperty("stages_omitted").EnumerateArray().Select(s => s.GetString()));
     }
 
     // ---- step 10b: MCP runs through the cognitive cycle, not beside it ----

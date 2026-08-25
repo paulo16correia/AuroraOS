@@ -76,6 +76,25 @@ public sealed class AuroraTools
         return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);
     }
 
+    [McpServerTool(Name = "aurora_review")]
+    [Description("Review what Aurora did and what is waiting on it: audited actions since a cursor, "
+        + "open needs, pending signals, goals past their review date, open questions, failed "
+        + "schedules, risk posture and resource state. Reads Aurora's own records only — it touches "
+        + "nothing outside and changes nothing.")]
+    public static async Task<JsonElement> Review(
+        IReviewApplication review,
+        IPrincipalAccessor principals,
+        long after_audit_sequence = 0,
+        string? timezone = null,
+        CancellationToken ct = default)
+    {
+        var outcome = await review.ReviewAsync(
+            new ReviewRequest(principals.Current, timezone ?? TimeZoneInfo.Local.Id, after_audit_sequence),
+            ct);
+
+        return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);
+    }
+
     [McpServerTool(Name = "aurora_cycle")]
     [Description("Read back a cognitive cycle by its id, as returned in 'cycle_ref' by aurora_execute "
         + "or as 'cycle_id' by aurora_converse: which stages ran, which were deliberately omitted, "

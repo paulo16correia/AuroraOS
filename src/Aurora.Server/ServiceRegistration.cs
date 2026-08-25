@@ -1,7 +1,9 @@
+using Aurora.Adapters.Applications;
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Vault;
 using Aurora.Adapters.World;
@@ -16,6 +18,7 @@ using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Pilot;
 using Aurora.Adapters.Maintenance;
+using Aurora.Adapters.Missions;
 using Aurora.Adapters.Needs;
 using Aurora.Adapters.Resources;
 using Aurora.Adapters.Situation;
@@ -113,6 +116,18 @@ public static class ServiceRegistration
         services.AddSingleton<IResourceModel, SystemResourceModel>();
         services.AddSingleton<ISituationService, SituationService>();
         services.AddSingleton<IMaintenanceService, MaintenanceService>();
+
+        // What Aurora is for, decided by the person it is for (RFC 052).
+        services.AddSingleton<IMissionService, SqliteMissionService>();
+
+        // Curiosity, and the allowlist it is confined to. The default reaches Aurora's own records
+        // and nothing further; widening it is a deployment decision, never a default (RFC 032).
+        services.AddSingleton(CuriosityPolicy.Default);
+        services.AddSingleton<ICuriosityEngine, SqliteCuriosityEngine>();
+
+        // The second application the frozen order allows: low-risk, reading-only, no external
+        // tool. The rest of the system is only as governed as it is legible.
+        services.AddSingleton<IReviewApplication, DailyReviewApplication>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.

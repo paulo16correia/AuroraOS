@@ -214,7 +214,9 @@ public sealed class SqliteDatabase
           budget_json TEXT NOT NULL,
           created_from_ref TEXT NULL,
           approval_policy_id TEXT NULL,
-          blocked_reason TEXT NULL
+          blocked_reason TEXT NULL,
+          mission_ref TEXT NULL,
+          ad_hoc_review_at_utc TEXT NULL
         );
 
         CREATE TABLE IF NOT EXISTS planned_task (
@@ -742,6 +744,46 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_need_open ON need(status, kind, priority);
 
+        CREATE TABLE IF NOT EXISTS mission (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          purpose TEXT NOT NULL,
+          success_definition TEXT NOT NULL,
+          boundaries TEXT NOT NULL,
+          priority_policy TEXT NOT NULL,
+          owner TEXT NOT NULL,
+          status TEXT NOT NULL,
+          review_at_utc TEXT NULL,
+          evidence_refs TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          approval_ref TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mission_owner ON mission(owner, status);
+
+        CREATE TABLE IF NOT EXISTS curiosity_proposal (
+          id TEXT PRIMARY KEY,
+          question TEXT NOT NULL,
+          rationale_refs TEXT NOT NULL,
+          expected_value REAL NOT NULL,
+          scope TEXT NOT NULL,
+          allowed_sources TEXT NOT NULL,
+          sensitivity_limit TEXT NOT NULL,
+          resource_budget REAL NOT NULL,
+          status TEXT NOT NULL,
+          approval_required INTEGER NOT NULL,
+          result_refs TEXT NOT NULL,
+          review_at_utc TEXT NULL,
+          detected_at_utc TEXT NOT NULL,
+          refusal_reasons TEXT NOT NULL,
+          goal_ref TEXT NULL,
+          subject_ref TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_curiosity_open ON curiosity_proposal(status, review_at_utc);
+        CREATE INDEX IF NOT EXISTS idx_curiosity_subject ON curiosity_proposal(subject_ref, status);
+
         CREATE TABLE IF NOT EXISTS remembered_note (
           note_id TEXT PRIMARY KEY,
           principal_client_id TEXT NOT NULL,
@@ -751,7 +793,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 4;
+    public const int TargetSchemaVersion = 6;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -855,7 +897,71 @@ public sealed class SqliteDatabase
 
             CREATE INDEX IF NOT EXISTS idx_need_open ON need(status, kind, priority);
             """,
+
+        // v5 — Missions, and the two columns on goal that carry RFC 052 rule 2
+        // (docs/adr/0035). ALTER ... ADD COLUMN is the one shape SQLite does cheaply and safely.
+        [5] = """
+            CREATE TABLE IF NOT EXISTS mission (
+              id TEXT PRIMARY KEY,
+              mind_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              purpose TEXT NOT NULL,
+              success_definition TEXT NOT NULL,
+              boundaries TEXT NOT NULL,
+              priority_policy TEXT NOT NULL,
+              owner TEXT NOT NULL,
+              status TEXT NOT NULL,
+              review_at_utc TEXT NULL,
+              evidence_refs TEXT NOT NULL,
+              created_at_utc TEXT NOT NULL,
+              approval_ref TEXT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mission_owner ON mission(owner, status);
+            """,
+
+        // v6 — governed curiosity (docs/adr/0036). New table only.
+        [6] = """
+            CREATE TABLE IF NOT EXISTS curiosity_proposal (
+              id TEXT PRIMARY KEY,
+              question TEXT NOT NULL,
+              rationale_refs TEXT NOT NULL,
+              expected_value REAL NOT NULL,
+              scope TEXT NOT NULL,
+              allowed_sources TEXT NOT NULL,
+              sensitivity_limit TEXT NOT NULL,
+              resource_budget REAL NOT NULL,
+              status TEXT NOT NULL,
+              approval_required INTEGER NOT NULL,
+              result_refs TEXT NOT NULL,
+              review_at_utc TEXT NULL,
+              detected_at_utc TEXT NOT NULL,
+              refusal_reasons TEXT NOT NULL,
+              goal_ref TEXT NULL,
+              subject_ref TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_curiosity_open ON curiosity_proposal(status, review_at_utc);
+            CREATE INDEX IF NOT EXISTS idx_curiosity_subject ON curiosity_proposal(subject_ref, status);
+            """,
     };
+
+    /// <summary>
+    /// Columns added to tables that already existed, as (table, column, declaration).
+    /// </summary>
+    /// <remarks>
+    /// Adding a column cannot live in <see cref="Migrations"/>. The DDL above runs first and its
+    /// <c>CREATE TABLE IF NOT EXISTS</c> already produces the target shape, so on a database where
+    /// that table did not exist the migration's <c>ALTER ... ADD COLUMN</c> would duplicate a column
+    /// the DDL just created. Checked against the live schema instead, which is correct either way
+    /// and idempotent by construction — SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>.
+    /// </remarks>
+    private static readonly (string Table, string Column, string Declaration)[] RequiredColumns =
+    [
+        // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
+        ("goal", "mission_ref", "TEXT NULL"),
+        ("goal", "ad_hoc_review_at_utc", "TEXT NULL"),
+    ];
 
     private readonly SqliteConnectionFactory _factory;
 
@@ -882,6 +988,7 @@ public sealed class SqliteDatabase
         }
 
         Migrate(connection, transaction);
+        EnsureColumns(connection, transaction);
 
         transaction.Commit();
     }
@@ -934,5 +1041,35 @@ public sealed class SqliteDatabase
             stamp.Parameters.AddWithValue("@v", TargetSchemaVersion);
             stamp.ExecuteNonQuery();
         }
+    }
+
+    /// <summary>
+    /// Adds any column in <see cref="RequiredColumns"/> that this database does not yet have.
+    /// </summary>
+    private static void EnsureColumns(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        foreach ((var table, var column, var declaration) in RequiredColumns)
+        {
+            if (HasColumn(connection, transaction, table, column))
+            {
+                continue;
+            }
+
+            using var add = connection.CreateCommand();
+            add.Transaction = transaction;
+            add.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration};";
+            add.ExecuteNonQuery();
+        }
+    }
+
+    private static bool HasColumn(
+        SqliteConnection connection, SqliteTransaction transaction, string table, string column)
+    {
+        using var read = connection.CreateCommand();
+        read.Transaction = transaction;
+        read.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = @c;";
+        read.Parameters.AddWithValue("@c", column);
+
+        return Convert.ToInt64(read.ExecuteScalar(), CultureInfo.InvariantCulture) > 0;
     }
 }
