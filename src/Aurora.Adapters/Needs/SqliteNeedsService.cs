@@ -59,13 +59,13 @@ public sealed class SqliteNeedsService : INeedsService
     private static IEnumerable<NeedCandidate> Candidates(
         NeedsSnapshot snapshot, IReadOnlyList<Signal> signals)
     {
-        if (snapshot.UnreconciledReservations > 0)
+        if (snapshot.UnreconciledReservations is > 0)
         {
             yield return new NeedCandidate(
                 NeedKind.Recovery, "kernel/idempotency",
                 $"{snapshot.UnreconciledReservations} reservation(s) ended in an indeterminate state",
                 "no reservation is left in UNKNOWN",
-                Intensity: Scale(snapshot.UnreconciledReservations, 3), Priority: 1, NeedOwner.System);
+                Intensity: Scale(snapshot.UnreconciledReservations.Value, 3), Priority: 1, NeedOwner.System);
         }
 
         if (snapshot.SinceLastBackup is { } age && age > TimeSpan.FromDays(1))
@@ -77,7 +77,7 @@ public sealed class SqliteNeedsService : INeedsService
                 Intensity: Scale(age.TotalDays, 7), Priority: 1, NeedOwner.System);
         }
 
-        if (snapshot.PendingApprovals > 0)
+        if (snapshot.PendingApprovals is > 0)
         {
             // Owned by the person, not the system: this is Aurora waiting on them, and it belongs
             // above maintenance for exactly that reason.
@@ -85,43 +85,43 @@ public sealed class SqliteNeedsService : INeedsService
                 NeedKind.Communication, "approvals/pending",
                 $"{snapshot.PendingApprovals} approval(s) are waiting on a person",
                 "no approval is pending",
-                Intensity: Scale(snapshot.PendingApprovals, 5), Priority: 2, NeedOwner.User);
+                Intensity: Scale(snapshot.PendingApprovals.Value, 5), Priority: 2, NeedOwner.User);
         }
 
-        if (snapshot.OverdueGoals > 0)
+        if (snapshot.OverdueGoals is > 0)
         {
             yield return new NeedCandidate(
                 NeedKind.Obligation, "goals/overdue",
                 $"{snapshot.OverdueGoals} goal(s) are past their deadline",
                 "no goal is past its deadline",
-                Intensity: Scale(snapshot.OverdueGoals, 5), Priority: 2, NeedOwner.User);
+                Intensity: Scale(snapshot.OverdueGoals.Value, 5), Priority: 2, NeedOwner.User);
         }
 
-        if (snapshot.DeadLetters > 0)
+        if (snapshot.DeadLetters is > 0)
         {
             yield return new NeedCandidate(
                 NeedKind.Maintenance, "events/dead-letters",
                 $"{snapshot.DeadLetters} delivery(ies) are in the dead-letter queue",
                 "the dead-letter queue is empty",
-                Intensity: Scale(snapshot.DeadLetters, 10), Priority: 3, NeedOwner.System);
+                Intensity: Scale(snapshot.DeadLetters.Value, 10), Priority: 3, NeedOwner.System);
         }
 
-        if (snapshot.MissedScheduleRuns > 0)
+        if (snapshot.MissedScheduleRuns is > 0)
         {
             yield return new NeedCandidate(
                 NeedKind.Maintenance, "schedules/missed",
                 $"{snapshot.MissedScheduleRuns} scheduled occurrence(s) did not run",
                 "no schedule has an unreviewed missed run",
-                Intensity: Scale(snapshot.MissedScheduleRuns, 10), Priority: 3, NeedOwner.System);
+                Intensity: Scale(snapshot.MissedScheduleRuns.Value, 10), Priority: 3, NeedOwner.System);
         }
 
-        if (snapshot.UnconsolidatedMemories > 0)
+        if (snapshot.UnconsolidatedMemories is > 0)
         {
             yield return new NeedCandidate(
                 NeedKind.Consolidation, "memory/unconsolidated",
                 $"{snapshot.UnconsolidatedMemories} memory(ies) are awaiting consolidation",
                 "nothing is left awaiting consolidation",
-                Intensity: Scale(snapshot.UnconsolidatedMemories, 50), Priority: 4, NeedOwner.System);
+                Intensity: Scale(snapshot.UnconsolidatedMemories.Value, 50), Priority: 4, NeedOwner.System);
         }
 
         // A signal severe enough to matter becomes a need, so that what deserved attention still

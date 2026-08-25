@@ -15,7 +15,10 @@ using Aurora.Adapters.MindStates;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Pilot;
+using Aurora.Adapters.Maintenance;
 using Aurora.Adapters.Needs;
+using Aurora.Adapters.Resources;
+using Aurora.Adapters.Situation;
 using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
@@ -102,6 +105,14 @@ public static class ServiceRegistration
         // both change order and focus, and the cycle still decides what may happen (RFC 030, 031).
         services.AddSingleton<ISignalService, SqliteSignalService>();
         services.AddSingleton<INeedsService, SqliteNeedsService>();
+
+        // Real capacity, the moment it is being asked in, and the upkeep that keeps both current.
+        // None of the three permits anything; they can only make Aurora quieter or more careful.
+        services.AddSingleton(QuietHours.Default);
+        services.AddSingleton<IResourceProbe, SystemResourceProbe>();
+        services.AddSingleton<IResourceModel, SystemResourceModel>();
+        services.AddSingleton<ISituationService, SituationService>();
+        services.AddSingleton<IMaintenanceService, MaintenanceService>();
 
         // One type serves planner, task service and scheduler: they share the same tables and
         // splitting them would mean three objects arguing about the same rows.

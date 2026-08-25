@@ -346,6 +346,52 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
         Assert.True(body.GetProperty("links").TryGetProperty("next", out _));
     }
 
+    // ---- status and upkeep ----
+
+    [Fact]
+    public async Task StatusReportsWhatAuroraHasNoticesAndIsWaitingOn()
+    {
+        using HttpClient http = Client();
+        HttpResponseMessage response = await http.GetAsync("/v1/status?timezone=Europe/Lisbon", Ct());
+        response.EnsureSuccessStatusCode();
+
+        JsonElement data = (await BodyAsync(response)).GetProperty("data");
+
+        // The observability half of the gate: an automation nobody can look at is not limited by
+        // anything, whatever its rules say.
+        Assert.False(string.IsNullOrWhiteSpace(
+            data.GetProperty("situation").GetProperty("risk_posture").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(
+            data.GetProperty("resources").GetProperty("status").GetString()));
+        Assert.True(data.TryGetProperty("needs", out _));
+        Assert.True(data.TryGetProperty("schedules", out _));
+    }
+
+    [Fact]
+    public async Task AnUnknownTimeZoneIsRefusedRatherThanQuietlyTreatedAsUtc()
+    {
+        using HttpClient http = Client();
+        HttpResponseMessage response = await http.GetAsync("/v1/status?timezone=Mars/Olympus_Mons", Ct());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AMaintenancePassReportsWhatItDidAndWhatItDidNotLookAt()
+    {
+        using HttpClient http = Client();
+        HttpResponseMessage response = await http.SendAsync(
+            Request(HttpMethod.Post, "/v1/maintenance?timezone=Europe/Lisbon", body: null, Key()), Ct());
+
+        response.EnsureSuccessStatusCode();
+        JsonElement report = (await BodyAsync(response)).GetProperty("data");
+
+        Assert.True(report.TryGetProperty("due_run_ids", out _));
+        Assert.Contains(
+            "overdue_goals",
+            report.GetProperty("unmeasured").EnumerateArray().Select(u => u.GetString()));
+    }
+
     [Fact]
     public async Task DecidingAnApprovalThatDoesNotExistSaysSoWithoutFailing()
     {

@@ -125,12 +125,13 @@ public sealed class FakeConsent : IConsentGate
 }
 
 /// <summary>In-memory <see cref="IApprovalStore"/> mirroring the real one-time-per-scope semantics.</summary>
-public sealed class FakeApprovalStore : IApprovalStore
+public sealed class FakeApprovalStore(int pending = 0) : IApprovalStore
 {
     private readonly Dictionary<string, ApprovalRecord> _byId = [];
 
+    /// <summary>Plus any seeded by the constructor, for tests about what a pending count causes.</summary>
     public Task<int> CountPendingAsync(CancellationToken ct) =>
-        Task.FromResult(_byId.Values.Count(r => r.Status == ApprovalStatus.Pending));
+        Task.FromResult(_byId.Values.Count(r => r.Status == ApprovalStatus.Pending) + pending);
 
     private int _sequence;
 
@@ -285,4 +286,27 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 
         return Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// A resource probe that reports whatever the test says the machine is doing.
+/// </summary>
+/// <remarks>
+/// The real probe reports the host, which makes any test that depends on it a test of the machine
+/// it happened to run on. This is how the policy above it — what counts as constrained, what gives
+/// way first — gets tested against stated conditions instead.
+/// </remarks>
+public sealed class FakeResourceProbe(
+    double? cpu = 0.1, double? memory = 0.2, double? disk = 0.3) : IResourceProbe
+{
+    public double? Cpu { get; set; } = cpu;
+
+    public double? Memory { get; set; } = memory;
+
+    public double? Disk { get; set; } = disk;
+
+    public ResourceReading Read() => new(Cpu, Memory, Disk);
+
+    /// <summary>A host that reports nothing at all.</summary>
+    public static FakeResourceProbe Blind() => new(null, null, null);
 }

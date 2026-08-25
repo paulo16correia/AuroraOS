@@ -49,6 +49,8 @@ public static class ApiEndpoints
         app.MapDelete("/v1/memories/{id}", ForgetMemoryAsync);
         app.MapGet("/v1/audit", ReadAuditAsync);
         app.MapGet("/v1/stream", StreamAsync);
+        app.MapGet("/v1/status", ReadStatusAsync);
+        app.MapPost("/v1/maintenance", RunMaintenanceAsync);
         return app;
     }
 
@@ -220,6 +222,67 @@ public static class ApiEndpoints
         }
 
         return Results.Json(ApiEnvelopes.Ok(page, correlationId, links));
+    }
+
+    // ---- status and upkeep ----
+
+    /// <summary>
+    /// What Aurora currently has, notices and is waiting on.
+    /// </summary>
+    /// <remarks>
+    /// The observability half of the steps 10–12 gate. An automation that cannot be looked at is
+    /// not limited by anything, whatever its rules say.
+    /// </remarks>
+    private static async Task<IResult> ReadStatusAsync(
+        string? timezone, HttpRequest request,
+        ISituationService situation, IResourceModel resources,
+        ISignalService signals, INeedsService needs, IScheduler schedules,
+        CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+
+        SituationAssessment assessment;
+        try
+        {
+            assessment = await situation.AssessAsync(
+                new SituationContext(timezone ?? TimeZoneInfo.Local.Id), ct);
+        }
+        catch (SituationException unknownZone)
+        {
+            return BadRequest(correlationId, unknownZone.Message, nameof(timezone));
+        }
+
+        return Results.Json(ApiEnvelopes.Ok(
+            new
+            {
+                situation = assessment,
+                resources = await resources.ObserveAsync(ct),
+                signals = await signals.PendingAsync(ct),
+                needs = await needs.RankAsync(ct),
+                schedules = await schedules.ListAsync(null, ct),
+            },
+            correlationId));
+    }
+
+    /// <summary>
+    /// Runs one upkeep pass on demand.
+    /// </summary>
+    /// <remarks>
+    /// Safe to expose because of what maintenance is not allowed to do: it expires, decays,
+    /// reconciles and notices, and runs nothing it finds. Everything it surfaces still goes through
+    /// the cycle.
+    /// </remarks>
+    private static Task<IResult> RunMaintenanceAsync(
+        string? timezone, HttpRequest request,
+        IMaintenanceService maintenance, IIdempotencyStore idempotency, IPrincipalAccessor principals,
+        CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(request);
+        var zone = timezone ?? TimeZoneInfo.Local.Id;
+
+        return ApiIdempotency.RunAsync(
+            idempotency, principals.Current, KeyOf(request), new { zone }, correlationId,
+            token => maintenance.RunAsync(new SituationContext(zone), token), ct);
     }
 
     // ---- stream ----

@@ -75,14 +75,34 @@ public sealed record Need(
 /// record and the live signals, so what Aurora says it needs can always be traced back to something
 /// that was actually observed.
 /// </remarks>
+/// <remarks>
+/// Every field is nullable, and null means <i>not measured</i> rather than zero. The difference
+/// matters: reporting "no approvals are pending" because nobody looked is a claim Aurora would be
+/// making up, and it is exactly the claim that stops a need from ever being noticed.
+/// </remarks>
 public sealed record NeedsSnapshot(
-    int DeadLetters = 0,
-    int PendingApprovals = 0,
-    int MissedScheduleRuns = 0,
-    int OverdueGoals = 0,
-    int UnreconciledReservations = 0,
+    int? DeadLetters = null,
+    int? PendingApprovals = null,
+    int? MissedScheduleRuns = null,
+    int? OverdueGoals = null,
+    int? UnreconciledReservations = null,
     TimeSpan? SinceLastBackup = null,
-    int UnconsolidatedMemories = 0);
+    int? UnconsolidatedMemories = null)
+{
+    /// <summary>Which conditions this snapshot did not look at.</summary>
+    public IReadOnlyList<string> Unmeasured =>
+        new[]
+        {
+            (DeadLetters is null, "dead_letters"),
+            (PendingApprovals is null, "pending_approvals"),
+            (MissedScheduleRuns is null, "missed_schedule_runs"),
+            (OverdueGoals is null, "overdue_goals"),
+            (UnreconciledReservations is null, "unreconciled_reservations"),
+            (SinceLastBackup is null, "since_last_backup"),
+            (UnconsolidatedMemories is null, "unconsolidated_memories"),
+        }
+        .Where(pair => pair.Item1).Select(pair => pair.Item2).ToList();
+}
 
 public sealed class NeedException : Exception
 {
