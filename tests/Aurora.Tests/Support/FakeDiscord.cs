@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -36,6 +37,18 @@ public sealed class FakeDiscord : IDisposable
     }
 
     public int Port { get; }
+
+    /// <summary>Frames to push once a gateway client has identified, in order.</summary>
+    public List<string> GatewayDispatches { get; } = [];
+
+    /// <summary>What the plugin sent up the gateway: its identify, its heartbeats.</summary>
+    public List<JsonNode> GatewaySent { get; } = [];
+
+    private readonly TaskCompletionSource _identified =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Completes once the plugin has identified on the gateway.</summary>
+    public Task Identified => _identified.Task;
 
     public string BaseUrl => $"http://127.0.0.1:{Port}/api/v10";
 
@@ -102,6 +115,12 @@ public sealed class FakeDiscord : IDisposable
 
     private async Task AnswerAsync(HttpListenerContext context)
     {
+        if (context.Request.IsWebSocketRequest)
+        {
+            await GatewayAsync(context);
+            return;
+        }
+
         var path = context.Request.Url!.AbsolutePath.Replace("/api/v10", "", StringComparison.Ordinal);
         using var reader = new StreamReader(context.Request.InputStream);
         var body = await reader.ReadToEndAsync();
@@ -131,6 +150,113 @@ public sealed class FakeDiscord : IDisposable
         context.Response.ContentLength64 = bytes.Length;
         await context.Response.OutputStream.WriteAsync(bytes);
         context.Response.Close();
+    }
+
+    /// <summary>
+    /// Discord's Gateway, enough of it to be identified with and dispatched from.
+    /// </summary>
+    /// <remarks>
+    /// A real websocket on the wire: the plugin performs a real RFC 6455 handshake, masks its
+    /// frames, and is disconnected if it gets any of that wrong. Faking the transport would have
+    /// left the one piece of protocol code in this integration untested.
+    /// </remarks>
+    private async Task GatewayAsync(HttpListenerContext context)
+    {
+        HttpListenerWebSocketContext upgraded = await context.AcceptWebSocketAsync(subProtocol: null);
+        WebSocket socket = upgraded.WebSocket;
+
+        await SendAsync(socket, """{"op":10,"d":{"heartbeat_interval":45000}}""");
+
+        var buffer = new byte[64 * 1024];
+        var sequence = 0;
+
+        while (socket.State == WebSocketState.Open && !_stopping.IsCancellationRequested)
+        {
+            WebSocketReceiveResult received;
+
+            try
+            {
+                received = await socket.ReceiveAsync(
+                    new ArraySegment<byte>(buffer), _stopping.Token);
+            }
+            catch (Exception ending) when (ending is WebSocketException or OperationCanceledException)
+            {
+                return;
+            }
+
+            if (received.MessageType == WebSocketMessageType.Close)
+            {
+                return;
+            }
+
+            JsonNode? frame = JsonNode.Parse(Encoding.UTF8.GetString(buffer, 0, received.Count));
+
+            if (frame is null)
+            {
+                continue;
+            }
+
+            lock (GatewaySent)
+            {
+                GatewaySent.Add(frame);
+            }
+
+            if (frame["op"]?.GetValue<int>() != 2)
+            {
+                continue;
+            }
+
+            await SendAsync(socket, JsonSerializer.Serialize(new
+            {
+                op = 0,
+                s = ++sequence,
+                t = "READY",
+                d = new
+                {
+                    session_id = "session-1",
+                    resume_gateway_url = $"ws://127.0.0.1:{Port}",
+                    user = new { id = "999000999000999000", username = "aurora", bot = true },
+                    guilds = Array.Empty<object>(),
+                },
+            }));
+
+            _identified.TrySetResult();
+
+            foreach (var dispatch in GatewayDispatches)
+            {
+                await SendAsync(socket, dispatch.Replace("\"s\":0", $"\"s\":{++sequence}", StringComparison.Ordinal));
+            }
+        }
+    }
+
+    private async Task SendAsync(WebSocket socket, string text) =>
+        await socket.SendAsync(
+            Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, endOfMessage: true,
+            _stopping.Token);
+
+    /// <summary>A MESSAGE_CREATE the gateway will push once the plugin has identified.</summary>
+    public FakeDiscord PushesMessage(
+        string id, string content, string authorId = "444444444444444444",
+        string authorName = "paulo", bool authorIsBot = false)
+    {
+        GatewayDispatches.Add(JsonSerializer.Serialize(new
+        {
+            op = 0,
+            s = 0,
+            t = "MESSAGE_CREATE",
+            d = new
+            {
+                id,
+                channel_id = "222222222222222222",
+                guild_id = "111111111111111111",
+                content,
+                timestamp = "2026-08-26T12:00:00+00:00",
+                author = new { id = authorId, username = authorName, bot = authorIsBot },
+                mentions = Array.Empty<object>(),
+            },
+        }));
+
+        return this;
     }
 
     private static int FreePort()

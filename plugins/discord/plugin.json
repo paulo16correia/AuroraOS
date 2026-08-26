@@ -7,11 +7,12 @@
   "max_data_class": "PRIVATE",
   "documentation_ref": "docs/guides/discord.md",
   "required_permissions": [
-    "discord.read",
+    "discord.channel.admin",
     "discord.message.write",
+    "discord.presence",
     "discord.reaction.write",
-    "discord.thread.write",
-    "discord.channel.admin"
+    "discord.read",
+    "discord.thread.write"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -814,6 +815,85 @@
       "reversible": true,
       "rate_limit_per_minute": 5,
       "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.gateway.status",
+      "title": "Connection status",
+      "description": "Whether Aurora is signed in to Discord, and as whom.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 5,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.gateway.connect",
+      "title": "Go online",
+      "description": "Signs in to Discord's Gateway. Aurora becomes visible as online to everybody in every server the bot is in, and begins receiving what people write.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.gateway.connect"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 5,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.gateway.disconnect",
+      "title": "Go offline",
+      "description": "Signs out. Aurora stops receiving messages and shows as offline.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.gateway.disconnect"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 5,
+      "timeout_seconds": 10,
       "idempotent": true,
       "audit_level": "FULL"
     }

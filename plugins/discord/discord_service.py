@@ -15,10 +15,13 @@ import json
 import os
 import ssl
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from gateway import Gateway
 
 DEFAULT_API = "https://discord.com/api/v10"
 USER_AGENT = "DiscordBot (https://github.com/paulo16correia/AuroraOS, 1.0.0)"
@@ -450,6 +453,47 @@ def threads_archive(api, args, nonce=None):
                          "locked": bool(meta.get("locked", False))}}
 
 
+def gateway_connect(state, args, nonce=None):
+    """Signs in to the Gateway, which is how Aurora becomes visible in Discord.
+
+    An effect, and declared as one: the bot shows as online to everybody in every server it is in,
+    and starts receiving what people write. That is a change other people can see, so it is not
+    something Aurora does because it felt like listening.
+    """
+    gateway = state.get("gateway")
+
+    if gateway is None:
+        raise Refused(E_NO_CREDENTIALS, "no bot token was supplied")
+
+    gateway.start()
+
+    # Waited for, briefly, so the answer says what actually happened rather than "starting".
+    for _ in range(50):
+        if gateway.state in ("connected", "disconnected"):
+            break
+        time.sleep(0.1)
+
+    if gateway.state != "connected":
+        raise Refused(
+            E_NETWORK, "could not sign in to the Gateway: %s" % (gateway.detail or gateway.state))
+
+    return gateway.status()
+
+
+def gateway_disconnect(state, args, nonce=None):
+    gateway = state.get("gateway")
+
+    if gateway is not None:
+        gateway.stop()
+
+    return {"state": "disconnected"}
+
+
+def gateway_status(state, args):
+    gateway = state.get("gateway")
+    return gateway.status() if gateway else {"state": "disconnected", "detail": "no credentials"}
+
+
 READS = {
     "discord.guilds.list": guilds_list,
     "discord.guilds.get": guilds_get,
@@ -482,15 +526,49 @@ WRITES = {
 # ---------------------------------------------------------------------------
 
 
+# The gateway speaks from its own thread while the main loop answers calls. Two writers on one
+# pipe interleave halfway through a line, and Aurora would drop both as unparseable.
+_saying = threading.Lock()
+
+
 def say(frame):
-    sys.stdout.write(json.dumps(frame) + "\n")
-    sys.stdout.flush()
+    with _saying:
+        sys.stdout.write(json.dumps(frame) + "\n")
+        sys.stdout.flush()
 
 
-def handle(api, frame):
+def report(kind, payload):
+    """What the gateway calls when something happened on Discord.
+
+    An event frame, which Aurora publishes as an external observation. Never a result, and never
+    anything Aurora treats as a request: the plugin has no way to ask Aurora to do something, by
+    design.
+    """
+    say({"kind": "event", "type": kind, "payload": payload})
+
+
+# Capabilities about the connection itself rather than about Discord's API.
+GATEWAY_READS = {"discord.gateway.status": gateway_status}
+GATEWAY_WRITES = {
+    "discord.gateway.connect": gateway_connect,
+    "discord.gateway.disconnect": gateway_disconnect,
+}
+
+
+def handle(state, frame):
     capability = frame.get("capability", "")
     args = frame.get("input") or {}
     nonce = frame.get("idempotency_key")
+
+    if capability in GATEWAY_READS:
+        return GATEWAY_READS[capability](state, args)
+    if capability in GATEWAY_WRITES:
+        return GATEWAY_WRITES[capability](state, args, nonce)
+
+    api = state.get("api")
+
+    if api is None:
+        raise Refused(E_NO_CREDENTIALS, "no bot token was supplied")
 
     if capability in READS:
         return READS[capability](api, args)
@@ -500,8 +578,15 @@ def handle(api, frame):
     raise Refused(E_UNSUPPORTED, "this plugin does not offer '%s'" % capability)
 
 
+def gateway_url(base):
+    """Where the Gateway lives, derived from the API base so a stand-in works unchanged."""
+    parts = urllib.parse.urlparse(base)
+    scheme = "wss" if parts.scheme == "https" else "ws"
+    return "%s://%s/gateway" % (scheme, parts.netloc)
+
+
 def main():
-    api = None
+    state = {"api": None, "gateway": None}
 
     for line in sys.stdin:
         try:
@@ -517,44 +602,45 @@ def main():
                 # Aurora refuses to start a service whose secret is missing, so reaching here means
                 # something else went wrong. Said once, without the value that is not there.
                 say({"kind": "ready", "degraded": True, "reason": E_NO_CREDENTIALS})
-                api = None
             else:
                 try:
-                    api = Discord(token, api_base(frame.get("endpoints") or []))
+                    base = api_base(frame.get("endpoints") or [])
+                    state["api"] = Discord(token, base)
+
+                    # Built, not started. Being visible in Discord is an effect, and an effect
+                    # waits for the capability that declares it.
+                    state["gateway"] = Gateway(token, gateway_url(base), report)
                     say({"kind": "ready"})
                 except Refused as misconfigured:
-                    api = None
                     say({"kind": "ready", "degraded": True, "reason": misconfigured.code})
 
         elif kind == "call":
             answer = {"kind": "result", "id": frame.get("id")}
 
-            if api is None:
-                answer.update({"ok": False, "refusal": E_NO_CREDENTIALS,
-                               "detail": "no bot token was supplied"})
-            else:
-                try:
-                    answer.update({"ok": True, "output": handle(api, frame)})
-                except Refused as refused:
-                    answer.update({"ok": False, "refusal": refused.code,
-                                   "detail": refused.detail})
-                    if refused.retry_after:
-                        answer["retry_after_seconds"] = round(refused.retry_after, 1)
-                except Unknown as unsure:
-                    # The one answer that is neither success nor failure.
-                    answer.update({"ok": False, "outcome": "unknown", "detail": unsure.detail})
-                except KeyError as missing:
-                    answer.update({"ok": False, "refusal": E_INPUT,
-                                   "detail": "missing field %s" % missing})
-                except Exception as unexpected:
-                    # The type only. The message could contain anything the interpreter picked up,
-                    # including a URL with a token in it.
-                    answer.update({"ok": False, "refusal": E_DISCORD,
-                                   "detail": "unexpected %s" % type(unexpected).__name__})
+            try:
+                answer.update({"ok": True, "output": handle(state, frame)})
+            except Refused as refused:
+                answer.update({"ok": False, "refusal": refused.code,
+                               "detail": refused.detail})
+                if refused.retry_after:
+                    answer["retry_after_seconds"] = round(refused.retry_after, 1)
+            except Unknown as unsure:
+                # The one answer that is neither success nor failure.
+                answer.update({"ok": False, "outcome": "unknown", "detail": unsure.detail})
+            except KeyError as missing:
+                answer.update({"ok": False, "refusal": E_INPUT,
+                               "detail": "missing field %s" % missing})
+            except Exception as unexpected:
+                # The type only. The message could contain anything the interpreter picked up,
+                # including a URL with a token in it.
+                answer.update({"ok": False, "refusal": E_DISCORD,
+                               "detail": "unexpected %s" % type(unexpected).__name__})
 
             say(answer)
 
         elif kind == "shutdown":
+            if state.get("gateway"):
+                state["gateway"].stop()
             break
 
 
