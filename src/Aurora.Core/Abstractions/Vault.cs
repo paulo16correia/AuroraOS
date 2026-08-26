@@ -96,6 +96,17 @@ public interface IVault
     Task<SecretReference?> GetReferenceAsync(string secretReferenceId, CancellationToken ct);
 
     /// <summary>
+    /// The reference filed under <paramref name="purpose"/>, if there is one.
+    /// </summary>
+    /// <remarks>
+    /// Secrets are keyed by an opaque id, which suits a caller that stored one and kept the
+    /// reference. It does not suit a caller that needs "whatever is on file for this plugin under
+    /// this name" — a plugin declares the secrets it needs by name and cannot know an id Aurora
+    /// generated. The purpose is that name, and it is unique.
+    /// </remarks>
+    Task<SecretReference?> FindByPurposeAsync(string purpose, CancellationToken ct);
+
+    /// <summary>
     /// Leases a secret to one tool call. Refuses when the reference is unknown, revoked, expired,
     /// or not allowed for the calling tool.
     /// </summary>

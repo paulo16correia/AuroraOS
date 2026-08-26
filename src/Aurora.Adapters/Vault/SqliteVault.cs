@@ -92,6 +92,23 @@ public sealed class SqliteVault : IVault
         return await reader.ReadAsync(ct).ConfigureAwait(false) ? ReadReference(reader) : null;
     }
 
+    public async Task<SecretReference?> FindByPurposeAsync(string purpose, CancellationToken ct)
+    {
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, provider, locator, purpose, allowed_tool_ids, rotation_due_at_utc, status,
+                   nonce, ciphertext, tag
+              FROM vault_item WHERE purpose = @purpose
+             ORDER BY created_at_utc DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@purpose", purpose);
+
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        return await reader.ReadAsync(ct).ConfigureAwait(false) ? ReadReference(reader) : null;
+    }
+
     public async Task<EphemeralSecretHandle> LeaseAsync(
         string secretReferenceId, ToolCallRef toolCall, CancellationToken ct)
     {

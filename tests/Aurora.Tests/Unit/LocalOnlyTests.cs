@@ -15,7 +15,14 @@ namespace Aurora.Tests.Unit;
 /// Unusual, and worth it: local-only is the property every other guarantee in Aurora is built on
 /// top of, and the way it would be lost is one line in one pull request that nobody thought about.
 /// </para>
-/// </remarks>
+/// <para>
+/// <b>What local-only means since docs/adr/0067.</b> Aurora's own process opens no connection —
+/// that is what these tests check, and it did not weaken when plugins were granted the network. A
+/// plugin runs in its own sandboxed subprocess, and an integration that must reach a service does
+/// it from there, with hosts the owner named and agreed to. The control plane stays here: the
+/// kernel, policy, approvals, audit, memory and every credential never leave the machine. A plugin
+/// reaching Discord is an external effect Aurora governs, not Aurora becoming networked.
+/// </para>
 public sealed class LocalOnlyTests
 {
     /// <summary>Constructs that can reach another machine.</summary>
@@ -105,6 +112,23 @@ public sealed class LocalOnlyTests
         // A literal, so no configuration and no environment variable can point it elsewhere.
         Assert.Contains("http://127.0.0.1:", text, StringComparison.Ordinal);
         Assert.DoesNotContain("http://\" +", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuroraStillOpensNothingItselfNowThatPluginsMay()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(SourceRoot(), "Aurora.Adapters", "Plugins", "ServiceProcess.cs"));
+
+        // The service host starts a process and talks to it over pipes. If it ever grows a socket
+        // of its own, the boundary has moved from "the plugin reaches out" to "Aurora does", and
+        // the sandbox stops being what stands between the two.
+        foreach ((var pattern, _) in Outbound)
+        {
+            Assert.False(
+                Regex.IsMatch(source, pattern, RegexOptions.None, TimeSpan.FromSeconds(2)),
+                $"the service host matched {pattern}; the plugin is what reaches out, not Aurora");
+        }
     }
 
     [Fact]

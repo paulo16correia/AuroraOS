@@ -34,6 +34,23 @@ public static class PluginRefusal
 
     /// <summary>The manifest declares network endpoints and the owner has not granted them.</summary>
     public const string NetworkNotGranted = "NETWORK_NOT_GRANTED";
+
+    /// <summary>A secret the plugin needs is not in the vault, so it was never started.</summary>
+    public const string SecretMissing = "SECRET_MISSING";
+
+    /// <summary>The service would not start, or stopped answering.</summary>
+    public const string ServiceUnavailable = "SERVICE_UNAVAILABLE";
+
+    /// <summary>
+    /// The call reached the plugin and its outcome is genuinely unknown.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from a failure, and the distinction carries real weight: a write whose answer never
+    /// arrived may have been performed. Reporting it as failed invites a retry that does it twice;
+    /// reporting it as done invites a caller to rely on something that may not exist. Aurora cannot
+    /// tell from here, so it says so rather than guessing (<see cref="PluginOutcome.Unknown"/>).
+    /// </remarks>
+    public const string AmbiguousOutcome = "AMBIGUOUS_OUTCOME";
     public const string UndeclaredDataClass = "UNDECLARED_DATA_CLASS";
     public const string PermissionNotGranted = "PERMISSION_NOT_GRANTED";
     public const string AboveDeclaredClassification = "ABOVE_DECLARED_CLASSIFICATION";
