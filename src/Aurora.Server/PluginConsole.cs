@@ -172,10 +172,53 @@ public static class PluginConsole
             return true;
         }
 
+        // Asked separately, because it is a separate decision. Somebody can reasonably want a
+        // plugin's capabilities and not want it talking to the internet, and rolling the two into
+        // one question means the narrower answer cannot be given (docs/adr/0067).
+        var endpoints = new List<string>();
+
+        if (sealed_.NetworkEndpoints.Count > 0)
+        {
+            Console.WriteLine($"""
+
+                [Aurora] It also asks to reach {string.Join(", ", sealed_.NetworkEndpoints)}.
+
+                Granting this lets the plugin send whatever it holds to those hosts. Aurora cannot
+                narrow it further: no sandbox on any platform filters outbound traffic by hostname,
+                so what you are agreeing to is the plugin having a network, with these names as the
+                record of what it said it would use.
+                """);
+
+            Console.Write("[Aurora] Let it reach the network? [y/N] ");
+
+            if (string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase))
+            {
+                endpoints.AddRange(sealed_.NetworkEndpoints);
+            }
+            else
+            {
+                Console.WriteLine(
+                    "[Aurora] Installing without the network. Anything needing it will be refused.");
+            }
+        }
+
+        if ((sealed_.RequiredSecrets ?? []).Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("[Aurora] It needs secrets before it will start:");
+
+            foreach (PluginSecretRequirement secret in sealed_.RequiredSecrets!)
+            {
+                Console.WriteLine($"           {secret.Name} — {secret.Purpose}");
+                Console.WriteLine(
+                    $"           aurora secret set {sealed_.PluginId} {secret.Name}");
+            }
+        }
+
         Registry registry = Open(options);
 
         PluginInstallation installed = registry.Plugins.InstallAsync(
-            sealed_, sealed_.RequiredPermissions, $"console/{Environment.UserName}",
+            sealed_, sealed_.RequiredPermissions, endpoints, $"console/{Environment.UserName}",
             CancellationToken.None).GetAwaiter().GetResult();
 
         Console.WriteLine($"""

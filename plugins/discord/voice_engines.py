@@ -77,6 +77,21 @@ def find_tts():
     return None
 
 
+def has_transport():
+    """Whether the leg that actually carries audio exists.
+
+    It does not. `voice_transport.py` would hold the voice websocket, the UDP flow, the AEAD cipher
+    and the Opus framing, and it is not written (docs/adr/0068).
+
+    Checked rather than assumed because the alternative is worse than refusing: joining is a
+    gateway message, so Aurora would appear in the channel and be seen by everybody in it, while
+    hearing nothing and saying nothing. A silent presence in somebody's conversation reads as
+    Aurora ignoring them, and there is no way for them to tell it apart from a bug.
+    """
+    return os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "voice_transport.py"))
+
+
 def readiness():
     """What voice can and cannot do on this machine, as a plain answer.
 
@@ -87,8 +102,12 @@ def readiness():
     opus = find_opus()
     stt = find_stt()
     tts = find_tts()
+    transport = has_transport()
 
     missing = []
+    if not transport:
+        missing.append(
+            "the voice audio transport, which is not implemented (see docs/adr/0068)")
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
     if not stt:
@@ -97,9 +116,10 @@ def readiness():
         missing.append("a local text-to-speech program (piper, or `say` on macOS)")
 
     return {
-        "can_join": bool(opus),
-        "can_listen": bool(opus and stt),
-        "can_speak": bool(opus and tts),
+        "can_join": bool(opus and transport),
+        "can_listen": bool(opus and stt and transport),
+        "can_speak": bool(opus and tts and transport),
+        "transport": transport,
         "opus": opus,
         "stt": stt["name"] if stt else None,
         "tts": tts["name"] if tts else None,

@@ -15,6 +15,7 @@ var options = AuroraServerOptions.FromConfiguration(builder.Configuration);
 // the agent, so any endpoint it can reach is one the agent could use to enrol its own.
 if (PassphraseConsole.TryHandle(args, options)
     || OperationsConsole.TryHandle(args, options)
+    || SecretConsole.TryHandle(args, options)
     || PluginConsole.TryHandle(args, options))
 {
     return;

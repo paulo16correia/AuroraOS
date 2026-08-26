@@ -287,4 +287,59 @@ public sealed class DiscordVoiceTests : IDisposable
         public Task ReceiveAsync(PluginObservation observation, CancellationToken ct) =>
             Task.CompletedTask;
     }
+
+    [Fact]
+    public async Task JoiningIsRefusedWhileTheAudioTransportDoesNotExist()
+    {
+        var root = TestTemp.Folder("discord-voice-3");
+        var directory = Path.Combine(root, "plugin-discord");
+        Directory.CreateDirectory(Path.Combine(directory, "work"));
+
+        foreach (var file in Directory.EnumerateFiles(PluginSource()))
+        {
+            File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                Path.Combine(directory, "discord_service.py"),
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        File.WriteAllText(
+            Path.Combine(directory, "config.json"),
+            JsonSerializer.Serialize(new { api_base = _discord.BaseUrl }));
+
+        var json = File.ReadAllText(Path.Combine(PluginSource(), "plugin.json"));
+        PluginManifest manifest = PluginManifestReader.Read(json, []).Manifest! with
+        {
+            NetworkEndpoints = ["127.0.0.1"],
+        };
+
+        await using var host = new ServicePluginHost(
+            root, new UnconfinedSandbox("the sandbox is covered by its own tests"),
+            new Token(), new Sink(), new TestClock(DateTimeOffset.UnixEpoch),
+            allowUnconfined: true);
+
+        PluginResult status = await host.InvokeAsync(
+            manifest,
+            new PluginInvocation(
+                "plugin/discord", "discord.voice.status", "{}", Sensitivity.Private, null,
+                NetworkGranted: true),
+            Ct);
+
+        JsonNode capabilities = JsonNode.Parse(status.OutputJson!)!["capabilities"]!;
+
+        // Joining is a gateway message, so it would succeed on its own — Aurora would appear in
+        // the channel, seen by everybody in it, hearing nothing and saying nothing. A silent
+        // presence in somebody's conversation reads as being ignored, and nobody in the call can
+        // tell it apart from a bug. So the transport is part of what "can join" means.
+        Assert.False(capabilities["transport"]!.GetValue<bool>());
+        Assert.False(capabilities["can_join"]!.GetValue<bool>());
+
+        Assert.Contains(
+            capabilities["missing"]!.AsArray().Select(m => m!.GetValue<string>()),
+            m => m.Contains("transport", StringComparison.Ordinal));
+    }
 }

@@ -37,8 +37,12 @@ Installing asks you two things separately, and both are decisions:
 The bot token goes in the vault, never in the manifest:
 
 ```bash
-aurora vault put --purpose "plugin/plugin/discord/bot_token"
+aurora secret set plugin/discord bot_token
 ```
+
+It asks for the value on the next line with the terminal's echo off. It is never taken as an
+argument, because a command line is kept in shell history and is visible in the process table to
+anything else running as you.
 
 It is handed to the plugin over a pipe when the process starts — not through the environment, which
 is readable from outside the process on most systems. It never appears in the audit log, in an
