@@ -280,7 +280,7 @@ public sealed class Law007ProducerTests
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
                 new SqliteScheduler(db.Factory, bus, new Adapters.Cognition.SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
                 clock),
-            new InMemoryIdempotencyStore(), clock, bus);
+            new InMemoryIdempotencyStore(), audit, clock, bus);
 
         await self.RefreshAsync("mind/local", Ct);
         await self.RefreshAsync("mind/local", Ct);

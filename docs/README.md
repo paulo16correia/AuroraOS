@@ -35,7 +35,7 @@ Strategy and operation
 052 Missions → 05 Objectives/Plans/Tasks → 07 Personality → 08 Learning
                          │
                          ▼
-09 Security → 10 API → 11 UI → 12 Operation → 13 Roadmap → 090 Review Gate
+09 Security → 10 API → 11 UI → 13 Roadmap → 090 Review Gate
                                                                     │
                                                                     ▼
 Freeze v1.0 → 100 Implementation order → 105 Tests → 110 Standards → 120 Done
@@ -103,14 +103,25 @@ A later RFC cannot contradict a previous one without creating an architectural d
 | 09 | Security | 01–08 |
 | 10 | API and events | 02–09 |
 | 11 | User interface | 10 |
-| 12 | Implementation and operation | 09–11 |
-| 13 | Roadmap and acceptance | 00–12 |
+| 13 | Roadmap and acceptance | 00–11 |
 | 060 | Plugins and Extensions SDK | 06, 09, 040 |
 | 090 | Architecture Review Gate | 000–060 |
 | 100 | Implementation order | Architecture Freeze v1.0 |
 | 105 | Testing strategy | Laws, 090, 100 |
 | 110 | Coding Standard | 040, 050, 090, 100 |
 | 120 | Definition of Done | 100, 105, 110 |
+
+### Withdrawn
+
+| RFC | Theme | Withdrawn by |
+| --- | --- | --- |
+| 12 | Implementation and operation | `adr/0045-local-only.md` |
+
+RFC 12 assumed a deployed installation — a VPS, a container, a reverse proxy, a release pipeline.
+Aurora runs on the owner's own machine and nowhere else, so the RFC was withdrawn rather than left
+in the index as an obligation nobody intends to meet. The operational half it also covered — backup,
+restore verification, health, metrics — was kept and is implemented; it is a single machine's
+operations, not a deployment's.
 
 ## Post-freeze governance
 

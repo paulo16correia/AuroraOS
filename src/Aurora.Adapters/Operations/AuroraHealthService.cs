@@ -143,7 +143,8 @@ public sealed class AuroraHealthService : IHealthService
     {
         ResourceState state = await _resources.ObserveAsync(ct).ConfigureAwait(false);
 
-        // Disk is called out separately because RFC 12 does: a full disk is the one resource
+        // Disk is called out separately because the withdrawn RFC 12 did, and that part of it was
+        // kept (docs/adr/0045): a full disk is the one resource
         // problem that can cost data rather than throughput.
         var detail = state.DiskPct is { } disk
             ? $"{state.Status}, disk {disk * 100:F0}%"

@@ -1,5 +1,14 @@
+using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
+using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Genomes;
+using Aurora.Adapters.Operations;
+using Aurora.Adapters.Plugins.Sandboxes;
+using Aurora.Adapters.Resources;
+using Aurora.Adapters.Scheduling;
+using Aurora.Adapters.Self;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Knowledge;
 using Aurora.Adapters.Memories;
@@ -7,6 +16,7 @@ using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Vault;
 using Aurora.Adapters.World;
 using Aurora.Core.Abstractions;
+using Microsoft.Data.Sqlite;
 using Aurora.Core.Contracts;
 using Aurora.Tests.Support;
 using Xunit;
@@ -14,7 +24,7 @@ using Xunit;
 namespace Aurora.Tests.Unit;
 
 /// <summary>
-/// Compliance tests for LAW-001 to LAW-007.
+/// Compliance tests for LAW-001 to LAW-008.
 /// </summary>
 /// <remarks>
 /// These are the tests the v1.0 architecture review names as a mandatory condition before any
@@ -44,6 +54,28 @@ public sealed class LawComplianceTests
 
     private static IReadOnlyList<MemoryAnchor> Anchor() =>
         [new MemoryAnchor(MemoryAnchorKind.Conversation, "conversation/1", "stated in this conversation")];
+
+    private static readonly MemoryAccessContext Access = new("owner", ["policy/owner"], Sensitivity.Private);
+
+    private static SqliteAuditStore TestAudit(SqliteTestDb db, TestClock clock) => new(
+        db.Factory, clock, new byte[32],
+        new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"law008-{Guid.NewGuid():N}")));
+
+    /// <summary>A real Self over a real audit store, because the trace is what is being asserted.</summary>
+    private static SqliteSelfModel SelfOver(SqliteTestDb db, TestClock clock, IAuditStore audit)
+    {
+        var bus = TestBus.Over(db.Factory, clock);
+        var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
+
+        var health = new AuroraHealthService(
+            db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
+            new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock),
+            PluginSandbox.ForThisMachine(), clock);
+
+        return new SqliteSelfModel(
+            db.Factory, new StaticCapabilityRegistry([]), new FakePolicy(true), resources, health,
+            new InMemoryIdempotencyStore(), audit, clock, bus);
+    }
 
     // ================= LAW-001 — Nothing enters Mind directly =================
     // Control: tests must reject a Memory, Belief, Preference or WorldAssertion without provenance.
@@ -453,6 +485,147 @@ public sealed class LawComplianceTests
         Subscription paused = await bus.SubscribeAsync(subscription, Ct);
         Assert.Equal(SubscriptionStatus.Paused, paused.Status);
         Assert.False(string.IsNullOrWhiteSpace(paused.Diagnosis));
+    }
+
+    // ================= LAW-008 — Identity integrity by Self Model =================
+    // Control: the reasoning interface receives Identity and SelfModel from the Kernel and does not
+    // reach persistence; a description is validated against a persisted identity before it is made;
+    // the trace records SELF_MODEL(USED_FOR_SELF_DESCRIPTION) with the identity reference; and no
+    // later argument, message or provider can replace the persisted name, purpose or Genome.
+
+    [Fact]
+    public void Law008_TheReasoningInterfaceCannotReachIdentityOrPersistence()
+    {
+        Type[] forbidden =
+        [
+            typeof(SelfModel), typeof(SafeSelfDescription), typeof(Genome), typeof(GenomeResolution),
+            typeof(ISelfModel), typeof(IGenomeService), typeof(IGenomeSigner),
+            typeof(IMemoryService), typeof(IMindStateService), typeof(IAuditStore),
+        ];
+
+        var violations = new List<string>();
+
+        foreach (MethodInfo method in typeof(IReasoner).GetMethods())
+        {
+            IEnumerable<Type> touched = method.GetParameters()
+                .Select(p => p.ParameterType)
+                .Append(method.ReturnType)
+                .SelectMany(Unwrap);
+
+            foreach (Type type in touched.Where(t => forbidden.Contains(t)))
+            {
+                violations.Add($"IReasoner.{method.Name} touches {type.Name}");
+            }
+        }
+
+        // A provider proposes an action from a catalogue. It is handed no identity, no self model
+        // and no way to read one, so there is no path by which the language layer could become the
+        // source of truth about who Aurora is.
+        Assert.Empty(violations);
+
+        // And what it may return has nowhere to put an identity claim either: an action id, an
+        // input, a confidence and a provenance string. Adding a field here would be the way this
+        // law is broken, so the shape itself is asserted.
+        Assert.Equal(
+            ["ActionId", "Input", "Confidence", "Via"],
+            typeof(ReasonerProposal).GetProperties().Select(p => p.Name).Where(n => n != "EqualityContract"));
+
+        static IEnumerable<Type> Unwrap(Type type) =>
+            type.IsGenericType ? type.GetGenericArguments().Append(type) : [type];
+    }
+
+    [Fact]
+    public async Task Law008_ASelfDescriptionRecordsWhichIdentityItWasDerivedFrom()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        var audit = TestAudit(db, clock);
+        ISelfModel self = SelfOver(db, clock, audit);
+
+        SelfModel persisted = await self.RefreshAsync("local", Ct);
+        SafeSelfDescription description = await self.DescribeAsync(Access, Ct);
+
+        IReadOnlyList<AuditRecordView> records = await audit.QueryAsync(0, 50, Ct);
+
+        AuditRecordView trace = Assert.Single(records, r => r.ActionId == "SELF_MODEL");
+
+        Assert.Equal("USED_FOR_SELF_DESCRIPTION", trace.Outcome);
+
+        // "with the identity reference": the record names the identity the description came from,
+        // so a description read later can be tied back to the persisted model that produced it.
+        Assert.Equal(persisted.IdentityRef, trace.Via);
+        Assert.Contains(persisted.Version.ToString(CultureInfo.InvariantCulture), trace.Decision!);
+
+        // "never with invented content or secrets": nothing the description itself said is copied
+        // into the trace. Every field is a reference, a version or a fixed word.
+        var written = string.Join("|", trace.Via, trace.Decision, trace.Outcome, trace.Reason);
+
+        Assert.All(
+            description.CanDo.Concat(description.CannotDo).Append(description.HealthSummary),
+            said => Assert.DoesNotContain(said, written, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Law008_AModelThatNamesNoIdentityDescribesNothing()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(Now);
+        ISelfModel self = SelfOver(db, clock, TestAudit(db, clock));
+
+        await self.RefreshAsync("local", Ct);
+
+        // Somebody with write access to the database clears the identity the model belongs to.
+        // The row still looks like a self model, and every other field still reads correctly.
+        await using (SqliteConnection connection = await db.Factory.OpenAsync(Ct))
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "UPDATE self_model SET identity_ref = '';";
+            await command.ExecuteNonQueryAsync(Ct);
+        }
+
+        // Describing anyway would be Aurora asserting an identity it cannot derive from a
+        // persisted one, which is the single thing this law forbids.
+        await Assert.ThrowsAsync<SelfException>(() => self.DescribeAsync(Access, Ct));
+    }
+
+    [Fact]
+    public async Task Law008_AnAlteredIdentityTemplateBirthsNoInstance()
+    {
+        using var db = new SqliteTestDb();
+        using var signer = new EcdsaGenomeSigner(ECDsa.Create(ECCurve.NamedCurves.nistP256));
+        var service = new SqliteGenomeService(
+            db.Factory, signer, new StaticCapabilityRegistry([]), new TestClock(Now));
+
+        Genome released = signer.Seal(new Genome(
+            "genome-1", "Aurora Personal", "1.0.0", null, GenomeStatus.Released,
+            "constitution-1", "laws-1", "identity/base", "personality/base", "development/base",
+            MindSchemaVersion: 1, AllowedCapabilityIds: [], PolicyBundleRefs: ["policy/base"],
+            DefaultLocales: ["pt-PT"], BootstrapConfigurationRef: "bootstrap/base",
+            IntegrityHash: string.Empty, Signature: string.Empty));
+
+        // The identity template is the genome's answer to who this instance is. Swapping it for
+        // another one — the substitution this law exists to prevent — is refused on the way in.
+        await Assert.ThrowsAsync<GenomeException>(() => service.RegisterAsync(
+            released with { BaseIdentityTemplateRef = "identity/somebody-else" }, Ct));
+
+        // And refused again on the way out, which is the half that matters: somebody who cannot go
+        // through RegisterAsync can still write to the database, and a check that only ran at
+        // registration would let that identity through at the moment an instance is created.
+        await service.RegisterAsync(released, Ct);
+
+        await using (SqliteConnection connection = await db.Factory.OpenAsync(Ct))
+        {
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "UPDATE genome SET base_identity_template_ref = 'identity/somebody-else';";
+
+            await command.ExecuteNonQueryAsync(Ct);
+        }
+
+        GenomeException refused = await Assert.ThrowsAsync<GenomeException>(
+            () => service.ResolveAsync("genome-1", new InstallationContext("i1", [], [], []), Ct));
+
+        Assert.Contains("signature", refused.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class NullConsumer(string name) : IEventConsumer

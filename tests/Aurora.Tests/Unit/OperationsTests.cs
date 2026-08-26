@@ -15,7 +15,8 @@ using Xunit;
 namespace Aurora.Tests.Unit;
 
 /// <summary>
-/// Operations (RFC 12): can this build serve traffic, and can its clock be trusted.
+/// Operations: can this build serve traffic, and can its clock be trusted (docs/adr/0045, which
+/// kept the operational half of the withdrawn RFC 12).
 /// </summary>
 public sealed class OperationsTests
 {

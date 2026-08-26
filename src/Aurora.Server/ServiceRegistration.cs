@@ -92,7 +92,9 @@ public static class ServiceRegistration
         // The person's credential, which the agent does not hold (RFC 11).
         services.AddSingleton<OperatorSessions>();
 
-        // Operations (RFC 12): can this build serve traffic, and can its clock be trusted.
+        // Operations: can this build serve traffic, and can its clock be trusted. RFC 12 asked
+        // for this and was then withdrawn with the rest of deployment; the operational half was
+        // kept deliberately (docs/adr/0045), because one machine still has operations.
         // Internal deliberation (RFC 025), with its own key: the trace is protected technical
         // material kept for a week, and the vault's secrets are kept indefinitely. Sharing a key
         // would mean they stand or fall together.

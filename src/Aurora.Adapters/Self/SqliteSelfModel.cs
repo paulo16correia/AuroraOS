@@ -4,6 +4,7 @@ using Aurora.Adapters.Persistence;
 using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Core.Cryptography;
 using Microsoft.Data.Sqlite;
 
 namespace Aurora.Adapters.Self;
@@ -33,6 +34,7 @@ public sealed class SqliteSelfModel : ISelfModel
     private readonly IResourceModel _resources;
     private readonly IHealthService _health;
     private readonly IIdempotencyStore _idempotency;
+    private readonly IAuditStore _audit;
     private readonly IEventBus _bus;
     private readonly IClock _clock;
 
@@ -43,6 +45,7 @@ public sealed class SqliteSelfModel : ISelfModel
         IResourceModel resources,
         IHealthService health,
         IIdempotencyStore idempotency,
+        IAuditStore audit,
         IClock clock, IEventBus bus)
     {
         _factory = factory;
@@ -51,6 +54,7 @@ public sealed class SqliteSelfModel : ISelfModel
         _resources = resources;
         _health = health;
         _idempotency = idempotency;
+        _audit = audit;
         _clock = clock;
         _bus = bus;
     }
@@ -147,11 +151,28 @@ public sealed class SqliteSelfModel : ISelfModel
             _ => OperationalState.Ready,
         };
 
+    /// <summary>
+    /// The action name LAW-008 requires in the trace, and the outcome it requires with it.
+    /// </summary>
+    internal const string SelfModelAction = "SELF_MODEL";
+
+    internal const string UsedForSelfDescription = "USED_FOR_SELF_DESCRIPTION";
+
     public async Task<SafeSelfDescription> DescribeAsync(
         MemoryAccessContext access, CancellationToken ct)
     {
         SelfModel model = await CurrentAsync(ct).ConfigureAwait(false)
             ?? await RefreshAsync("local", ct).ConfigureAwait(false);
+
+        // LAW-008: a description is derived from a persisted model belonging to an identity, or it
+        // is not made. A model with nothing to point at is not an identity Aurora can speak for,
+        // and answering anyway is how the language layer becomes the source of truth about who
+        // Aurora is.
+        if (string.IsNullOrWhiteSpace(model.IdentityRef))
+        {
+            throw new SelfException(
+                "the persisted self model names no identity; there is nothing to describe");
+        }
 
         var can = new List<string>();
         var cannot = new List<string>();
@@ -169,6 +190,21 @@ public sealed class SqliteSelfModel : ISelfModel
         {
             cannot.Add($"start anything on its own while {model.OperationalState}");
         }
+
+        // LAW-008's third control: the trace records that the self model was used to describe
+        // Aurora, and which identity it was derived from. Every field here is a reference or a
+        // version — there is no room for invented content, and nothing read from the description
+        // itself, which is what keeps the record true whatever the description said.
+        await _audit.AppendAsync(
+            new AuditEntry(
+                access.Requester, access.Requester,
+                SelfModelAction,
+                Hashing.Sha256Hex(model.IdentityRef),
+                UsedForSelfDescription,
+                Risk: "Low",
+                Via: model.IdentityRef,
+                Decision: $"self model version {model.Version}"),
+            ct).ConfigureAwait(false);
 
         return new SafeSelfDescription(
             model.OperationalState, can, cannot, model.HealthSummary,

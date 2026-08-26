@@ -112,7 +112,7 @@ public sealed class KernelDispatcherTests
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
                 new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
                 clock),
-            new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
+            new InMemoryIdempotencyStore(), audit, clock, TestBus.Over(db.Factory, clock));
     }
 
     private static SqliteBeliefSystem Beliefs(SqliteTestDb db, TestClock clock) =>
@@ -389,7 +389,7 @@ public sealed class KernelDispatcherTests
             new AuroraHealthService(
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
                 new SqliteScheduler(db.Factory, bus, cycle, clock), PluginSandbox.ForThisMachine(), clock),
-            new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
+            new InMemoryIdempotencyStore(), audit, clock, TestBus.Over(db.Factory, clock));
 
         var kernel = new AuroraKernel(
             new FakeReasoner(null), new FakeRegistry(effectful), new FakeValidator(true),

@@ -60,7 +60,7 @@ public sealed class SelfModelTests
             db.Factory,
             new Adapters.Capabilities.StaticCapabilityRegistry([Reader(), Sender()]),
             policy ?? new FakePolicy(true), resources, health,
-            idempotency ?? new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
+            idempotency ?? new InMemoryIdempotencyStore(), audit, clock, TestBus.Over(db.Factory, clock));
     }
 
     // ---- rule 2: three questions, three answers ----
