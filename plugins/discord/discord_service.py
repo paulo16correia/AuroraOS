@@ -21,7 +21,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import voice_engines
 from gateway import Gateway
+from voice_session import VoiceSession
 
 DEFAULT_API = "https://discord.com/api/v10"
 USER_AGENT = "DiscordBot (https://github.com/paulo16correia/AuroraOS, 1.0.0)"
@@ -453,6 +455,169 @@ def threads_archive(api, args, nonce=None):
                          "locked": bool(meta.get("locked", False))}}
 
 
+# ---------------------------------------------------------------------------
+# voice
+# ---------------------------------------------------------------------------
+
+E_VOICE_UNAVAILABLE = "voice_unavailable"
+E_NOT_IN_CALL = "not_in_a_call"
+
+
+def voice_status(state, args):
+    """What Aurora is doing in voice, and what this machine can do at all.
+
+    The readiness half is reported rather than discovered at the moment of failure: somebody
+    deciding whether to have Aurora join a call should be able to find out first, and an error in
+    the middle of a conversation is a bad way to learn that a codec is missing.
+    """
+    ready = voice_engines.readiness()
+    session = state.get("voice")
+
+    return {
+        "in_call": session is not None,
+        "session": session.snapshot() if session else None,
+        "muted": bool(state.get("voice_muted", False)),
+        "listening": bool(state.get("voice_listening", False)),
+        "capabilities": ready,
+    }
+
+
+def voice_list_channels(api, args):
+    channels = api.request("GET", "/guilds/%s/channels" % args["guild_id"])
+
+    return {"voice_channels": [
+        {"channel_id": c.get("id"), "name": c.get("name"),
+         "user_limit": c.get("user_limit", 0)}
+        for c in channels if c.get("type") == 2
+    ]}
+
+
+def voice_join(state, args, nonce=None):
+    ready = voice_engines.readiness()
+
+    if not ready["can_join"]:
+        # Joining a call Aurora cannot hear or be heard in is worse than refusing: it puts a
+        # silent presence in somebody's conversation and looks like a bug rather than a missing
+        # dependency.
+        raise Refused(
+            E_VOICE_UNAVAILABLE,
+            "voice needs: " + "; ".join(ready["missing"]))
+
+    gateway = state.get("gateway")
+
+    if gateway is None or gateway.state != "connected":
+        raise Refused(
+            E_NETWORK, "Aurora is not signed in to Discord; connect the gateway first")
+
+    identity = gateway.status().get("bot_user_id")
+
+    session = VoiceSession(args["guild_id"], args["channel_id"], identity)
+    state["voice"] = session
+    state["voice_muted"] = False
+    state["voice_listening"] = False
+
+    # Discord is told through the gateway, not the REST API: voice membership is gateway state.
+    gateway.voice_state(args["guild_id"], args["channel_id"])
+
+    report("voice.joined", session.snapshot())
+    return session.snapshot()
+
+
+def voice_leave(state, args, nonce=None):
+    session = state.pop("voice", None)
+    state["voice_listening"] = False
+    gateway = state.get("gateway")
+
+    if gateway is not None and session is not None:
+        gateway.voice_state(session.guild_id, None)
+
+    if session is not None:
+        report("voice.left", {"guild_id": session.guild_id, "channel_id": session.channel_id})
+
+    return {"in_call": False}
+
+
+def voice_listen(state, args, nonce=None):
+    session = state.get("voice")
+
+    if session is None:
+        raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
+
+    if args["enabled"]:
+        ready = voice_engines.readiness()
+
+        if not ready["can_listen"]:
+            raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
+
+    state["voice_listening"] = bool(args["enabled"])
+    return {"listening": state["voice_listening"]}
+
+
+def voice_speak(state, args, nonce=None):
+    session = state.get("voice")
+
+    if session is None:
+        raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
+
+    if state.get("voice_muted"):
+        raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
+
+    ready = voice_engines.readiness()
+
+    if not ready["can_speak"]:
+        raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))
+
+    speech = session.begin_speaking()
+
+    if speech is None:
+        # Somebody has the floor. Refused rather than queued: by the time they finish, what Aurora
+        # was going to say may no longer be the right thing to say.
+        raise Refused(
+            "floor_taken",
+            "somebody is speaking; Aurora does not talk over people")
+
+    audio = voice_engines.synthesise(voice_engines.find_tts(), args["text"])
+    transport = state.get("voice_transport")
+
+    if transport is None:
+        # The session is real and the audio is real; what is missing is the leg that carries it
+        # into Discord. Reported as unknown rather than failed, because saying "failed" about a
+        # transport that may be half-connected is a guess (docs/adr/0068).
+        session.stop_speaking("no_transport")
+        raise Unknown("the voice transport is not connected; nothing was heard")
+
+    transport.play(audio, speech)
+    session.finished_speaking(speech)
+
+    return {"spoke": True, "characters": len(args["text"]), "speech_id": speech}
+
+
+def voice_stop(state, args, nonce=None):
+    session = state.get("voice")
+
+    if session is None:
+        return {"stopped": False}
+
+    stopped = session.stop_speaking("asked")
+    transport = state.get("voice_transport")
+
+    if transport is not None:
+        transport.stop()
+
+    return {"stopped": stopped}
+
+
+def voice_mute(state, args, nonce=None):
+    state["voice_muted"] = True
+    voice_stop(state, args)
+    return {"muted": True}
+
+
+def voice_unmute(state, args, nonce=None):
+    state["voice_muted"] = False
+    return {"muted": False}
+
+
 def gateway_connect(state, args, nonce=None):
     """Signs in to the Gateway, which is how Aurora becomes visible in Discord.
 
@@ -495,6 +660,7 @@ def gateway_status(state, args):
 
 
 READS = {
+    "discord.voice.list_channels": voice_list_channels,
     "discord.guilds.list": guilds_list,
     "discord.guilds.get": guilds_get,
     "discord.channels.list": channels_list,
@@ -548,10 +714,21 @@ def report(kind, payload):
 
 
 # Capabilities about the connection itself rather than about Discord's API.
-GATEWAY_READS = {"discord.gateway.status": gateway_status}
+GATEWAY_READS = {
+    "discord.gateway.status": gateway_status,
+    "discord.voice.status": voice_status,
+}
+
 GATEWAY_WRITES = {
     "discord.gateway.connect": gateway_connect,
     "discord.gateway.disconnect": gateway_disconnect,
+    "discord.voice.join": voice_join,
+    "discord.voice.leave": voice_leave,
+    "discord.voice.listen": voice_listen,
+    "discord.voice.speak": voice_speak,
+    "discord.voice.stop": voice_stop,
+    "discord.voice.mute": voice_mute,
+    "discord.voice.unmute": voice_unmute,
 }
 
 
@@ -639,6 +816,9 @@ def main():
             say(answer)
 
         elif kind == "shutdown":
+            # Leaving first, so a shutdown never leaves Aurora sitting silently in somebody's call.
+            if state.get("voice"):
+                voice_leave(state, {})
             if state.get("gateway"):
                 state["gateway"].stop()
             break

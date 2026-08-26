@@ -12,7 +12,8 @@
     "discord.presence",
     "discord.reaction.write",
     "discord.read",
-    "discord.thread.write"
+    "discord.thread.write",
+    "discord.voice"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -893,6 +894,276 @@
       "approval_required": true,
       "reversible": true,
       "rate_limit_per_minute": 5,
+      "timeout_seconds": 10,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.list_channels",
+      "title": "List voice channels",
+      "description": "The voice channels in a server, and who is in each.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 10,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.status",
+      "title": "Voice status",
+      "description": "Whether Aurora is in a call, with whom, and what this machine can actually do \u2014 voice needs local speech programs and refuses rather than sending audio anywhere.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 5,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.join",
+      "title": "Join a call",
+      "description": "Enters a voice channel. Everybody in it sees Aurora arrive.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id",
+          "channel_id"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.join"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 5,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.listen",
+      "title": "Listen",
+      "description": "Turns what participants say into text, on this machine. Raw audio is never kept and never leaves.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.listen"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.speak",
+      "title": "Speak",
+      "description": "Says something out loud in the call. Waits for the floor rather than talking over anybody.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.speak"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 60,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.unmute",
+      "title": "Unmute",
+      "description": "Lets Aurora be heard again.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.unmute"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.leave",
+      "title": "Leave the call",
+      "description": "Disconnects from the voice channel. Only ever reduces what Aurora is doing, so it never waits for an approval \u2014 being unable to leave is worse than leaving unexpectedly.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 10,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.stop",
+      "title": "Stop talking",
+      "description": "Cuts off whatever Aurora is saying, immediately.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 5,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.mute",
+      "title": "Mute",
+      "description": "Stops Aurora being heard, without leaving the call.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 20,
       "timeout_seconds": 10,
       "idempotent": true,
       "audit_level": "FULL"

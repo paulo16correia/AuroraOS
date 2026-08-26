@@ -9,6 +9,10 @@ and how much of it has actually been run.
 | MCP surface and control panel | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Plugin execution | **VERIFIED** | **VERIFIED** | **UNSUPPORTED** |
 | Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **UNSUPPORTED** |
+| Discord messaging and gateway | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in |
+| Discord against the real service | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Discord voice — turn taking, governance | **VERIFIED** | **VERIFIED** | **VERIFIED** |
+| Discord voice — audio transport | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
 
 ## What each word means here
 
@@ -54,6 +58,18 @@ so in the refusal.
 ```
 plugin-sandbox PASS — plugins confined by sandbox-exec
 ```
+
+## Discord
+
+Everything Discord-facing is tested against a stand-in on loopback: a real HTTP server and a real
+websocket, so the plugin performs a real RFC 6455 handshake and is disconnected if it masks its
+frames wrongly. It is still not Discord. **No credentials were available and nothing has been run
+against the real service**, so every row naming it says UNVERIFIED.
+
+Voice splits in two. The turn-taking rules and the governance around them are a state machine with
+no I/O and are verified. The audio transport — voice gateway v4, UDP, the AEAD cipher and Opus — is
+not implemented, needs native dependencies Python cannot supply, and is UNVERIFIED. See
+`docs/adr/0068`.
 
 ## What would change this
 

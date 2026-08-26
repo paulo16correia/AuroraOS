@@ -86,6 +86,24 @@ class Gateway:
                 self._socket.close()
                 self._socket = None
 
+    def voice_state(self, guild_id, channel_id):
+        """Tells Discord which voice channel to put Aurora in, or none to leave.
+
+        Voice membership is gateway state rather than a REST call: opcode 4 on the socket that is
+        already open. A channel of None is how Discord is told to disconnect.
+        """
+        socket = self._socket
+
+        if socket is None:
+            raise WebSocketError("not connected to the gateway")
+
+        self._send(socket, {"op": 4, "d": {
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "self_mute": False,
+            "self_deaf": False,
+        }})
+
     def status(self):
         return {
             "state": self.state,

@@ -141,7 +141,7 @@ public sealed class DiscordPluginTests : IDisposable
         PluginManifest manifest = Manifest();
 
         Assert.Equal("plugin/discord", manifest.PluginId);
-        Assert.Equal(23, manifest.Capabilities.Count);
+        Assert.Equal(32, manifest.Capabilities.Count);
         Assert.NotNull(manifest.Service);
         Assert.Equal("bot_token", Assert.Single(manifest.RequiredSecrets!).Name);
 
@@ -165,9 +165,13 @@ public sealed class DiscordPluginTests : IDisposable
     [Fact]
     public void OnlyCapabilitiesThatChangeNothingSkipApproval()
     {
-        // The ones that do not ask are structural: which servers and channels exist, and whether
-        // Aurora is signed in. Reading what people wrote is not among them — other people's words
-        // are worth being asked about — and neither is going online, which everybody can see.
+        // Two groups do not ask. The structural reads: which servers, channels and voice channels
+        // exist, and whether Aurora is signed in or in a call. And everything that only ever
+        // reduces what Aurora is doing — leaving, stopping, muting — because being unable to stop
+        // is worse than stopping unexpectedly.
+        //
+        // Reading what people wrote is in neither group: other people's words are worth being
+        // asked about. Nor is going online, which everybody can see.
         var automatic = Manifest().Capabilities
             .Where(c => !c.ApprovalRequired)
             .Select(c => c.Key)
@@ -178,6 +182,8 @@ public sealed class DiscordPluginTests : IDisposable
             [
                 "discord.channels.get", "discord.channels.list", "discord.gateway.status",
                 "discord.guilds.get", "discord.guilds.list", "discord.threads.list",
+                "discord.voice.leave", "discord.voice.list_channels", "discord.voice.mute",
+                "discord.voice.status", "discord.voice.stop",
             ],
             automatic);
     }
