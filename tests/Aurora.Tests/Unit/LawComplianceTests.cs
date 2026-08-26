@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Genomes;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.Plugins.Sandboxes;
@@ -329,7 +330,7 @@ public sealed class LawComplianceTests
         await sessions.OpenAsync(Caller, Ct);
 
         // Decision.
-        var decisions = new SqliteDecisionEngine(db.Factory, clock);
+        var decisions = new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock);
         await decisions.EvaluateAsync(
             new DecisionThought("cycle-1", null, [Respond()], ["evidence/1"], 0.5, "LOW"),
             new DecisionContext(true, [SilenceReason.NoiseLimit], Now.AddMinutes(5).ToString("O")), Ct);
@@ -341,7 +342,7 @@ public sealed class LawComplianceTests
         Assert.Equal(0, await new SqliteConsentSessionStore(
             db.Factory, later, new FakeServerIdentity("boot-1"),
             new VersionedFakePolicy(true, "pv-1"), ConsentSessionOptions.Default).CountActiveAsync(Ct));
-        Assert.Equal(1, await new SqliteDecisionEngine(db.Factory, later).ExpireDueAsync(Ct));
+        Assert.Equal(1, await new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), later).ExpireDueAsync(Ct));
 
         static DecisionOption Respond() => new(
             DecisionMode.Respond, "answer", [],
@@ -419,7 +420,7 @@ public sealed class LawComplianceTests
     public async Task Law006_SilenceNeverHidesAFailure()
     {
         using var db = new SqliteTestDb();
-        var engine = new SqliteDecisionEngine(db.Factory, new TestClock(Now));
+        var engine = new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), new TestClock(Now));
 
         DecisionOption silent = new(
             DecisionMode.Silent, "say nothing", [],

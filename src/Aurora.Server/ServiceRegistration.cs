@@ -4,6 +4,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Capability;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Consent;
+using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Desktop;
 using Aurora.Adapters.Development;
 using Aurora.Adapters.Deliberation;
@@ -166,6 +167,9 @@ public static class ServiceRegistration
         services.AddSingleton<IAttentionAuthorization, SensitivityAttentionAuthorization>();
         services.AddSingleton<IAttentionSystem, SqliteAttentionSystem>();
         services.AddSingleton<IWorkingMemory, SqliteWorkingMemory>();
+        // The eight Articles, applied rather than quoted (RFC 035, docs/adr/0057). Registered
+        // before the engine because a high-risk decision is committed against an assessment.
+        services.AddSingleton<IConstitution, ArticleConstitution>();
         services.AddSingleton<IDecisionEngine, SqliteDecisionEngine>();
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
         services.AddSingleton<ICapabilityResolver, SqliteCapabilityResolver>();

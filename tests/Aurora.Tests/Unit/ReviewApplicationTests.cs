@@ -1,6 +1,7 @@
 using System.Globalization;
 using Aurora.Adapters.Applications;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
@@ -60,7 +61,7 @@ public sealed class ReviewApplicationTests
             new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             audit, needs, signals, scheduler, missions, curiosity, situation, resources,
             AttentionPolicy.Default, clock);

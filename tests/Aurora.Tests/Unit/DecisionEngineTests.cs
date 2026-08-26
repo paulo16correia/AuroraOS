@@ -1,4 +1,5 @@
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Constitution;
 using Aurora.Core.Contracts;
 using Aurora.Tests.Support;
 using Xunit;
@@ -13,7 +14,7 @@ public sealed class DecisionEngineTests
     private const string CycleId = "cycle-1";
 
     private static SqliteDecisionEngine Engine(SqliteTestDb db, DateTimeOffset? now = null) =>
-        new(db.Factory, new TestClock(now ?? Now));
+        new(db.Factory, new ArticleConstitution(), new TestClock(now ?? Now));
 
     private static OptionEvaluation Ok(
         double cost = 1, bool permitted = true, bool reversible = true, bool evidence = true) =>

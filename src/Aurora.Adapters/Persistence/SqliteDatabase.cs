@@ -345,6 +345,18 @@ public sealed class SqliteDatabase
 
         CREATE INDEX IF NOT EXISTS idx_decision_cycle ON decision(cycle_id, status);
 
+        -- RFC 035 rule 2. Separate from the decision so the assessment can be re-derived from the
+        -- decision and compared against what was stored, rather than only trusted.
+        CREATE TABLE IF NOT EXISTS constitutional_assessment (
+          id TEXT PRIMARY KEY,
+          subject_ref TEXT NOT NULL,
+          articles_checked TEXT NOT NULL,
+          result TEXT NOT NULL,
+          conflicts_json TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          assessed_at_utc TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS attention_set (
           id TEXT PRIMARY KEY,
           cycle_id TEXT NOT NULL UNIQUE,
@@ -1091,7 +1103,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 15;
+    public const int TargetSchemaVersion = 16;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1545,6 +1557,10 @@ public sealed class SqliteDatabase
         ("learning_proposal", "expected_benefit", "TEXT NOT NULL DEFAULT ''"),
         ("learning_proposal", "risk", "TEXT NOT NULL DEFAULT 'HIGH'"),
         ("learning_proposal", "evidence_refs", "TEXT NOT NULL DEFAULT ''"),
+
+        // v16 — RFC 035 rule 2: a high-risk decision names the assessment it was committed
+        // against. Null on decisions taken before there was one (docs/adr/0057).
+        ("decision", "constitutional_assessment_ref", "TEXT NULL"),
     ];
 
     private readonly SqliteConnectionFactory _factory;

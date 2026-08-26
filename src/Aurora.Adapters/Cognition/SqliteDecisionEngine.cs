@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Microsoft.Data.Sqlite;
@@ -10,12 +11,27 @@ namespace Aurora.Adapters.Cognition;
 /// <summary>Chooses how to act, separately from writing the words (RFC 022).</summary>
 public sealed class SqliteDecisionEngine : IDecisionEngine
 {
+    /// <summary>Below this, the engine says so rather than letting the number speak for itself.</summary>
+    private const double ConfidentEnough = 0.7;
+
+    /// <summary>
+    /// How long an effectful decision stands when nobody set a deadline.
+    /// </summary>
+    /// <remarks>
+    /// Long enough for an approval to be answered by somebody who stepped away, short enough that a
+    /// decision found the next morning has lapsed rather than still being live.
+    /// </remarks>
+    private static readonly TimeSpan EffectfulDecisionWindow = TimeSpan.FromHours(1);
+
     private readonly SqliteConnectionFactory _factory;
+    private readonly IConstitution _constitution;
     private readonly IClock _clock;
 
-    public SqliteDecisionEngine(SqliteConnectionFactory factory, IClock clock)
+    public SqliteDecisionEngine(
+        SqliteConnectionFactory factory, IConstitution constitution, IClock clock)
     {
         _factory = factory;
+        _constitution = constitution;
         _clock = clock;
     }
 
@@ -90,14 +106,31 @@ public sealed class SqliteDecisionEngine : IDecisionEngine
             selected = Choose(viable);
         }
 
+        // Article 2: middling confidence is material uncertainty, and a decision that carries it
+        // silently is one that reads as surer than it is. Said here rather than checked away — the
+        // Constitution verifies that it was declared; it is this engine's job to declare it.
+        if (thought.Confidence < ConfidentEnough && uncertainty.Count == 0)
+        {
+            uncertainty.Add(
+                $"confidence is {thought.Confidence.ToString("F2", CultureInfo.InvariantCulture)}");
+        }
+
         var alternatives = thought.Options.Where(o => !ReferenceEquals(o, selected)).ToList();
+
+        // Article 8: a decision with an effect is time-limited. Where the caller set no deadline
+        // this bounds it anyway, because an effectful decision that never expires is a standing
+        // permission that nobody granted (RFC 022 rule 4).
+        var expiry = context.DeadlineAtUtc
+            ?? (DecisionMode.HasExternalEffect(selected.Mode)
+                ? Iso(_clock.UtcNow + EffectfulDecisionWindow)
+                : null);
 
         var decision = new Decision(
             Guid.NewGuid().ToString("N"), thought.CycleId, selected.Mode, thought.ObjectiveRef,
             selected, alternatives, thought.EvidenceRefs, uncertainty, thought.RiskLevel,
             thought.Confidence, PolicyDecisionIds: [],
             ApprovalRequired: DecisionMode.HasExternalEffect(selected.Mode),
-            context.DeadlineAtUtc, DecisionState.Proposed);
+            expiry, DecisionState.Proposed);
 
         await SaveAsync(decision, ct).ConfigureAwait(false);
         return decision;
@@ -143,8 +176,89 @@ public sealed class SqliteDecisionEngine : IDecisionEngine
             PolicyDecisionIds = policyResults.Select(r => r.PolicyDecisionId).ToList(),
         };
 
+        // RFC 035 rule 2: a high-risk decision keeps a constitutional assessment. Assessed on the
+        // committed shape rather than the proposed one, because the policy decisions it cites are
+        // part of what Article 6 is about, and they do not exist until here.
+        if (IsHighRisk(committed))
+        {
+            ConstitutionalAssessment assessment =
+                _constitution.Assess(committed, Iso(_clock.UtcNow));
+
+            if (assessment.Result == ConstitutionalResult.Fail)
+            {
+                // Not a warning. An Article is not a preference to be weighed against getting the
+                // job done, which is the entire reason RFC 035 sits above the policies.
+                throw new DecisionException(
+                    "The decision contradicts the Constitution: "
+                    + string.Join("; ", assessment.Conflicts.Select(c => $"{c.Article} — {c.Detail}")));
+            }
+
+            await SaveAssessmentAsync(assessment, ct).ConfigureAwait(false);
+            committed = committed with { ConstitutionalAssessmentRef = assessment.Id };
+        }
+
         await SaveAsync(committed, ct).ConfigureAwait(false);
         return committed;
+    }
+
+    /// <summary>
+    /// Which decisions RFC 035 rule 2 calls high risk.
+    /// </summary>
+    /// <remarks>
+    /// Anything that reaches outside Aurora, and anything the engine itself rated HIGH or CRITICAL.
+    /// A decision that stays inside and was rated low is not exempt from the Articles — it is
+    /// exempt from having to carry the paperwork proving it.
+    /// </remarks>
+    private static bool IsHighRisk(Decision decision) =>
+        DecisionMode.HasExternalEffect(decision.Mode)
+        || string.Equals(decision.RiskLevel, nameof(RiskLevel.High), StringComparison.OrdinalIgnoreCase)
+        || string.Equals(decision.RiskLevel, nameof(RiskLevel.Critical), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The assessment a committed decision cites, read back for the panel and the audit.</summary>
+    public async Task<ConstitutionalAssessment?> AssessmentAsync(
+        string assessmentId, CancellationToken ct)
+    {
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT id, subject_ref, articles_checked, result, conflicts_json, evidence_refs, " +
+            "assessed_at_utc FROM constitutional_assessment WHERE id = @id;";
+
+        command.Parameters.AddWithValue("@id", assessmentId);
+
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new ConstitutionalAssessment(
+            reader.GetString(0), reader.GetString(1),
+            reader.GetString(2).Split(',', StringSplitOptions.RemoveEmptyEntries),
+            reader.GetString(3),
+            AuroraJson.Deserialize<List<ArticleFinding>>(reader.GetString(4)) ?? [],
+            reader.GetString(5).Split(',', StringSplitOptions.RemoveEmptyEntries),
+            reader.GetString(6));
+    }
+
+    private async Task SaveAssessmentAsync(ConstitutionalAssessment assessment, CancellationToken ct)
+    {
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "INSERT INTO constitutional_assessment (id, subject_ref, articles_checked, result, " +
+            "conflicts_json, evidence_refs, assessed_at_utc) " +
+            "VALUES (@id, @subject, @articles, @result, @conflicts, @evidence, @at);";
+
+        command.Parameters.AddWithValue("@id", assessment.Id);
+        command.Parameters.AddWithValue("@subject", assessment.SubjectRef);
+        command.Parameters.AddWithValue("@articles", string.Join(',', assessment.ArticlesChecked));
+        command.Parameters.AddWithValue("@result", assessment.Result);
+        command.Parameters.AddWithValue("@conflicts", AuroraJson.Serialize(assessment.Conflicts));
+        command.Parameters.AddWithValue("@evidence", string.Join(',', assessment.EvidenceRefs));
+        command.Parameters.AddWithValue("@at", assessment.AssessedAtUtc);
+
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     public async Task<Decision> InvalidateAsync(string decisionId, string reason, CancellationToken ct)
@@ -191,7 +305,7 @@ public sealed class SqliteDecisionEngine : IDecisionEngine
         command.CommandText = """
             SELECT id, cycle_id, mode, objective_ref, selected_option_json, alternatives_json,
                    evidence_refs, uncertainty, risk_level, confidence, policy_decision_ids,
-                   approval_required, expiry_at_utc, status
+                   approval_required, expiry_at_utc, status, constitutional_assessment_ref
               FROM decision WHERE id = @id;
             """;
         command.Parameters.AddWithValue("@id", decisionId);
@@ -210,7 +324,7 @@ public sealed class SqliteDecisionEngine : IDecisionEngine
             Split(reader.GetString(6)), reader.GetString(7).Split('\n', StringSplitOptions.RemoveEmptyEntries),
             reader.GetString(8), reader.GetDouble(9), Split(reader.GetString(10)),
             reader.GetInt32(11) == 1, reader.IsDBNull(12) ? null : reader.GetString(12),
-            reader.GetString(13));
+            reader.GetString(13), reader.IsDBNull(14) ? null : reader.GetString(14));
     }
 
     /// <summary>
@@ -256,14 +370,18 @@ public sealed class SqliteDecisionEngine : IDecisionEngine
             INSERT INTO decision
                 (id, cycle_id, mode, objective_ref, selected_option_json, alternatives_json,
                  evidence_refs, uncertainty, risk_level, confidence, policy_decision_ids,
-                 approval_required, expiry_at_utc, status)
-            VALUES (@id, @c, @mode, @obj, @sel, @alt, @ev, @unc, @risk, @conf, @pol, @appr, @exp, @status)
+                 approval_required, expiry_at_utc, status, constitutional_assessment_ref)
+            VALUES (@id, @c, @mode, @obj, @sel, @alt, @ev, @unc, @risk, @conf, @pol, @appr, @exp,
+                    @status, @assessment)
             ON CONFLICT(id) DO UPDATE SET
                 mode = excluded.mode, selected_option_json = excluded.selected_option_json,
                 alternatives_json = excluded.alternatives_json, uncertainty = excluded.uncertainty,
-                policy_decision_ids = excluded.policy_decision_ids, status = excluded.status;
+                policy_decision_ids = excluded.policy_decision_ids, status = excluded.status,
+                constitutional_assessment_ref = excluded.constitutional_assessment_ref;
             """;
         command.Parameters.AddWithValue("@id", d.Id);
+        command.Parameters.AddWithValue(
+            "@assessment", (object?)d.ConstitutionalAssessmentRef ?? DBNull.Value);
         command.Parameters.AddWithValue("@c", d.CycleId);
         command.Parameters.AddWithValue("@mode", d.Mode);
         command.Parameters.AddWithValue("@obj", (object?)d.ObjectiveRef ?? DBNull.Value);

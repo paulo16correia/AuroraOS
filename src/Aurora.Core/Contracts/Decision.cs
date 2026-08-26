@@ -84,7 +84,16 @@ public sealed record Decision(
     IReadOnlyList<string> PolicyDecisionIds,
     bool ApprovalRequired,
     string? ExpiryAtUtc,
-    string Status);
+    string Status,
+    /// <summary>
+    /// The constitutional assessment this decision was committed against (RFC 035 rule 2).
+    /// </summary>
+    /// <remarks>
+    /// Present on a high-risk decision and null on the rest — not because the Articles stop
+    /// applying, but because a decision that changes nothing outside Aurora does not have to carry
+    /// the paperwork proving it.
+    /// </remarks>
+    string? ConstitutionalAssessmentRef = null);
 
 /// <summary>What the cycle brings to the engine.</summary>
 public sealed record DecisionThought(

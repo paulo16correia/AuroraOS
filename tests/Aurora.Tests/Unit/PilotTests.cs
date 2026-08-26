@@ -1,4 +1,5 @@
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
 using Aurora.Adapters.Observations;
@@ -45,7 +46,7 @@ public sealed class PilotTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             memories,
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             audit,
             AttentionPolicy.Default,

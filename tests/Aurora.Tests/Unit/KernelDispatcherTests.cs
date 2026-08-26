@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Aurora.Adapters.Beliefs;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
@@ -80,7 +81,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
@@ -216,7 +217,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, Beliefs(db, clock), Self(db, clock, Echo()),
             AttentionPolicy.Default, clock);
@@ -265,7 +266,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, beliefs, Self(db, clock, capability), AttentionPolicy.Default, clock);
 
@@ -403,7 +404,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), bus, clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            new SqliteDecisionEngine(db.Factory, clock),
+            new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, Beliefs(db, clock), self, AttentionPolicy.Default, clock);
 
@@ -484,7 +485,7 @@ public sealed class KernelDispatcherTests
             TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
 
         var cycle = new SqliteCognitiveCycle(db.Factory, clock);
-        var decisions = new SqliteDecisionEngine(db.Factory, clock);
+        var decisions = new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock);
 
         var dispatcher = new KernelDispatcher(
             kernel, cycle, new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
