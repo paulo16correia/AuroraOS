@@ -95,6 +95,27 @@ public sealed class AuroraTools
         return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);
     }
 
+    [McpServerTool(Name = "aurora_self")]
+    [Description("Ask Aurora what it currently is: its operational state, what it can and cannot do "
+        + "right now, its health and when that was observed, and how many cognitive cycles are "
+        + "running. Derived from Aurora's own persisted self model, never from anything the caller "
+        + "said. Carries no secrets, no topology and no credential identifiers.")]
+    public static async Task<JsonElement> Self(
+        ISelfModel self,
+        IPrincipalAccessor principals,
+        CancellationToken ct = default)
+    {
+        // The requester is Aurora's own view of who is asking, not something the caller supplies:
+        // LAW-008 has this recorded in the trace, and a caller-chosen name there would be a caller
+        // writing Aurora's audit log.
+        SafeSelfDescription description = await self.DescribeAsync(
+            new MemoryAccessContext(
+                principals.Current.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Private),
+            ct);
+
+        return JsonSerializer.SerializeToElement(description, AuroraJson.Options);
+    }
+
     [McpServerTool(Name = "aurora_cycle")]
     [Description("Read back a cognitive cycle by its id, as returned in 'cycle_ref' by aurora_execute "
         + "or as 'cycle_id' by aurora_converse: which stages ran, which were deliberately omitted, "
@@ -111,7 +132,7 @@ public sealed class AuroraTools
     [McpServerTool(Name = "aurora_approve")]
     [Description("Decide a pending Aurora approval. 'approval_id' comes from a prior aurora_execute "
         + "response whose status was 'denied' with error code 'approval_required'. 'decision' is "
-        + "'approved' or 'rejected'. When this deployment has an operator passphrase enrolled, "
+        + "'approved' or 'rejected'. When this installation has an operator passphrase enrolled, "
         + "'passphrase' is required and must be supplied by the human operator, not guessed.")]
     public static async Task<JsonElement> Approve(
         AuroraKernel kernel,

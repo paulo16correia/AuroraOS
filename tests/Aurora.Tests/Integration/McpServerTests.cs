@@ -74,6 +74,33 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Contains("aurora_converse", names);
         Assert.Contains("aurora_cycle", names);
         Assert.Contains("aurora_review", names);
+        Assert.Contains("aurora_self", names);
+    }
+
+    [Fact]
+    public async Task Self_DescribesAuroraFromItsOwnPersistedModel()
+    {
+        await using var client = await ConnectAsync();
+
+        var result = await client.CallToolAsync(
+            "aurora_self", new Dictionary<string, object?>(), cancellationToken: Timeout());
+
+        using var doc = JsonDocument.Parse(ToJson(result));
+        JsonElement description = doc.RootElement;
+
+        // RFC 027 rule 3: what Aurora says about itself is a secure view. The type has nowhere to
+        // put a secret, and the wire shape is asserted so a later field cannot quietly add one.
+        Assert.Equal(
+            ["operational_state", "can_do", "cannot_do", "health_summary", "health_observed_at_utc",
+             "active_cycles", "observed_at_utc"],
+            description.EnumerateObject().Select(p => p.Name));
+
+        Assert.False(string.IsNullOrWhiteSpace(description.GetProperty("operational_state").GetString()));
+
+        // It knows what it can do because the capability registry said so, not because it assumed.
+        Assert.Contains(
+            description.GetProperty("can_do").EnumerateArray().Select(e => e.GetString()!),
+            said => said!.StartsWith("clock.now", StringComparison.Ordinal));
     }
 
     [Fact]
