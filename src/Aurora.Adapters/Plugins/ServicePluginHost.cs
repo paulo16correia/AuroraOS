@@ -38,7 +38,18 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
     private readonly bool _allowUnconfined;
 
     private readonly ConcurrentDictionary<string, ServiceProcess> _running = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _starting = new(1, 1);
+
+    /// <summary>
+    /// One gate per plugin, so starting a slow one does not hold up every other.
+    /// </summary>
+    /// <remarks>
+    /// A single gate would serialise every start in the instance behind whichever service is
+    /// currently taking its ten seconds to connect.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _starting = new(StringComparer.Ordinal);
+
+    /// <summary>When a plugin that has been failing may be tried again.</summary>
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _notBefore = new(StringComparer.Ordinal);
 
     public ServicePluginHost(
         string root, IPluginSandbox sandbox, IPluginSecretSource secrets,
@@ -52,7 +63,14 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
         _allowUnconfined = allowUnconfined;
     }
 
-    /// <summary>How long to wait between restarts, growing with each consecutive failure.</summary>
+    /// <summary>
+    /// How long a plugin that just failed to start waits before it is tried again.
+    /// </summary>
+    /// <remarks>
+    /// Doubling and capped. Without it a service that dies on startup is restarted once per call,
+    /// which turns a broken plugin into a process storm — and makes the logs from the real failure
+    /// impossible to find among the retries.
+    /// </remarks>
     private static TimeSpan Backoff(int failures) =>
         TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, Math.Min(failures, 5))));
 
@@ -97,27 +115,10 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
             // nobody knows, so this follows the same rule as a timeout.
             await StopAsync(manifest.PluginId, CancellationToken.None).ConfigureAwait(false);
 
-            return Ambiguous(capability, "the service stopped mid-call", stopwatch);
+            return ServiceProcess.AmbiguousOrFailed(
+                capability, "the service stopped mid-call", stopwatch);
         }
     }
-
-    /// <summary>
-    /// What a call whose answer never arrived is worth reporting as.
-    /// </summary>
-    /// <remarks>
-    /// A read that timed out is a failure: nothing happened and asking again is free. A write that
-    /// timed out is not — the message may be in the channel. Calling it failed invites a retry that
-    /// sends it twice, and there is no way for Aurora to tell the difference from here, so it says
-    /// so instead of guessing.
-    /// </remarks>
-    private static PluginResult Ambiguous(
-        PluginCapability? capability, string detail, Stopwatch stopwatch) =>
-        capability is { Effects.Count: > 0 }
-            ? new PluginResult(
-                false, null, PluginRefusal.AmbiguousOutcome,
-                $"{detail}; it may or may not have happened", stopwatch.ElapsedMilliseconds)
-            : new PluginResult(
-                false, null, "timed_out", detail, stopwatch.ElapsedMilliseconds);
 
     // ---- supervising ----
 
@@ -136,7 +137,8 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
             return existing.State;
         }
 
-        await _starting.WaitAsync(ct).ConfigureAwait(false);
+        SemaphoreSlim gate = _starting.GetOrAdd(manifest.PluginId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
 
         try
         {
@@ -148,20 +150,47 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
 
             if (existing is { State.Status: PluginServiceStatus.Failed })
             {
+                // Held rather than started again. Whatever stops it running is not fixed by
+                // running it once more, and the way back is StopAsync — which is what the console
+                // does after the owner changes something, so a supplied credential or a corrected
+                // executable takes effect on the next call rather than on the next restart of
+                // Aurora.
                 return existing.State;
             }
+
+            if (_notBefore.TryGetValue(manifest.PluginId, out DateTimeOffset waitUntil)
+                && _clock.UtcNow < waitUntil)
+            {
+                return new PluginServiceState(
+                    manifest.PluginId, PluginServiceStatus.Restarting,
+                    existing?.Failures ?? 0,
+                    $"waiting {(waitUntil - _clock.UtcNow).TotalSeconds:F0}s before starting again");
+            }
+
+            var failures = existing?.Failures ?? 0;
 
             if (existing is not null)
             {
                 await existing.DisposeAsync().ConfigureAwait(false);
             }
 
-            return await StartAsync(manifest, networkGranted, existing?.Failures ?? 0, ct)
-                .ConfigureAwait(false);
+            PluginServiceState started =
+                await StartAsync(manifest, networkGranted, failures, ct).ConfigureAwait(false);
+
+            if (started.Status == PluginServiceStatus.Ready)
+            {
+                _notBefore.TryRemove(manifest.PluginId, out _);
+            }
+            else
+            {
+                _notBefore[manifest.PluginId] = _clock.UtcNow + Backoff(started.ConsecutiveFailures);
+            }
+
+            return started;
         }
         finally
         {
-            _starting.Release();
+            gate.Release();
         }
     }
 
@@ -228,6 +257,11 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
 
     public async Task StopAsync(string pluginId, CancellationToken ct)
     {
+        // The backoff goes with it. Stopping is what somebody does after changing the thing that
+        // was broken, and making them wait out a penalty earned by the old configuration would be
+        // punishing them for fixing it.
+        _notBefore.TryRemove(pluginId, out _);
+
         if (_running.TryRemove(pluginId, out ServiceProcess? service))
         {
             await service.DisposeAsync().ConfigureAwait(false);
@@ -245,7 +279,13 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
         }
 
         _running.Clear();
-        _starting.Dispose();
+
+        foreach (SemaphoreSlim gate in _starting.Values)
+        {
+            gate.Dispose();
+        }
+
+        _starting.Clear();
     }
 
     private static string Slug(string pluginId) =>

@@ -69,6 +69,22 @@ public sealed class ServicePluginTests
                     "outcome": "unknown", "detail": "the send timed out"}), flush=True)
         """;
 
+    /// <summary>One that writes to stderr the way a real program does — logs, warnings, tracebacks.</summary>
+    private const string Noisy = """
+        import json, sys
+        for line in sys.stdin:
+            frame = json.loads(line)
+            if frame.get("kind") == "hello":
+                print(json.dumps({"kind": "ready"}), flush=True)
+            elif frame.get("kind") == "call":
+                # A chatty library. 200KB is nothing for a debug log and more than a pipe holds.
+                for i in range(4000):
+                    sys.stderr.write("debug: reconnecting to the gateway, attempt %d\n" % i)
+                sys.stderr.flush()
+                print(json.dumps({
+                    "kind": "result", "id": frame["id"], "ok": True, "output": {}}), flush=True)
+        """;
+
     private static async Task<string> RootAsync(string pluginId, string body)
     {
         var root = TestTemp.Folder("svc");
@@ -104,7 +120,7 @@ public sealed class ServicePluginTests
             MaxDataClass: Sensitivity.Private, NetworkEndpoints: [],
             DocumentationRef: "docs", IntegrityHash: "",
             Service: new PluginService(
-                "service.py", TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)),
+                "service.py", TimeSpan.FromSeconds(10)),
             RequiredSecrets: [new PluginSecretRequirement("token", "the bot token")]);
 
     private sealed class Secrets : IPluginSecretSource
@@ -131,10 +147,12 @@ public sealed class ServicePluginTests
     }
 
     private static ServicePluginHost Host(
-        string root, Observations observations, IPluginSecretSource? secrets = null) =>
+        string root, Observations observations, IPluginSecretSource? secrets = null,
+        TestClock? clock = null) =>
         new(
             root, new UnconfinedSandbox("tests run the process directly"),
-            secrets ?? new Secrets(), observations, new TestClock(DateTimeOffset.UnixEpoch),
+            secrets ?? new Secrets(), observations,
+            clock ?? new TestClock(DateTimeOffset.UnixEpoch),
             allowUnconfined: true);
 
     private static PluginInvocation Call(string input = """{"n":1}""") =>
@@ -312,5 +330,110 @@ public sealed class ServicePluginTests
         // timing out.
         await Assert.ThrowsAsync<PluginException>(
             () => host.InvokeAsync(oneShot, Call(), Ct));
+    }
+
+    [Fact]
+    public async Task APluginThatWritesToStderrIsNotStuckBehindIt()
+    {
+        var root = await RootAsync("plugin/svc", Noisy);
+        await using ServicePluginHost host = Host(root, new Observations());
+
+        // stderr is redirected, so if nothing drains it the pipe fills at about 64KB and the
+        // plugin blocks in the middle of a write it will never finish. From Aurora's side that
+        // looks exactly like a plugin that stopped answering, which is the worst kind of bug:
+        // it only happens to plugins that log, and only once they have logged enough.
+        PluginResult result = await host.InvokeAsync(
+            Manifest(timeoutSeconds: 10), Call(), Ct);
+
+        Assert.True(result.Ok, result.Detail);
+    }
+
+    // ---- what happens when it will not start ----
+
+    [Fact]
+    public async Task AServiceThatWillNotStartIsNotStartedAgainOnEveryCall()
+    {
+        // No script at the declared path, which is what a broken install looks like.
+        var root = TestTemp.Folder("svc-missing");
+        Directory.CreateDirectory(Path.Combine(root, "plugin-svc", "work"));
+
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        await using ServicePluginHost host = Host(root, new Observations(), clock: clock);
+
+        PluginResult first = await host.InvokeAsync(Manifest(), Call(), Ct);
+        Assert.False(first.Ok);
+        Assert.Equal(PluginRefusal.ServiceUnavailable, first.Refusal);
+
+        // The second call inside the backoff window does not spawn anything. Without this a
+        // service that dies on startup is restarted once per call, which turns a broken plugin
+        // into a process storm and buries the real failure under its own retries.
+        PluginResult second = await host.InvokeAsync(Manifest(), Call(), Ct);
+
+        Assert.False(second.Ok);
+        Assert.Contains("before starting again", second.Detail, StringComparison.Ordinal);
+
+        // And past the window it is willing to try once more.
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        PluginResult third = await host.InvokeAsync(Manifest(), Call(), Ct);
+
+        Assert.DoesNotContain("before starting again", third.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task FixingWhatWasBrokenTakesEffectOnTheNextCall()
+    {
+        var root = await RootAsync("plugin/svc", Answers);
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var secrets = new Secrets { Value = null };
+
+        await using ServicePluginHost host = Host(root, new Observations(), secrets, clock);
+
+        PluginResult refused = await host.InvokeAsync(Manifest(), Call(), Ct);
+        Assert.False(refused.Ok);
+        Assert.Contains(PluginRefusal.SecretMissing, refused.Detail, StringComparison.Ordinal);
+
+        // The owner supplies the credential. Stopping is what the console does after a change like
+        // this, and it must clear the penalty earned by the old configuration — making somebody
+        // wait out a backoff for having fixed the problem is punishing the fix.
+        await host.StopAsync("plugin/svc", Ct);
+
+        await using ServicePluginHost restarted = Host(root, new Observations(), clock: clock);
+        PluginResult ok = await restarted.InvokeAsync(Manifest(), Call(), Ct);
+
+        Assert.True(ok.Ok, ok.Detail);
+    }
+
+    [Fact]
+    public async Task AnAnswerInTheWrongShapeRefusesOneCallRatherThanTheConnection()
+    {
+        var root = await RootAsync("plugin/svc", """
+            import json, sys
+            calls = []
+            for line in sys.stdin:
+                frame = json.loads(line)
+                if frame.get("kind") == "hello":
+                    print(json.dumps({"kind": "ready"}), flush=True)
+                elif frame.get("kind") == "call":
+                    calls.append(1)
+                    if len(calls) == 1:
+                        # "ok" is supposed to be a boolean.
+                        print(json.dumps({
+                            "kind": "result", "id": frame["id"], "ok": "yes"}), flush=True)
+                    else:
+                        print(json.dumps({
+                            "kind": "result", "id": frame["id"], "ok": True,
+                            "output": {"second": True}}), flush=True)
+            """);
+
+        await using ServicePluginHost host = Host(root, new Observations());
+
+        PluginResult wrong = await host.InvokeAsync(Manifest(), Call(), Ct);
+        Assert.False(wrong.Ok);
+
+        // The connection survives. A plugin being wrong should cost one call, not every other call
+        // in flight over the socket it was holding.
+        PluginResult after = await host.InvokeAsync(Manifest(), Call(), Ct);
+        Assert.True(after.Ok, after.Detail);
+        Assert.Contains("second", after.OutputJson!, StringComparison.Ordinal);
     }
 }

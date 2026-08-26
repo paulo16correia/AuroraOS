@@ -220,9 +220,10 @@ public static class PluginOutcome
 /// plugin that holds a connection — a gateway socket with heartbeats, or an audio stream, cannot be
 /// re-established for every call and torn down after it.
 /// <para>
-/// A service is supervised rather than trusted: it is started when first needed, restarted with
-/// backoff when it dies, killed when Aurora stops, and quarantined when it will not stay up. It
-/// speaks the same JSON, one object per line, and everything it says is data.
+/// A service is supervised rather than trusted: started when first needed, started again when a
+/// later call finds it dead, and held once it has failed enough times in a row. The restart is on
+/// demand and not a background loop — Aurora has one of those already, and a second thread whose
+/// only job is to keep something alive is a thread that hides the thing being unable to live.
 /// </para>
 /// </remarks>
 public sealed record PluginService(
@@ -230,10 +231,6 @@ public sealed record PluginService(
     string Executable,
     /// <summary>How long to wait for the ready frame before treating the start as failed.</summary>
     TimeSpan StartTimeout,
-    /// <summary>
-    /// How often Aurora expects to hear from it. A service that goes quiet is restarted.
-    /// </summary>
-    TimeSpan Heartbeat,
     /// <summary>
     /// How many failed starts in a row before the plugin is quarantined rather than restarted.
     /// </summary>

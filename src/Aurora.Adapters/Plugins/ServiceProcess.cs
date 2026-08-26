@@ -40,6 +40,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
 
     private Process? _process;
     private Task? _reading;
+    private Task? _draining;
 
     internal ServiceProcess(
         PluginManifest manifest, SandboxPlan plan, string executable, string working,
@@ -135,6 +136,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
         }
 
         _reading = Task.Run(() => ReadAsync(_stopping.Token), CancellationToken.None);
+        _draining = Task.Run(() => DrainAsync(_stopping.Token), CancellationToken.None);
 
         // Everything the plugin needs to exist, in one frame, before anything else is said.
         var ready = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -231,7 +233,16 @@ internal sealed class ServiceProcess : IAsyncDisposable
         }
     }
 
-    private static PluginResult AmbiguousOrFailed(
+    /// <summary>
+    /// What a call whose answer never arrived is worth reporting as.
+    /// </summary>
+    /// <remarks>
+    /// A read that timed out is a failure: nothing happened and asking again is free. A write that
+    /// timed out is not — the message may be in the channel. Calling it failed invites a retry that
+    /// sends it twice, and Aurora cannot tell the difference from here, so it says so instead of
+    /// guessing.
+    /// </remarks>
+    internal static PluginResult AmbiguousOrFailed(
         PluginCapability? capability, string detail, Stopwatch stopwatch) =>
         capability is { Effects.Count: > 0 }
             ? new PluginResult(
@@ -243,8 +254,11 @@ internal sealed class ServiceProcess : IAsyncDisposable
     private static PluginResult Interpret(
         JsonNode frame, PluginCapability? capability, Stopwatch stopwatch)
     {
-        var ok = frame["ok"]?.GetValue<bool>() ?? false;
-        var outcome = frame["outcome"]?.GetValue<string>();
+        // Every field is read defensively. A plugin that answers {"ok":"yes"} is wrong, and the
+        // cost of being wrong should be one refused call rather than a torn-down connection that
+        // takes every other call in flight with it.
+        var ok = Bool(frame, "ok");
+        var outcome = Text(frame, "outcome");
 
         // A plugin is allowed to say it does not know. That is the whole reason the state exists,
         // and refusing to hear it would push authors towards guessing.
@@ -259,7 +273,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
         if (!ok)
         {
             return new PluginResult(
-                false, null, frame["refusal"]?.GetValue<string>() ?? "plugin_failed",
+                false, null, Text(frame, "refusal") ?? "plugin_failed",
                 Detail(frame) ?? "no detail", stopwatch.ElapsedMilliseconds);
         }
 
@@ -268,9 +282,37 @@ internal sealed class ServiceProcess : IAsyncDisposable
             PluginOutcome.Completed, stopwatch.ElapsedMilliseconds);
     }
 
+    /// <summary>A string field, or null if the plugin put something else there.</summary>
+    private static string? Text(JsonNode frame, string name)
+    {
+        try
+        {
+            return frame[name]?.GetValue<string>();
+        }
+        catch (Exception wrongShape)
+            when (wrongShape is InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>A boolean field, false unless the plugin actually said true.</summary>
+    private static bool Bool(JsonNode frame, string name)
+    {
+        try
+        {
+            return frame[name]?.GetValue<bool>() ?? false;
+        }
+        catch (Exception wrongShape)
+            when (wrongShape is InvalidOperationException or FormatException)
+        {
+            return false;
+        }
+    }
+
     private static string? Detail(JsonNode frame)
     {
-        var detail = frame["detail"]?.GetValue<string>();
+        var detail = Text(frame, "detail");
 
         // Truncated, because it is written by the plugin and travels into Aurora's records.
         return detail is null ? null : detail[..Math.Min(detail.Length, 500)];
@@ -316,6 +358,47 @@ internal sealed class ServiceProcess : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Empties stderr and throws it away.
+    /// </summary>
+    /// <remarks>
+    /// Not optional, and not diagnostics. stderr is redirected, so nothing reading it means the
+    /// pipe fills at around 64KB and the plugin blocks forever in the middle of a write — which
+    /// from Aurora's side is indistinguishable from a plugin that stopped answering. It only
+    /// happens to plugins that log, and only once they have logged enough, which is the worst
+    /// possible shape for a bug.
+    /// <para>
+    /// Discarded rather than surfaced, for the reason the one-shot host gives: the child writes
+    /// this and it could carry anything, including a credential the plugin printed by accident.
+    /// The exit code is the part Aurora can vouch for.
+    /// </para>
+    /// </remarks>
+    private async Task DrainAsync(CancellationToken ct)
+    {
+        StreamReader? errors = _process?.StandardError;
+
+        if (errors is null)
+        {
+            return;
+        }
+
+        var sink = new char[4096];
+
+        try
+        {
+            while (!ct.IsCancellationRequested
+                   && await errors.ReadAsync(sink, ct).ConfigureAwait(false) > 0)
+            {
+                // Read and dropped. The loop is the whole point.
+            }
+        }
+        catch (Exception ending) when (ending is OperationCanceledException or IOException
+                                           or ObjectDisposedException)
+        {
+            // The process went away.
+        }
+    }
+
     private void Dispatch(string line, CancellationToken ct)
     {
         JsonNode? frame;
@@ -347,7 +430,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
                 break;
 
             case "result":
-                var id = frame["id"]?.GetValue<string>();
+                var id = Text(frame, "id");
 
                 if (id is not null
                     && _waiting.TryRemove(id, out TaskCompletionSource<JsonNode>? waiter))
@@ -372,7 +455,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
     {
         try
         {
-            var kind = frame["type"]?.GetValue<string>();
+            var kind = Text(frame, "type");
 
             if (string.IsNullOrWhiteSpace(kind))
             {
@@ -382,7 +465,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
             // Clamped to what the plugin was allowed to be handed. A plugin cannot label its own
             // output as more sensitive than the ceiling it was installed under, and cannot label it
             // as less to slip past a rule either — the ceiling is the ceiling.
-            var declared = frame["sensitivity"]?.GetValue<string>() ?? _manifest.MaxDataClass;
+            var declared = Text(frame, "sensitivity") ?? _manifest.MaxDataClass;
 
             var sensitivity = Sensitivity.IsKnown(declared)
                 && Sensitivity.Rank(declared) <= Sensitivity.Rank(_manifest.MaxDataClass)

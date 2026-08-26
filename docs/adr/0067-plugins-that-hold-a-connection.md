@@ -47,9 +47,16 @@ and putting a host list in that type would have spread the lie into the code.
 
 ## Services
 
-A plugin may declare a `service`: a long-lived process, started when first needed, supervised, and
-stopped with Aurora. Calls are multiplexed over its stdin and stdout as JSON, one object per line,
-correlated by an id Aurora chooses.
+A plugin may declare a `service`: a long-lived process, started when first needed and stopped with
+Aurora. Calls are multiplexed over its stdin and stdout as JSON, one object per line, correlated by
+an id Aurora chooses.
+
+Supervision is **on demand, not a background loop**: a call that finds the service dead starts it,
+a start that fails earns a doubling backoff before the next attempt, and enough consecutive
+failures hold it. Aurora has one background loop already and a second thread whose only job is
+keeping something alive is a thread that hides the thing being unable to live. `StopAsync` clears
+the backoff, because stopping is what somebody does after fixing what was broken and making them
+wait out a penalty earned by the old configuration would punish the fix.
 
 Line-delimited rather than length-prefixed because a plugin author writes this in whatever language
 they like, and `print(json.dumps(x))` is a protocol anybody implements correctly on the first try.
@@ -60,6 +67,29 @@ before every result.
 Holding a connection earns a plugin nothing. Same sandbox, same manifest, same refusals: a
 capability outside the manifest is denied, data above its ceiling is never handed over, and a
 service that will not stay up is held rather than restarted for ever.
+
+## What the review of this found
+
+Written, then read again before going further. Five defects, one of them serious:
+
+**stderr was redirected and never drained.** The pipe fills at around 64KB and the plugin blocks
+forever mid-write, which from Aurora's side is indistinguishable from a plugin that stopped
+answering. It only happens to plugins that log, and only once they have logged enough — the worst
+possible shape for a bug. Reproduced with a plugin that writes 200KB of debug lines, then fixed.
+
+**The backoff existed and was never called.** The first draft of this document claimed services
+were "restarted with backoff"; the method was dead code and the restart was per-call. Both the code
+and the sentence were wrong, and both are fixed.
+
+**A heartbeat field was declared and read by nothing** — the same dead-contract defect this
+codebase spent a day removing. Deleted rather than faked.
+
+**A malformed answer tore down the connection.** A plugin replying `{"ok":"yes"}` threw out of the
+call and stopped the service, taking every other call in flight with it. Being wrong now costs one
+refused call.
+
+**One start gate served every plugin**, so a service taking ten seconds to connect held up every
+other service's first call. One gate per plugin.
 
 ## The outcome nobody knows
 
