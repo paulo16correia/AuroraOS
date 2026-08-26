@@ -46,7 +46,8 @@ public sealed class IncidentTests
     }
 
     private static (SqliteIncidentService Service, SqliteConsentSessionStore Sessions,
-        RecordingPrompt Prompt, SqliteAuditStore Audit) Build(SqliteTestDb db)
+        RecordingPrompt Prompt, SqliteAuditStore Audit, SqlitePluginRegistry Plugins)
+        Build(SqliteTestDb db)
     {
         var clock = new TestClock(Now);
         var bus = TestBus.Over(db.Factory, clock);
@@ -72,7 +73,7 @@ public sealed class IncidentTests
 
         return (
             new SqliteIncidentService(db.Factory, sessions, tools, plugins, audit, bus, prompt, clock),
-            sessions, prompt, audit);
+            sessions, prompt, audit, plugins);
     }
 
     private static SecurityEvent Event(
@@ -87,7 +88,7 @@ public sealed class IncidentTests
     {
         using var db = new SqliteTestDb();
         (SqliteIncidentService service, SqliteConsentSessionStore sessions,
-            RecordingPrompt prompt, SqliteAuditStore audit) = Build(db);
+            RecordingPrompt prompt, SqliteAuditStore audit, _) = Build(db);
 
         // Standing permission to act without asking again — the thing that should not still be
         // true while something is going wrong.
@@ -120,7 +121,7 @@ public sealed class IncidentTests
     {
         using var db = new SqliteTestDb();
         (SqliteIncidentService service, SqliteConsentSessionStore sessions,
-            RecordingPrompt prompt, _) = Build(db);
+            RecordingPrompt prompt, _, _) = Build(db);
 
         await sessions.OpenAsync(Caller, Ct);
 
@@ -138,7 +139,7 @@ public sealed class IncidentTests
     public async Task ContainmentIsTargetedWhenTheEventNamesWhatItAffected()
     {
         using var db = new SqliteTestDb();
-        (SqliteIncidentService service, _, _, _) = Build(db);
+        (SqliteIncidentService service, _, _, _, _) = Build(db);
         SqliteToolManager tools = ToolManagerTestsSupport.Manager(db, out _);
         await tools.RegisterAsync(ToolManagerTestsSupport.Connector(), Ct);
 
@@ -153,7 +154,7 @@ public sealed class IncidentTests
     public async Task AContainmentStepThatFailsIsRecordedAndDoesNotStopTheOthers()
     {
         using var db = new SqliteTestDb();
-        (SqliteIncidentService service, _, RecordingPrompt prompt, _) = Build(db);
+        (SqliteIncidentService service, _, RecordingPrompt prompt, _, _) = Build(db);
 
         // A plugin that was never installed cannot be disabled. The point is what happens next:
         // the consent revocation before it still counted, and the owner is still told.
@@ -172,7 +173,7 @@ public sealed class IncidentTests
     public async Task AnEventWithNoEvidenceIsNotAnIncident()
     {
         using var db = new SqliteTestDb();
-        (SqliteIncidentService service, _, _, _) = Build(db);
+        (SqliteIncidentService service, _, _, _, _) = Build(db);
 
         // Rule 5 asks for evidence to be preserved. One that cites none preserves nothing, and
         // leaves whoever reads it with an assertion and no way to check it.
@@ -184,7 +185,7 @@ public sealed class IncidentTests
     public async Task AnIncidentIsResolvedWithAReasonAndStaysOnTheRecord()
     {
         using var db = new SqliteTestDb();
-        (SqliteIncidentService service, _, _, SqliteAuditStore audit) = Build(db);
+        (SqliteIncidentService service, _, _, SqliteAuditStore audit, _) = Build(db);
 
         Incident opened = await service.OpenAsync(Event(), Ct);
         Assert.Single(await service.OpenIncidentsAsync(Ct));
@@ -268,5 +269,52 @@ public sealed class IncidentTests
             Task.FromResult<IReadOnlyList<AuditRecordView>>([]);
 
         public Task<string?> HeadHashAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+    }
+
+    [Fact]
+    public async Task ContainmentDisablesAPluginThatIsActuallyInstalled()
+    {
+        using var db = new SqliteTestDb();
+        (SqliteIncidentService service, _, _, _, SqlitePluginRegistry plugins) = Build(db);
+
+        var draft = new PluginManifest(
+            "plugin/notes", "1.0.0", "acme", "", MinPlatformVersion: 1,
+            Capabilities:
+            [
+                new PluginCapability(
+                    "notes.append", "{}", "{}", ["notes.write"], ApprovalRequired: true,
+                    RateLimitPerMinute: 30, Timeout: TimeSpan.FromSeconds(5),
+                    IdempotencySupport: true, AuditLevel: "FULL"),
+            ],
+            EventSubscriptions: [],
+            RequiredPermissions: ["notes.write"],
+            MaxDataClass: Sensitivity.Private,
+            NetworkEndpoints: [],
+            DocumentationRef: "docs/plugin/notes",
+            IntegrityHash: "");
+
+        draft = draft with
+        {
+            Signature = SqlitePluginRegistry.Sign(
+                Enumerable.Repeat((byte)9, 32).ToArray(), draft.PluginId, draft.Version,
+                draft.Publisher),
+        };
+
+        PluginManifest manifest = draft with { IntegrityHash = SqlitePluginRegistry.HashOf(draft) };
+        await plugins.InstallAsync(manifest, ["notes.write"], "approval/1", Ct);
+
+        // The resource ref is "plugin/{id}", and the registry knows the plugin by the id alone.
+        // Passing the whole string looked up "plugin/plugin/notes", found nothing, and recorded
+        // "not installed" — a containment that reported success at doing nothing.
+        Incident incident = await service.OpenAsync(Event(resource: "plugin/plugin/notes"), Ct);
+
+        Assert.DoesNotContain(
+            incident.ContainmentActions,
+            a => a.Contains("not installed", StringComparison.Ordinal));
+
+        // And it actually stopped running, which is the only thing containment was for.
+        PluginInstallation? contained = await plugins.GetAsync("plugin/notes", Ct);
+        Assert.NotNull(contained);
+        Assert.False(InstallationStatus.CanRun(contained!.Status));
     }
 }
