@@ -15,8 +15,15 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
 {
     public string BearerToken { get; } = "test-bearer-token-" + Guid.NewGuid().ToString("N");
 
-    private readonly string _dbPath =
-        TestTemp.Path("factory") + ".db";
+    /// <summary>
+    /// Where this instance's database lives.
+    /// </summary>
+    /// <remarks>
+    /// Settable, so a test can prove a restart: build one, use it, dispose it, and build another
+    /// over the same file. xUnit requires a class fixture to have exactly one public constructor,
+    /// which is why this is a property rather than a constructor argument.
+    /// </remarks>
+    public string DbPath { get; init; } = TestTemp.Path("factory") + ".db";
 
     /// <summary>Passphrase verifier file for this instance, so enrolling never touches the real one.</summary>
     public string PassphrasePath { get; } =
@@ -26,10 +33,19 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
     public string SandboxRoot { get; } =
         TestTemp.Path("sandbox");
 
+    /// <summary>
+    /// The machine this instance thinks it is running on.
+    /// </summary>
+    /// <remarks>
+    /// Exposed so a test can fill the disk and watch what Aurora does about it. There is no other
+    /// way to reach that path honestly: the alternative is filling the developer's real disk.
+    /// </remarks>
+    public StubResourceProbe Host { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Aurora:BearerToken", BearerToken);
-        builder.UseSetting("Aurora:DbPath", _dbPath);
+        builder.UseSetting("Aurora:DbPath", DbPath);
         builder.UseSetting("Aurora:SandboxRoot", SandboxRoot);
         builder.UseSetting("Aurora:PassphrasePath", PassphrasePath);
 
@@ -47,7 +63,7 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         // and incorrectly conclude the tests are broken.
         builder.ConfigureServices(services =>
         {
-            services.AddSingleton<IResourceProbe>(new StubResourceProbe());
+            services.AddSingleton<IResourceProbe>(Host);
 
             // No windows during a test run. The real NativeDialog finds osascript on macOS and
             // would put a password prompt on a developer's screen mid-suite — and then block until
@@ -90,7 +106,7 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
 
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm", ".anchor" })
         {
-            TryDelete(_dbPath + suffix);
+            TryDelete(DbPath + suffix);
         }
 
         TryDelete(PassphrasePath);
@@ -132,10 +148,16 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
     }
 }
 
-/// <summary>A host that is comfortably idle, so integration tests are about Aurora.</summary>
-internal sealed class StubResourceProbe : IResourceProbe
+/// <summary>
+/// A host that is comfortably idle, so integration tests are about Aurora — and that a test can
+/// make uncomfortable when what it is about is what Aurora does then.
+/// </summary>
+public sealed class StubResourceProbe : IResourceProbe
 {
+    /// <summary>Room to work by default. Set low to watch Aurora stop reaching outside itself.</summary>
+    public long DiskFreeBytes { get; set; } = 64L * 1024 * 1024 * 1024;
+
     public ResourceReading Read() => new(
         CpuFraction: 0.1, MemoryFraction: 0.2, DiskFraction: 0.3,
-        DiskFreeBytes: 64L * 1024 * 1024 * 1024);
+        DiskFreeBytes: DiskFreeBytes);
 }

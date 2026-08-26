@@ -320,4 +320,98 @@ public sealed class PluginSandboxTests
         Assert.Contains("\\\"", profile, StringComparison.Ordinal);
         Assert.EndsWith("(deny network*)", profile, StringComparison.Ordinal);
     }
+
+    // ---- what each platform actually gets, asserted rather than assumed ----
+
+    [Fact]
+    public void ThisMachineGetsTheStrongestConfinementItCanDeliver()
+    {
+        SandboxPlan plan = PluginSandbox.ForThisMachine()
+            .Plan(new SandboxRequest("plugin/probe", "/bin/echo", Path.GetTempPath()));
+
+        if (OperatingSystem.IsMacOS())
+        {
+            // VERIFIED here: the tests above run real programs under this and the kernel stops
+            // them.
+            Assert.Equal(SandboxLevel.Confined, plan.Level);
+            Assert.Equal("sandbox-exec", plan.Mechanism);
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            // UNVERIFIED unless bubblewrap is present. The flags are its documented interface and
+            // the policy mirrors the macOS one, but nothing here has run them (docs/adr/0052).
+            Assert.Equal(
+                File.Exists("/usr/bin/bwrap") || File.Exists("/bin/bwrap")
+                    ? SandboxLevel.Confined
+                    : SandboxLevel.Process,
+                plan.Level);
+        }
+        else if (OperatingSystem.IsWindows())
+        {
+            // UNSUPPORTED, and safe by default: no confinement is available, so the host refuses
+            // to invoke rather than running third-party code loose.
+            Assert.Equal(SandboxLevel.Process, plan.Level);
+            Assert.Contains("AppContainer", plan.Mechanism, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task WhereConfinementIsUnavailableTheDefaultIsToNotRun()
+    {
+        (string root, string script) = await PluginAsync("printf '{\"ran\":true}'");
+
+        try
+        {
+            // The default constructor argument, and the default configuration value, both say
+            // false. A platform Aurora cannot confine gets a refusal, and turning that into an
+            // opt-in was a decision somebody had to write down (docs/adr/0052).
+            var host = new SubprocessPluginHost(root, new UnconfinedSandbox("no sandbox here"));
+
+            PluginResult result = await host.InvokeAsync(Manifest(script), Call(), Ct);
+
+            Assert.False(result.Ok);
+            Assert.Equal(PluginRefusal.SandboxUnavailable, result.Refusal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void TheLinuxPlanIsWhatBubblewrapDocumentsEvenWhereItCannotRun()
+    {
+        // Deterministic without bubblewrap installed: the plan is a value, and asserting its shape
+        // is the most that can be checked from a Mac. Whether the kernel honours it is UNVERIFIED
+        // and is marked so in docs/adr/0052 and the platform table.
+        SandboxPlan plan = new LinuxSandbox("/usr/bin/bwrap")
+            .Plan(new SandboxRequest("plugin/probe", "/opt/plug/run.py", "/tmp/wd"));
+
+        Assert.Equal("/usr/bin/bwrap", plan.FileName);
+        Assert.Equal(SandboxLevel.Confined, plan.Level);
+
+        // The three that matter: no network namespace, no privilege, and it dies with Aurora.
+        Assert.Contains("--unshare-net", plan.Arguments);
+        Assert.Contains("--cap-drop", plan.Arguments);
+        Assert.Contains("--die-with-parent", plan.Arguments);
+
+        // The working directory is the one writable bind, and the plugin's own folder is read-only.
+        Assert.Contains("--ro-bind", plan.Arguments);
+        Assert.Contains("--bind", plan.Arguments);
+        Assert.EndsWith("--", plan.Arguments[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BubblewrapIsNotLookedForOnThePath()
+    {
+        // PATH is inherited from whoever started Aurora and can name a directory anybody can write
+        // to. A sandbox found that way could be a program that pretends to sandbox.
+        var source = File.ReadAllText(
+            Path.Combine(
+                new DirectoryInfo(AppContext.BaseDirectory).Parent!.Parent!.Parent!.Parent!.Parent!.FullName,
+                "src", "Aurora.Adapters", "Plugins", "Sandboxes", "LinuxSandbox.cs"));
+
+        Assert.Contains("/usr/bin/bwrap", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Environment.GetEnvironmentVariable(\"PATH\")", source, StringComparison.Ordinal);
+    }
 }

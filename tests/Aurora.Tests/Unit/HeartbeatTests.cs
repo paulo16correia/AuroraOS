@@ -169,6 +169,9 @@ public sealed class HeartbeatTests
 
         public Task<PluginInstallation?> GetAsync(string pluginId, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct) =>
+            throw new NotSupportedException();
     }
 
     private static PluginInstallation Installed(string id, string status = InstallationStatus.Installed) =>
@@ -284,6 +287,9 @@ public sealed class HeartbeatTests
             throw new NotSupportedException();
 
         public Task<PluginInstallation?> GetAsync(string pluginId, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct) =>
             throw new NotSupportedException();
     }
 }

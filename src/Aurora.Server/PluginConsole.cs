@@ -37,6 +37,7 @@ public static class PluginConsole
             "install" => Install(argument, options),
             "list" => List(options),
             "disable" => Disable(argument, options),
+            "remove" => Remove(argument, options),
             _ => Help(),
         };
     }
@@ -51,6 +52,7 @@ public static class PluginConsole
               install <directory>   verify, seal and install it; takes effect on restart
               list                  what is installed, and its state
               disable <plugin_id>   stop it running, without forgetting it
+              remove <plugin_id>    end it for good and take back what it was granted
 
             A plugin is a folder holding a plugin.json and a program. Aurora runs the program,
             writes the call to its standard input as JSON, and reads the result from its standard
@@ -233,6 +235,45 @@ public static class PluginConsole
             .GetAwaiter().GetResult();
 
         Console.WriteLine($"[Aurora] {pluginId} is disabled. It is not forgotten, and can be released.");
+        return true;
+    }
+
+    private static bool Remove(string? pluginId, AuroraServerOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(pluginId))
+        {
+            Console.WriteLine("[Aurora] Usage: plugin remove <plugin_id>");
+            return true;
+        }
+
+        Registry registry = Open(options);
+
+        PluginInstallation? installed =
+            registry.Plugins.GetAsync(pluginId, CancellationToken.None).GetAwaiter().GetResult();
+
+        if (installed is null)
+        {
+            Console.WriteLine($"[Aurora] {pluginId} is not installed.");
+            return true;
+        }
+
+        Console.Write($"[Aurora] Remove {pluginId} and take back its permissions? [y/N] ");
+
+        if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("[Aurora] Nothing was removed.");
+            return true;
+        }
+
+        registry.Plugins.RemoveAsync(
+            installed.Id, $"console/{Environment.UserName}", CancellationToken.None)
+            .GetAwaiter().GetResult();
+
+        Console.WriteLine(
+            $"[Aurora] {pluginId} is removed. The record stays, because what Aurora once ran is "
+            + "part of how this instance got here, and it cannot be released back. Install it "
+            + "again if you want it.");
+
         return true;
     }
 

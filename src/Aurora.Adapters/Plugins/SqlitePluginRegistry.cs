@@ -250,6 +250,11 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
         PluginInstallation installation =
             await ByInstallationAsync(installationId, ct).ConfigureAwait(false);
 
+        if (installation.Status == InstallationStatus.Removed)
+        {
+            throw new PluginException($"{installation.PluginId} was removed; there is nothing to disable.");
+        }
+
         PluginInstallation disabled = installation with
         {
             Status = InstallationStatus.Disabled,
@@ -259,6 +264,37 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
 
         await SaveAsync(disabled, ct).ConfigureAwait(false);
         return disabled;
+    }
+
+    public async Task<PluginInstallation> RemoveAsync(
+        string installationId, string actor, CancellationToken ct)
+    {
+        PluginInstallation installation =
+            await ByInstallationAsync(installationId, ct).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            throw new PluginException("Removing a plugin names who removed it.");
+        }
+
+        if (installation.Status == InstallationStatus.Removed)
+        {
+            throw new PluginException($"{installation.PluginId} is already removed.");
+        }
+
+        // The row stays. What Aurora once ran, and what it was granted while it ran, is part of
+        // how the instance got here — an installation log that forgets removals cannot answer
+        // "what was this machine doing in March".
+        PluginInstallation removed = installation with
+        {
+            Status = InstallationStatus.Removed,
+            QuarantineReason = $"removed by {actor}",
+            GrantedPermissions = [],
+            UpdatedAtUtc = Iso(_clock.UtcNow),
+        };
+
+        await SaveAsync(removed, ct).ConfigureAwait(false);
+        return removed;
     }
 
     public async Task<PluginInstallation> ReleaseAsync(
@@ -271,6 +307,15 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
         if (string.IsNullOrWhiteSpace(approvalRef) || string.IsNullOrWhiteSpace(actor))
         {
             throw new PluginException("Releasing a quarantine is a decision; it needs an approval and an actor.");
+        }
+
+        // Removed is terminal. Letting one back would restore permissions the owner took away,
+        // through the door meant for a plugin that was held rather than one that was finished
+        // with.
+        if (installation.Status == InstallationStatus.Removed)
+        {
+            throw new PluginException(
+                $"{installation.PluginId} was removed. Install it again if you want it back.");
         }
 
         PluginInstallation released = installation with

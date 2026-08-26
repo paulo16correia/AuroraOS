@@ -513,4 +513,69 @@ public sealed class PluginTests
         {
         }
     }
+
+    // ---- removal: the declared state that nothing could reach (docs/adr/0065) ----
+
+    [Fact]
+    public async Task ARemovedPluginLosesItsPermissionsAndCannotRun()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, ScriptedHost host, _) = Build(db);
+
+        PluginInstallation installed = await registry.InstallAsync(
+            Manifest(), ["notes.write"], "approval/1", Ct);
+
+        PluginInstallation removed = await registry.RemoveAsync(installed.Id, "owner", Ct);
+
+        Assert.Equal(InstallationStatus.Removed, removed.Status);
+
+        // Everything it was granted goes back. A record that kept them would say Aurora still
+        // trusts this with something it no longer runs.
+        Assert.Empty(removed.GrantedPermissions);
+
+        PluginResult refused = await registry.InvokeAsync(Call(), Ct);
+        Assert.False(refused.Ok);
+        Assert.Equal(0, host.Invocations);
+    }
+
+    [Fact]
+    public async Task ARemovedPluginCannotBeReleasedBackIn()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, _, _) = Build(db);
+
+        PluginInstallation installed = await registry.InstallAsync(
+            Manifest(), ["notes.write"], "approval/1", Ct);
+
+        await registry.RemoveAsync(installed.Id, "owner", Ct);
+
+        // Releasing is the door for a plugin that was held. Letting a removed one through it would
+        // restore permissions the owner had taken away.
+        PluginException refused = await Assert.ThrowsAsync<PluginException>(
+            () => registry.ReleaseAsync(installed.Id, "approval/2", "owner", Ct));
+
+        Assert.Contains("was removed", refused.Message, StringComparison.Ordinal);
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => registry.DisableAsync(installed.Id, "owner", Ct));
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => registry.RemoveAsync(installed.Id, "owner", Ct));
+    }
+
+    [Fact]
+    public async Task RemovingNamesWhoDidIt()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, _, _) = Build(db);
+
+        PluginInstallation installed = await registry.InstallAsync(
+            Manifest(), ["notes.write"], "approval/1", Ct);
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => registry.RemoveAsync(installed.Id, "  ", Ct));
+
+        PluginInstallation removed = await registry.RemoveAsync(installed.Id, "owner", Ct);
+        Assert.Contains("owner", removed.QuarantineReason!, StringComparison.Ordinal);
+    }
 }

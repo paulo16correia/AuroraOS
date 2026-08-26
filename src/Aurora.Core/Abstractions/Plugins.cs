@@ -51,6 +51,17 @@ public interface IPluginRegistry
 
     Task<PluginInstallation> DisableAsync(string installationId, string actor, CancellationToken ct);
 
+    /// <summary>
+    /// Ends an installation for good, and takes back everything it was granted.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="InstallationStatus.Removed"/> was a declared state nothing could reach: disabling
+    /// held a plugin and releasing let it run again, and there was no way to be finished with one.
+    /// Terminal — a removed installation cannot be released, because letting it back would restore
+    /// permissions the owner had taken away.
+    /// </remarks>
+    Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct);
+
     /// <summary>Releases a quarantine, which is a decision and needs an approval.</summary>
     Task<PluginInstallation> ReleaseAsync(
         string installationId, string approvalRef, string actor, CancellationToken ct);
