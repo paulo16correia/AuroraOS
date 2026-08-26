@@ -3,7 +3,10 @@ using Aurora.Adapters.Plugins;
 using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Server;
 using Aurora.Tests.Support;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -435,5 +438,36 @@ public sealed class ServicePluginTests
         PluginResult after = await host.InvokeAsync(Manifest(), Call(), Ct);
         Assert.True(after.Ok, after.Detail);
         Assert.Contains("second", after.OutputJson!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheRunningServerRoutesServicePluginsToTheHostThatCanRunThem()
+    {
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Aurora:BearerToken"] = "a-token-long-enough-to-pass-validation",
+                ["Aurora:DbPath"] = TestTemp.Path("routing") + ".db",
+                ["Aurora:SandboxRoot"] = TestTemp.Folder("routing-sandbox"),
+            })
+            .Build();
+
+        AuroraServerOptions options = AuroraServerOptions.FromConfiguration(config);
+
+        var collection = new ServiceCollection();
+        collection.AddAurora(options);
+
+        using ServiceProvider provider = collection.BuildServiceProvider();
+
+        // The service host was built, tested and never registered. Nothing failed to compile and
+        // no test noticed, because every test of it constructed one directly — so the running
+        // server held only the one-shot host, and a service plugin would have had its stdin closed
+        // underneath it and failed every call for a reason that had nothing to do with the plugin.
+        var host = provider.GetRequiredService<IPluginHost>();
+        Assert.IsType<RoutingPluginHost>(host);
+
+        Assert.NotNull(provider.GetService<IPluginServiceSupervisor>());
+        Assert.NotNull(provider.GetService<IPluginSecretSource>());
+        Assert.NotNull(provider.GetService<IPluginObservationSink>());
     }
 }

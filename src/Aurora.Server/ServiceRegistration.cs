@@ -147,10 +147,34 @@ public static class ServiceRegistration
         // the platform offers no sandbox the host refuses to invoke at all, unless the owner has
         // set Aurora:Plugins:AllowUnconfined (docs/adr/0052).
         services.AddSingleton<IPluginSandbox>(_ => PluginSandbox.ForThisMachine());
-        services.AddSingleton<IPluginHost>(sp => new SubprocessPluginHost(
+
+        // Secrets come from the vault by the name the manifest declared, and what a plugin reports
+        // unprompted becomes an external observation — untrusted, and never an instruction
+        // (docs/adr/0067).
+        services.AddSingleton<IPluginSecretSource, VaultPluginSecretSource>();
+        services.AddSingleton<IPluginObservationSink, EventBusObservationSink>();
+
+        services.AddSingleton(sp => new ServicePluginHost(
             options.PluginRoot,
             sp.GetRequiredService<IPluginSandbox>(),
+            sp.GetRequiredService<IPluginSecretSource>(),
+            sp.GetRequiredService<IPluginObservationSink>(),
+            sp.GetRequiredService<IClock>(),
             options.AllowUnconfinedPlugins));
+
+        services.AddSingleton<IPluginServiceSupervisor>(
+            sp => sp.GetRequiredService<ServicePluginHost>());
+
+        // Routed by the manifest: a plugin that answers a question is run once and waited on, and
+        // a plugin that holds a connection is started once and kept. Handing a service plugin to
+        // the one-shot host closes its stdin underneath it and every call fails for a reason that
+        // has nothing to do with the plugin.
+        services.AddSingleton<IPluginHost>(sp => new RoutingPluginHost(
+            new SubprocessPluginHost(
+                options.PluginRoot,
+                sp.GetRequiredService<IPluginSandbox>(),
+                options.AllowUnconfinedPlugins),
+            sp.GetRequiredService<ServicePluginHost>()));
         services.AddSingleton<IPluginRegistry>(sp => new SqlitePluginRegistry(
             sp.GetRequiredService<SqliteConnectionFactory>(),
             sp.GetRequiredService<IPluginHost>(),

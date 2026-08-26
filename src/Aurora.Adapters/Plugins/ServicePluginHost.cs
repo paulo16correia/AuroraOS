@@ -28,7 +28,8 @@ namespace Aurora.Adapters.Plugins;
 /// as an observation rather than an instruction.
 /// </para>
 /// </remarks>
-public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, IAsyncDisposable
+public sealed class ServicePluginHost
+    : IPluginHost, IPluginServiceSupervisor, IAsyncDisposable, IDisposable
 {
     private readonly string _root;
     private readonly IPluginSandbox _sandbox;
@@ -270,6 +271,17 @@ public sealed class ServicePluginHost : IPluginHost, IPluginServiceSupervisor, I
 
     public IReadOnlyList<PluginServiceState> Running() =>
         [.. _running.Values.Select(s => s.State)];
+
+    /// <summary>
+    /// Stops every service, synchronously.
+    /// </summary>
+    /// <remarks>
+    /// Present alongside <see cref="DisposeAsync"/> because a dependency injection container that
+    /// is disposed synchronously throws on a type offering only the async one — which turns
+    /// shutting Aurora down into an exception, on a path nothing exercises until the day somebody
+    /// shuts it down.
+    /// </remarks>
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     public async ValueTask DisposeAsync()
     {
