@@ -2,6 +2,11 @@
 
 **Scope:** the 186 numbered mandatory rules across the 42 RFCs that carry a `## Mandatory rules`
 section.
+**Outcome:** every finding below was closed on the same day — `docs/adr/0056` (incidents and the
+RFC 08 limit case), `0057` (the Constitution), `0058` (the Mind, the work item and the genome
+reference) and `0059` (the three divergences, recorded rather than closed). This document is kept as
+it was written, because what was found is worth more than a list of what is now fixed.
+
 **Cause:** `docs/adr/0053` established that RFC coverage had been decided by grepping each RFC's
 principal symbol — a method that had already missed LAW-008's trace control and RFC 08's evaluator.
 
