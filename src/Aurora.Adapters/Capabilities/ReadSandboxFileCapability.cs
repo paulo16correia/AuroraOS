@@ -17,11 +17,10 @@ namespace Aurora.Adapters.Capabilities;
 /// </remarks>
 public sealed class ReadSandboxFileCapability : ICapability
 {
-    private const string InputSchemaJson =
-        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["path"],"properties":{"path":{"type":"string","minLength":1,"maxLength":512}}}""";
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object()
+            .String("path", maxLength: 512, required: true, minLength: 1)
+            .Build();
 
     private readonly ISandboxFileReader _reader;
 

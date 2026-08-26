@@ -9,11 +9,8 @@ namespace Aurora.Adapters.Capabilities;
 /// <summary>Read-only LOW capability that returns the current UTC time.</summary>
 public sealed class ClockNowCapability : ICapability
 {
-    private const string InputSchemaJson =
-        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"properties":{}}""";
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object().Build();
 
     private readonly IClock _clock;
 

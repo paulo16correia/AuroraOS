@@ -8,11 +8,8 @@ namespace Aurora.Adapters.Capabilities;
 /// <summary>Read-only LOW capability that lists notes previously saved via <c>memory.remember</c>.</summary>
 public sealed class RecallNotesCapability : ICapability
 {
-    private const string InputSchemaJson =
-        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"properties":{}}""";
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object().Build();
 
     private readonly INoteStore _notes;
     private readonly IPrincipalAccessor _principals;

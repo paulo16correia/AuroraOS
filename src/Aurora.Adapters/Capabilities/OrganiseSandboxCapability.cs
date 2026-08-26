@@ -40,21 +40,16 @@ public sealed class OrganiseSandboxCapability : ICapability
     /// </remarks>
     private const int MaxMoves = 100;
 
-    private const string InputSchemaJson =
-        """
-        {"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object",
-         "additionalProperties":false,"required":["rules"],
-         "properties":{
-           "rules":{"type":"array","minItems":1,"maxItems":20,
-             "items":{"type":"object","additionalProperties":false,"required":["match","into"],
-               "properties":{
-                 "match":{"type":"string","minLength":1,"maxLength":128},
-                 "into":{"type":"string","minLength":1,"maxLength":128}}}},
-           "dry_run":{"type":"boolean"}}}
-        """;
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object()
+            .ArrayOf(
+                "rules",
+                CapabilityInput.Object()
+                    .String("match", maxLength: 128, required: true, minLength: 1)
+                    .String("into", maxLength: 128, required: true, minLength: 1),
+                maxItems: 20, required: true, minItems: 1)
+            .Boolean("dry_run")
+            .Build();
 
     private readonly ISandboxFileIndex _index;
     private readonly ISandboxFileMover _mover;

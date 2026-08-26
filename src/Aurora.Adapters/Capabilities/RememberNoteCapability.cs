@@ -11,11 +11,10 @@ namespace Aurora.Adapters.Capabilities;
 /// </summary>
 public sealed class RememberNoteCapability : ICapability
 {
-    private const string InputSchemaJson =
-        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["note"],"properties":{"note":{"type":"string","minLength":1,"maxLength":500}}}""";
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object()
+            .String("note", maxLength: 500, required: true, minLength: 1)
+            .Build();
 
     private readonly INoteStore _notes;
     private readonly IPrincipalAccessor _principals;

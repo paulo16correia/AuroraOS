@@ -1,3 +1,5 @@
+using Aurora.Core.Contracts;
+
 namespace Aurora.Core.Abstractions;
 
 /// <summary>
@@ -27,6 +29,7 @@ public interface ISandboxFileReader
 /// <summary>Writes a file inside a fixed sandbox root, atomically and without following links out.</summary>
 public interface ISandboxFileWriter
 {
+    [Effect("files.write")]
     Task<SandboxWriteResult> WriteAsync(string relativePath, string content, CancellationToken ct);
 }
 
@@ -59,5 +62,6 @@ public sealed record SandboxMoveResult(string From, string To);
 /// </remarks>
 public interface ISandboxFileMover
 {
+    [Effect("files.move")]
     Task<SandboxMoveResult> MoveAsync(string from, string to, CancellationToken ct);
 }

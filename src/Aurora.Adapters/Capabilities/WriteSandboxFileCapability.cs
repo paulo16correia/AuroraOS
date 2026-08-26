@@ -11,11 +11,11 @@ namespace Aurora.Adapters.Capabilities;
 /// </summary>
 public sealed class WriteSandboxFileCapability : ICapability
 {
-    private const string InputSchemaJson =
-        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["path","content"],"properties":{"path":{"type":"string","minLength":1,"maxLength":512},"content":{"type":"string","maxLength":65536}}}""";
-
     private static readonly JsonElement SchemaElement =
-        JsonDocument.Parse(InputSchemaJson).RootElement.Clone();
+        CapabilityInput.Object()
+            .String("path", maxLength: 512, required: true, minLength: 1)
+            .String("content", maxLength: 65536, required: true)
+            .Build();
 
     private readonly ISandboxFileWriter _writer;
 

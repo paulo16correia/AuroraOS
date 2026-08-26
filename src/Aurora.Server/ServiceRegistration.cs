@@ -343,23 +343,47 @@ public static class ServiceRegistration
     }
 
     /// <summary>
-    /// The action id a built-in capability advertises, without running its constructor.
+    /// The action id a built-in capability advertises, without building its dependencies.
     /// </summary>
     /// <remarks>
-    /// Constructing one would mean building its dependencies, and one of them opens the database.
-    /// A console command that validates a manifest should not need Aurora's database to be
-    /// healthy, so the id is read from the type's own descriptor instead.
+    /// A capability's constructor takes the ports it needs and one of those opens the database. A
+    /// console command that validates a manifest should not need Aurora's database to be healthy,
+    /// so the constructor is called with nulls and only the descriptor is read. That is safe here
+    /// and nowhere else: a capability constructor assigns its fields, and nothing in this path
+    /// ever calls <c>ExecuteAsync</c>.
+    /// <para>
+    /// This used to call <c>Activator.CreateInstance(type, nonPublic: true)</c>, which needs a
+    /// parameterless constructor. Only <c>echo.say</c> has one, so every other built-in came back
+    /// null and the list this feeds — the one stopping a plugin claiming Aurora's own action id —
+    /// contained a single entry. A plugin could declare <c>files.write_sandbox</c> and pass
+    /// validation.
+    /// </para>
     /// </remarks>
     private static string? NameOf(Type capability)
     {
         try
         {
-            return (Activator.CreateInstance(capability, nonPublic: true) as ICapability)
-                ?.Descriptor.ActionId;
+            ConstructorInfo? constructor = capability
+                .GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .FirstOrDefault();
+
+            if (constructor is null)
+            {
+                return null;
+            }
+
+            var arguments = constructor.GetParameters()
+                .Select(p => p.ParameterType.IsValueType
+                    ? Activator.CreateInstance(p.ParameterType)
+                    : null)
+                .ToArray();
+
+            return (constructor.Invoke(arguments) as ICapability)?.Descriptor.ActionId;
         }
         catch (Exception uninstantiable)
             when (uninstantiable is MissingMethodException or TargetInvocationException
-                  or NotSupportedException)
+                  or NotSupportedException or ArgumentException)
         {
             return null;
         }
