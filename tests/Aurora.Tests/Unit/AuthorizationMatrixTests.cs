@@ -181,6 +181,10 @@ public sealed class AuthorizationMatrixTests
 
         var implemented = typeof(EchoSayCapability).Assembly.GetTypes()
             .Where(t => typeof(ICapability).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
+
+            // The bridge is not a capability Aurora ships; it is how a plugin's becomes one. What
+            // it advertises comes from a manifest, so there is nothing fixed here to document.
+            .Where(t => t != typeof(Adapters.Plugins.PluginCapabilityBridge))
             .Select(t => t.Name)
             .ToList();
 

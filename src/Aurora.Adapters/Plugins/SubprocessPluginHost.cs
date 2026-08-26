@@ -122,6 +122,14 @@ public sealed class SubprocessPluginHost : IPluginHost
         start.Environment["AURORA_PLUGIN_ID"] = manifest.PluginId;
         start.Environment["AURORA_CAPABILITY"] = invocation.CapabilityKey;
 
+        // A fixed PATH, not an inherited one. The property that matters is that nothing of
+        // Aurora's travels, and a constant naming only system directories carries nothing — while
+        // without it a script beginning "#!/usr/bin/env python3" cannot find an interpreter and
+        // every plugin written the ordinary way fails with exit 127.
+        start.Environment["PATH"] = OperatingSystem.IsWindows()
+            ? @"C:\Windows\System32"
+            : "/usr/bin:/bin:/usr/local/bin";
+
         var stopwatch = Stopwatch.StartNew();
 
         using var process = new Process { StartInfo = start };

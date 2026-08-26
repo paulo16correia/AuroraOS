@@ -1,3 +1,7 @@
+using Microsoft.Data.Sqlite;
+using Aurora.Core;
+using System.Text.Json;
+using System.Reflection;
 using Aurora.Adapters.Applications;
 using Aurora.Adapters.Beliefs;
 using Aurora.Adapters.Capabilities;
@@ -277,7 +281,12 @@ public static class ServiceRegistration
             // by rule is not what somebody pictures when they approve a file write.
             services.AddSingleton<ICapability, OrganiseSandboxCapability>();
         }
-        services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
+        // Aurora's own and the installed plugins', in one catalogue: a plugin's capability is
+        // judged by the same policy, needs the same approval, runs through the same cycle and
+        // lands in the same audit log, because it goes through the same seam (docs/adr/0062).
+        services.AddSingleton<ICapabilityRegistry>(sp => new CompositeCapabilityRegistry(
+            new StaticCapabilityRegistry(sp.GetServices<ICapability>()),
+            PluginCatalogue(sp)));
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();
 
         // Kernel.
@@ -292,5 +301,92 @@ public static class ServiceRegistration
         services.AddSingleton<KernelDispatcher>();
 
         return services;
+    }
+
+    /// <summary>
+    /// The action ids Aurora ships, so a plugin manifest can be refused for claiming one.
+    /// </summary>
+    /// <remarks>
+    /// Read from the same registration the server uses rather than from a list kept beside it. A
+    /// hand-maintained copy goes stale on the day somebody adds a capability, which is exactly the
+    /// day a plugin could start shadowing it.
+    /// </remarks>
+    public static IReadOnlyList<string> BuiltInCapabilityIds(AuroraServerOptions options)
+    {
+        var services = new ServiceCollection();
+        services.AddAurora(options);
+
+        return [.. services
+            .Where(d => d.ServiceType == typeof(ICapability) && d.ImplementationType is not null)
+            .Select(d => d.ImplementationType!)
+            .Select(NameOf)
+            .Where(id => id is not null)
+            .Select(id => id!)];
+    }
+
+    /// <summary>
+    /// The action id a built-in capability advertises, without running its constructor.
+    /// </summary>
+    /// <remarks>
+    /// Constructing one would mean building its dependencies, and one of them opens the database.
+    /// A console command that validates a manifest should not need Aurora's database to be
+    /// healthy, so the id is read from the type's own descriptor instead.
+    /// </remarks>
+    private static string? NameOf(Type capability)
+    {
+        try
+        {
+            return (Activator.CreateInstance(capability, nonPublic: true) as ICapability)
+                ?.Descriptor.ActionId;
+        }
+        catch (Exception uninstantiable)
+            when (uninstantiable is MissingMethodException or TargetInvocationException
+                  or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The installed plugins' capabilities, read once.
+    /// </summary>
+    /// <remarks>
+    /// Once, at startup, and not on every lookup. A catalogue that changed shape underneath a call
+    /// already in flight would mean a capability could be resolved, approved, and then be a
+    /// different capability by the time it ran. Installing a plugin therefore takes effect when
+    /// Aurora next starts, which the console says out loud.
+    /// </remarks>
+    private static ICapabilityRegistry PluginCatalogue(IServiceProvider services)
+    {
+        var registry = services.GetRequiredService<IPluginRegistry>();
+        var capabilities = new List<ICapability>();
+
+        try
+        {
+            IReadOnlyList<PluginInstallation> installed =
+                registry.ListAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+            foreach (PluginInstallation plugin in installed.Where(
+                p => p.Status == InstallationStatus.Installed))
+            {
+                PluginManifest? manifest =
+                    JsonSerializer.Deserialize<PluginManifest>(plugin.ManifestJson, AuroraJson.Options);
+
+                if (manifest is null)
+                {
+                    continue;
+                }
+
+                capabilities.AddRange(manifest.Capabilities.Select(
+                    c => new PluginCapabilityBridge(registry, manifest, c)));
+            }
+        }
+        catch (Exception unreadable) when (unreadable is SqliteException or JsonException)
+        {
+            // Aurora starts without them rather than not at all. A plugin table that cannot be
+            // read is a reason to lose the plugins, not a reason to lose the instance.
+        }
+
+        return new StaticCapabilityRegistry(capabilities);
     }
 }

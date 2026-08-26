@@ -53,7 +53,23 @@ public sealed record PluginCapability(
     int RateLimitPerMinute,
     TimeSpan Timeout,
     bool IdempotencySupport,
-    string AuditLevel);
+    string AuditLevel,
+    /// <summary>What a person reads in the catalogue before deciding to allow it.</summary>
+    string Title = "",
+    string Description = "",
+    /// <summary>
+    /// How much is at stake, judged by the same policy that judges Aurora's own capabilities.
+    /// </summary>
+    /// <remarks>
+    /// Declared by the plugin and therefore a claim — but a claim that only ever costs it. Policy
+    /// reads risk together with approval and reversibility, so understating it does not widen what
+    /// a plugin may do; it is the declared effects and the granted permissions that bound that.
+    /// Defaults to <see cref="RiskLevel.High"/>, because a plugin whose author did not say is not
+    /// one to assume the best of.
+    /// </remarks>
+    RiskLevel Risk = RiskLevel.High,
+    /// <summary>Whether a completed call can be undone by whoever made it.</summary>
+    bool Reversible = false);
 
 /// <summary>
 /// Everything a plugin says about itself, before anybody decides whether to believe it.

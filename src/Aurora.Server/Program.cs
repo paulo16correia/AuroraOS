@@ -13,7 +13,9 @@ var options = AuroraServerOptions.FromConfiguration(builder.Configuration);
 
 // Passphrase enrolment happens on this console, never over HTTP: the bearer token belongs to
 // the agent, so any endpoint it can reach is one the agent could use to enrol its own.
-if (PassphraseConsole.TryHandle(args, options) || OperationsConsole.TryHandle(args, options))
+if (PassphraseConsole.TryHandle(args, options)
+    || OperationsConsole.TryHandle(args, options)
+    || PluginConsole.TryHandle(args, options))
 {
     return;
 }
