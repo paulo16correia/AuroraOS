@@ -25,6 +25,7 @@ import urllib.request
 import voice_engines
 from gateway import Gateway
 from voice_transport import VoiceTransport
+from conversation import Conversation
 from voice_session import VoiceSession
 
 DEFAULT_API = "https://discord.com/api/v10"
@@ -475,11 +476,15 @@ def voice_status(state, args):
     ready = voice_engines.readiness()
     session = state.get("voice")
 
+    window = conversation_window(state)
+
     return {
         "in_call": session is not None,
         "session": session.snapshot() if session else None,
         "muted": bool(state.get("voice_muted", False)),
         "listening": bool(state.get("voice_listening", False)),
+        "conversing": window is not None,
+        "utterances_left": window["remaining"] if window else 0,
         "capabilities": ready,
     }
 
@@ -554,6 +559,7 @@ def voice_join(state, args, nonce=None):
 def voice_leave(state, args, nonce=None):
     session = state.pop("voice", None)
     state["voice_listening"] = False
+    close_conversation(state, "left")
 
     transport = state.pop("voice_transport", None)
 
@@ -635,6 +641,85 @@ def voice_speak(state, args, nonce=None):
     }
 
 
+def utterance_heard(state, user_id, text, at_ms):
+    """One finished utterance, and what Aurora does about it.
+
+    Called for every transcript. Almost every call ends in silence, which is the whole point: a
+    system that answers every sentence is recognisable within thirty seconds, and the tell is not
+    what it says but that it says something every time.
+    """
+    conversation = state.get("conversation")
+    session = state.get("voice")
+
+    decision = (
+        conversation.heard(user_id, text, at_ms)
+        if conversation is not None
+        else {"speak": False, "reason": "not_conversing", "delay_ms": None})
+
+    # Reported whatever the decision. Aurora hears the whole room; what it does about any of it is
+    # a separate question, and hiding the ones it stays quiet for would make the room look emptier
+    # than it is.
+    report("voice.heard", {
+        "guild_id": session.guild_id if session else None,
+        "channel_id": session.channel_id if session else None,
+        "speaker_id": user_id,
+        "transcript": text,
+        "at_ms": at_ms,
+        "aurora_would_speak": decision["speak"],
+        "reason": decision["reason"],
+        "suggested_delay_ms": decision.get("delay_ms"),
+    })
+
+    return decision
+
+
+def speak_in_conversation(state, text, invited):
+    """Says something inside an open window, spending one of its utterances.
+
+    Separate from `discord.voice.speak` on purpose. That capability is a single sentence somebody
+    approved; this is Aurora taking a turn in a conversation the owner already agreed to, and the
+    difference is what the window is counting.
+    """
+    window = conversation_window(state)
+
+    if window is None:
+        raise Refused("no_conversation", "there is no open conversation window")
+
+    session = state.get("voice")
+    transport = state.get("voice_transport")
+
+    if session is None or transport is None:
+        raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
+
+    if state.get("voice_muted"):
+        raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
+
+    speech = session.begin_speaking()
+
+    if speech is None:
+        # Somebody has the floor. Not queued: by the time they finish, what Aurora was going to
+        # say may no longer be the right thing to say.
+        raise Refused("floor_taken", "somebody is speaking; Aurora does not talk over people")
+
+    window["remaining"] -= 1
+
+    audio = voice_engines.synthesise(voice_engines.find_tts(), text)
+    frames = transport.play(_pcm_from_wav(audio), speech)
+    completed = session.finished_speaking(speech)
+
+    conversation = state.get("conversation")
+
+    if conversation is not None:
+        conversation.spoke(int(time.monotonic() * 1000), invited=invited)
+
+    return {
+        "spoke": True,
+        "completed": completed,
+        "frames": frames,
+        "utterances_left": window["remaining"],
+    }
+
+
 def _pcm_from_wav(audio):
     """The samples out of a WAV, without a dependency to read one.
 
@@ -658,6 +743,82 @@ def _pcm_from_wav(audio):
     return audio
 
 
+def voice_converse(state, args, nonce=None):
+    """Opens a bounded window in which Aurora may speak when it is spoken to.
+
+    The widest grant in this plugin, and shaped accordingly. Approving every sentence is not a
+    conversation — nobody would sit at a keyboard clicking yes while their friends talk — so the
+    owner approves the conversation instead, once. What keeps that honest is that the window is
+    small by construction: it expires, it counts what it spends, and the three ways to end it
+    early (leave, stop, mute) are the capabilities that ask nobody's permission.
+    """
+    session = state.get("voice")
+
+    if session is None:
+        raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
+
+    ready = voice_engines.readiness()
+
+    if not ready["can_speak"]:
+        raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))
+
+    gateway = state.get("gateway")
+    identity = gateway.status() if gateway else {}
+
+    state["conversation"] = Conversation(
+        identity.get("bot_name") or "aurora", identity.get("bot_user_id"))
+
+    window = {
+        "until_ms": time.monotonic() * 1000 + args["minutes"] * 60_000,
+        "remaining": args["max_utterances"],
+        "granted_utterances": args["max_utterances"],
+        "minutes": args["minutes"],
+    }
+
+    state["conversation_window"] = window
+
+    report("voice.conversation_opened", {
+        "guild_id": session.guild_id,
+        "channel_id": session.channel_id,
+        "minutes": args["minutes"],
+        "max_utterances": args["max_utterances"],
+    })
+
+    return {
+        "conversing": True,
+        "minutes": args["minutes"],
+        "max_utterances": args["max_utterances"],
+    }
+
+
+def conversation_window(state):
+    """The live window, or None. Expiry is checked here so nothing has to sweep."""
+    window = state.get("conversation_window")
+
+    if window is None:
+        return None
+
+    if time.monotonic() * 1000 > window["until_ms"] or window["remaining"] <= 0:
+        # Dead by construction rather than by a background job, the same way a consent session is
+        # (docs/adr/0010): a window that stops matching cannot be used again.
+        state.pop("conversation_window", None)
+        state.pop("conversation", None)
+
+        report("voice.conversation_closed", {
+            "reason": "expired" if window["remaining"] > 0 else "spent",
+        })
+
+        return None
+
+    return window
+
+
+def close_conversation(state, reason):
+    if state.pop("conversation_window", None) is not None:
+        state.pop("conversation", None)
+        report("voice.conversation_closed", {"reason": reason})
+
+
 def voice_stop(state, args, nonce=None):
     session = state.get("voice")
 
@@ -675,6 +836,10 @@ def voice_stop(state, args, nonce=None):
 
 def voice_mute(state, args, nonce=None):
     state["voice_muted"] = True
+
+    # Muting ends the window rather than pausing it. A grant that survives being switched off is a
+    # grant somebody has to remember to revoke twice.
+    close_conversation(state, "muted")
     voice_stop(state, args)
     return {"muted": True}
 
@@ -786,6 +951,7 @@ GATEWAY_READS = {
 }
 
 GATEWAY_WRITES = {
+    "discord.voice.converse": voice_converse,
     "discord.gateway.connect": gateway_connect,
     "discord.gateway.disconnect": gateway_disconnect,
     "discord.voice.join": voice_join,

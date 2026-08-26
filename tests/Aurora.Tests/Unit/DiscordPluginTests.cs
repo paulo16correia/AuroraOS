@@ -141,7 +141,7 @@ public sealed class DiscordPluginTests : IDisposable
         PluginManifest manifest = Manifest();
 
         Assert.Equal("plugin/discord", manifest.PluginId);
-        Assert.Equal(32, manifest.Capabilities.Count);
+        Assert.Equal(33, manifest.Capabilities.Count);
         Assert.NotNull(manifest.Service);
         Assert.Equal("bot_token", Assert.Single(manifest.RequiredSecrets!).Name);
 

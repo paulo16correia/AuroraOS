@@ -1167,6 +1167,49 @@
       "timeout_seconds": 10,
       "idempotent": true,
       "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.converse",
+      "title": "Take part in the conversation",
+      "description": "Lets Aurora speak when it is spoken to, for a bounded time, without approving each sentence. Approving every utterance is not a conversation \u2014 but this is the widest grant in the plugin, so it expires, it counts what it spends, and leaving or muting ends it immediately and needs nobody's permission.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "minutes",
+          "max_utterances"
+        ],
+        "properties": {
+          "minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "max_utterances": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.speak",
+        "discord.voice.converse"
+      ],
+      "risk": "HIGH",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 4,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
     }
   ]
 }

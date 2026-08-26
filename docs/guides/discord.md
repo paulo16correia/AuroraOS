@@ -137,6 +137,45 @@ plus a second websocket, a UDP flow and an AEAD cipher. `docs/adr/0068` says exa
 and what finishing it takes. Joining a call refuses cleanly rather than sitting silently in
 somebody's conversation.
 
+## Being in a conversation rather than answering queries
+
+Approving every sentence is not a conversation. Nobody sits at a keyboard clicking yes while their
+friends talk, and a system that needs it is not present in the room — it is a query interface with
+a microphone.
+
+So `discord.voice.converse` opens a **bounded window**: Aurora may speak when it is spoken to, for
+a set number of minutes and a set number of utterances. It is the widest grant in the plugin and it
+is shaped accordingly — HIGH risk, approval every time, capped at 60 minutes and 50 utterances by
+its own schema so there is no way to ask for an unlimited one.
+
+What makes it safe to grant is how easily it ends. **Leaving, stopping and muting all close it
+immediately and all ask nobody's permission.** A grant that survives being switched off is a grant
+somebody has to remember to revoke twice.
+
+### The part that decides whether to speak at all
+
+This is what separates being in a conversation from being a robot in a room, and almost all of it
+is deciding to stay quiet:
+
+- **Being named is an invitation, and nearly the only reliable one.** "aurora, what do you think?"
+  gets an answer; "we saw the aurorae last night" does not.
+- **A question in a group is not a question for Aurora.** Three people talking and somebody asks
+  the time — answering that is how a guest makes itself the centre of the conversation.
+- **"Does anyone know…" is asked of nobody in particular.** Left alone.
+- **"yeah", "mhm", "pois", "haha" are not openings**, however warm they are.
+- **Having just spoken makes the next contribution less welcome, not more.** There is a cooldown,
+  and being named cuts through it, because somebody deliberately asking should never be ignored.
+- **After contributing twice uninvited, Aurora stops** until somebody wants the next one.
+- **Nothing answers instantly.** People leave a gap, and the gap varies — a fixed pause is as
+  recognisable as no pause at all.
+
+Every utterance Aurora hears is reported as an observation whether or not it decides to speak.
+Hiding the ones it stays quiet for would make the room look emptier than it is.
+
+The **words** are Aurora's own business — this decides whether a reply is wanted and when it would
+be natural to start, not what to say. Keep replies short; a voice answer that reads well written
+down is usually far too long out loud.
+
 ## Rate limits
 
 Discord's limits are read from its own headers, per route. A rate-limited call comes back named as
