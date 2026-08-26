@@ -3,42 +3,65 @@ using System.Text;
 using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Adapters.Plugins.Sandboxes;
 
 namespace Aurora.Adapters.Plugins;
 
 /// <summary>
-/// Runs a plugin in its own process, over stdin and stdout.
+/// Runs a plugin in its own process, over stdin and stdout, confined by the operating system.
 /// </summary>
 /// <remarks>
-/// What this actually isolates, stated exactly, because RFC 060 rule 2 is the rule most easily
-/// claimed and least easily kept:
+/// What this isolates, stated exactly, because RFC 060 rule 2 is the rule most easily claimed and
+/// least easily kept:
 /// <list type="bullet">
-/// <item><b>The process:</b> yes. Separate address space; nothing the plugin does can reach
-/// Aurora's objects, and a crash is an exit code rather than a fault in Aurora.</item>
-/// <item><b>The database and the vault:</b> yes, and by construction. The child is given the
-/// invocation on stdin and nothing else — no connection string, no key path, no handle. The
+/// <item><b>The process:</b> yes, always. Separate address space; nothing the plugin does can
+/// reach Aurora's objects, and a crash is an exit code rather than a fault in Aurora.</item>
+/// <item><b>The database and the vault:</b> yes, always, and by construction. The child is given
+/// the invocation on stdin and nothing else — no connection string, no key path, no handle. The
 /// environment is <b>not inherited</b>, so a variable Aurora happens to hold does not travel.</item>
-/// <item><b>The filesystem:</b> partly. The working directory is a per-plugin folder and the
-/// environment carries no paths, but the child runs as the same OS user and can read what that
-/// user can read.</item>
-/// <item><b>The network:</b> <b>no.</b> Nothing here prevents a child process opening a socket.
-/// The declared endpoints are a statement Aurora holds the plugin to when <i>Aurora</i> makes the
-/// call, and they are not a firewall.</item>
+/// <item><b>The filesystem and the network:</b> only as far as the <see cref="IPluginSandbox"/>
+/// reaches. Where the platform has one, the plugin cannot open a socket, cannot read the owner's
+/// home, and can write only to its own working directory. Where it does not, none of that is true
+/// — and this host <b>refuses to invoke</b> rather than run a third party's code loose, unless the
+/// owner has said otherwise.</item>
 /// </list>
-/// Closing the last two needs an OS sandbox — a container, a jail, seccomp, App Sandbox — which is
-/// per-platform work and is not here. Until it is, a plugin is isolated from <i>Aurora</i> and not
-/// from the machine, and that is the honest summary to make an install decision against.
+/// The refusal is the point. Before this, an unconfined plugin and a confined one produced
+/// identical results, so the missing half of rule 2 was invisible at the only moment it mattered.
 /// </remarks>
 public sealed class SubprocessPluginHost : IPluginHost
 {
     /// <summary>Where each plugin's working directory lives.</summary>
     private readonly string _root;
 
-    public SubprocessPluginHost(string root)
+    private readonly IPluginSandbox _sandbox;
+
+    /// <summary>
+    /// Whether the owner has accepted running plugins the platform cannot confine.
+    /// </summary>
+    private readonly bool _allowUnconfined;
+
+    /// <param name="root">The directory under which each plugin gets a working directory.</param>
+    /// <param name="sandbox">
+    /// The confinement to apply. Defaults to the strongest this machine can deliver.
+    /// </param>
+    /// <param name="allowUnconfined">
+    /// Set only by an owner who has read what it costs. Default <see langword="false"/>: a
+    /// platform Aurora cannot confine gets a refusal, not a quiet exception to rule 2.
+    /// </param>
+    public SubprocessPluginHost(
+        string root, IPluginSandbox? sandbox = null, bool allowUnconfined = false)
     {
         _root = Path.GetFullPath(root);
+        _sandbox = sandbox ?? PluginSandbox.ForThisMachine();
+        _allowUnconfined = allowUnconfined;
         Directory.CreateDirectory(_root);
     }
+
+    /// <summary>
+    /// What plugins on this machine actually run under, for the panel and the install decision.
+    /// </summary>
+    public SandboxPlan Confinement => _sandbox.Plan(
+        new SandboxRequest("aurora", Path.Combine(_root, "plugin"), _root));
 
     public async Task<PluginResult> InvokeAsync(
         PluginManifest manifest, PluginInvocation invocation, CancellationToken ct)
@@ -51,9 +74,29 @@ public sealed class SubprocessPluginHost : IPluginHost
         var workingDirectory = Path.Combine(_root, manifest.PluginId);
         Directory.CreateDirectory(workingDirectory);
 
+        SandboxPlan plan = _sandbox.Plan(
+            new SandboxRequest(manifest.PluginId, manifest.Executable, workingDirectory));
+
+        if (plan.Level == SandboxLevel.Process && !_allowUnconfined)
+        {
+            // Named in full, because the owner has to decide, and can only decide against a
+            // description of what they would be accepting.
+            var cost = string.Join("; ", plan.Unenforced);
+
+            return new PluginResult(
+                false, null, PluginRefusal.SandboxUnavailable,
+                $"{manifest.PluginId} was not run: {plan.Mechanism}. Unconfined, {cost}. "
+                + "Set Aurora:Plugins:AllowUnconfined to accept that.",
+                0);
+        }
+
         var start = new ProcessStartInfo
         {
-            FileName = manifest.Executable,
+            FileName = plan.FileName,
+
+            // The plugin's own directory, which under a sandbox is also the only one it may write
+            // to. Losing this line makes the child inherit Aurora's directory instead, and every
+            // relative path it uses lands somewhere the sandbox correctly refuses.
             WorkingDirectory = workingDirectory,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -61,6 +104,17 @@ public sealed class SubprocessPluginHost : IPluginHost
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+
+        foreach (var argument in plan.Arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        if (plan.FileName != manifest.Executable)
+        {
+            // Under a wrapper the plugin's own path is the wrapper's last argument.
+            start.ArgumentList.Add(manifest.Executable);
+        }
 
         // Nothing of Aurora's travels. A key path or a connection string sitting in the parent's
         // environment is exactly the sort of thing that leaks without anybody deciding to pass it.

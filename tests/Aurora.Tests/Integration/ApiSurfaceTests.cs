@@ -449,7 +449,7 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
 
         JsonElement body = await BodyAsync(response);
 
-        Assert.Equal(6, body.GetProperty("checks").GetArrayLength());
+        Assert.Equal(7, body.GetProperty("checks").GetArrayLength());
         Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("status").GetString()));
         Assert.True(body.GetProperty("schema_version").GetInt32() > 0);
 

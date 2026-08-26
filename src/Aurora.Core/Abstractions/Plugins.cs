@@ -62,3 +62,71 @@ public interface IPluginRegistry
 
     Task<IReadOnlyList<PluginInstallation>> ListAsync(CancellationToken ct);
 }
+
+/// <summary>
+/// Turns "run this plugin" into "run this plugin, confined by the operating system".
+/// </summary>
+/// <remarks>
+/// RFC 060 rule 2 says a plugin runs "without access to the main process, database, vault or
+/// general network". A separate process delivers the first three by construction. The last one —
+/// and the filesystem — are not properties of a process at all: they are properties of what the
+/// kernel will let that process do, and only the operating system can decide them.
+/// <para>
+/// So this seam produces a <see cref="SandboxPlan"/>: the command actually to launch, and a
+/// truthful statement of what confining it achieved. A platform that cannot confine says so rather
+/// than returning the command unchanged and letting the caller assume.
+/// </para>
+/// </remarks>
+public interface IPluginSandbox
+{
+    /// <summary>
+    /// Decides how to launch this plugin, and reports what the launch will and will not enforce.
+    /// </summary>
+    SandboxPlan Plan(SandboxRequest request);
+}
+
+/// <summary>What the host wants confined.</summary>
+/// <param name="PluginId">Used only to name the plugin in a refusal.</param>
+/// <param name="Executable">The absolute path of the program to run.</param>
+/// <param name="WorkingDirectory">
+/// The one directory the plugin may write to. Everything else is read-only at best.
+/// </param>
+public sealed record SandboxRequest(string PluginId, string Executable, string WorkingDirectory);
+
+/// <summary>How confined a plugin actually is once launched.</summary>
+public enum SandboxLevel
+{
+    /// <summary>
+    /// A separate process and nothing more. Isolated from Aurora; not from the machine.
+    /// </summary>
+    Process,
+
+    /// <summary>
+    /// A separate process that the kernel also holds to a policy: no network, no writes outside
+    /// its working directory, and no reading of the owner's files.
+    /// </summary>
+    Confined,
+}
+
+/// <summary>
+/// The command to launch and the truth about it.
+/// </summary>
+/// <param name="FileName">The program to start — the sandbox wrapper, or the plugin itself.</param>
+/// <param name="Arguments">
+/// Everything before the plugin's own path, already in the wrapper's order.
+/// </param>
+/// <param name="Level">What launching this way actually enforces.</param>
+/// <param name="Mechanism">
+/// The name of the thing doing the enforcing, for the audit record and the refusal message —
+/// <c>sandbox-exec</c>, <c>bubblewrap</c>, or why there is nothing.
+/// </param>
+/// <param name="Unenforced">
+/// Each part of RFC 060 rule 2 this plan does not deliver, in words an owner can act on. Empty at
+/// <see cref="SandboxLevel.Confined"/>.
+/// </param>
+public sealed record SandboxPlan(
+    string FileName,
+    IReadOnlyList<string> Arguments,
+    SandboxLevel Level,
+    string Mechanism,
+    IReadOnlyList<string> Unenforced);

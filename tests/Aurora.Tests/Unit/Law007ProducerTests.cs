@@ -10,6 +10,7 @@ using Aurora.Adapters.Missions;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.Personality;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Relationships;
 using Aurora.Adapters.Resources;
@@ -277,7 +278,7 @@ public sealed class Law007ProducerTests
             resources,
             new AuroraHealthService(
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
-                new SqliteScheduler(db.Factory, bus, new Adapters.Cognition.SqliteCognitiveCycle(db.Factory, clock), clock),
+                new SqliteScheduler(db.Factory, bus, new Adapters.Cognition.SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
                 clock),
             new InMemoryIdempotencyStore(), clock, bus);
 

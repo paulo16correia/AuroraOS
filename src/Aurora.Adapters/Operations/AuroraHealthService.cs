@@ -22,6 +22,7 @@ public sealed class AuroraHealthService : IHealthService
     private readonly IResourceModel _resources;
     private readonly IClockGuard _clockGuard;
     private readonly IScheduler _scheduler;
+    private readonly IPluginSandbox _sandbox;
     private readonly IClock _clock;
 
     public AuroraHealthService(
@@ -31,6 +32,7 @@ public sealed class AuroraHealthService : IHealthService
         IResourceModel resources,
         IClockGuard clockGuard,
         IScheduler scheduler,
+        IPluginSandbox sandbox,
         IClock clock)
     {
         _factory = factory;
@@ -39,6 +41,7 @@ public sealed class AuroraHealthService : IHealthService
         _resources = resources;
         _clockGuard = clockGuard;
         _scheduler = scheduler;
+        _sandbox = sandbox;
         _clock = clock;
     }
 
@@ -50,7 +53,28 @@ public sealed class AuroraHealthService : IHealthService
         await Timed("event-bus", ["database"], BusAsync, ct).ConfigureAwait(false),
         await Timed("scheduler", ["database", "clock"], SchedulerAsync, ct).ConfigureAwait(false),
         await Timed("resources", [], ResourcesAsync, ct).ConfigureAwait(false),
+        await Timed("plugin-sandbox", [], SandboxAsync, ct).ConfigureAwait(false),
     ];
+
+    /// <summary>
+    /// Whether third-party code on this machine is actually confined (RFC 060 rule 2).
+    /// </summary>
+    /// <remarks>
+    /// A check rather than a startup log line, because the answer decides what installing a plugin
+    /// means and the owner should be able to read it at any moment, not find it in scrollback. It
+    /// warns rather than fails: Aurora itself is working, and on an unconfined platform the host
+    /// refuses plugins anyway unless the owner accepted that.
+    /// </remarks>
+    private Task<(string Status, string Detail)> SandboxAsync(CancellationToken ct)
+    {
+        // A representative plan. The mechanism does not vary per plugin; only the paths do.
+        SandboxPlan plan = _sandbox.Plan(
+            new SandboxRequest("aurora", Path.Combine(Path.GetTempPath(), "plugin"), Path.GetTempPath()));
+
+        return Task.FromResult(plan.Level == SandboxLevel.Confined
+            ? (HealthStatus.Pass, $"plugins confined by {plan.Mechanism}")
+            : (HealthStatus.Warn, $"plugins not confined: {plan.Mechanism}"));
+    }
 
     private async Task<(string Status, string Detail)> DatabaseAsync(CancellationToken ct)
     {

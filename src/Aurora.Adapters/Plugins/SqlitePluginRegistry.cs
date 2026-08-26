@@ -232,6 +232,15 @@ public sealed partial class SqlitePluginRegistry : IPluginRegistry
             return Refused(PluginRefusal.SecretInOutput, "the output was withheld and not returned");
         }
 
+        if (result.Refusal == PluginRefusal.SandboxUnavailable)
+        {
+            // The plugin never ran. Counting this would open the circuit after three calls and
+            // quarantine a plugin for a property of the machine — so that installing bubblewrap,
+            // or accepting an unconfined run, would leave the owner with a plugin still marked
+            // untrustworthy for a reason it was never responsible for.
+            return result;
+        }
+
         await RecordOutcomeAsync(installation, result.Ok, ct).ConfigureAwait(false);
         return result;
     }

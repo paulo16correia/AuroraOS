@@ -10,6 +10,7 @@ using Aurora.Adapters.Resources;
 using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Self;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.World;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
@@ -109,7 +110,7 @@ public sealed class KernelDispatcherTests
             db.Factory, new FakeRegistry(capability), new FakePolicy(true), resources,
             new AuroraHealthService(
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
-                new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock),
+                new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
                 clock),
             new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
     }
@@ -387,7 +388,7 @@ public sealed class KernelDispatcherTests
             db.Factory, new FakeRegistry(effectful), new FakePolicy(true), resources,
             new AuroraHealthService(
                 db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
-                new SqliteScheduler(db.Factory, bus, cycle, clock), clock),
+                new SqliteScheduler(db.Factory, bus, cycle, clock), PluginSandbox.ForThisMachine(), clock),
             new InMemoryIdempotencyStore(), clock, TestBus.Over(db.Factory, clock));
 
         var kernel = new AuroraKernel(

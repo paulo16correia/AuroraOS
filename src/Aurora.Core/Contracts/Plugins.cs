@@ -28,6 +28,12 @@ public static class PluginRefusal
     public const string CircuitOpen = "CIRCUIT_OPEN";
     public const string NewPermissions = "NEW_PERMISSIONS_REQUIRE_REVIEW";
     public const string NewPublisher = "NEW_PUBLISHER_REQUIRES_REVIEW";
+
+    /// <summary>
+    /// The machine could not confine the plugin, and the owner has not accepted running it loose
+    /// (docs/adr/0052). Nothing about the plugin is wrong, so this does not count against it.
+    /// </summary>
+    public const string SandboxUnavailable = "sandbox_unavailable";
 }
 
 /// <summary>

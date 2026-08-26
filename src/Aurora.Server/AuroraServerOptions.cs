@@ -55,6 +55,17 @@ public sealed class AuroraServerOptions
     public required string PluginKeyPath { get; init; }
 
     /// <summary>
+    /// Whether plugins may run on a platform that cannot confine them (docs/adr/0052).
+    /// </summary>
+    /// <remarks>
+    /// Default <see langword="false"/>. Turning it on means third-party code runs with the
+    /// owner's own reach: the network, every file the owner can read — Aurora's database and key
+    /// files among them — and every file the owner can write. It is the right answer for somebody
+    /// who wrote the plugin themselves, and the wrong one for anything installed.
+    /// </remarks>
+    public bool AllowUnconfinedPlugins { get; init; }
+
+    /// <summary>
     /// File holding the key that encrypts deliberation traces (docs/adr/0040).
     /// </summary>
     /// <remarks>
@@ -130,6 +141,9 @@ public sealed class AuroraServerOptions
         var pluginRoot = config["Aurora:PluginRoot"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "plugins");
 
+        var allowUnconfinedPlugins =
+            config.GetValue<bool?>("Aurora:Plugins:AllowUnconfined") ?? false;
+
         var pluginKeyPath = config["Aurora:PluginKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.plugin.key");
 
@@ -158,6 +172,7 @@ public sealed class AuroraServerOptions
             DeliberationKeyPath = deliberationKeyPath,
             PluginRoot = pluginRoot,
             PluginKeyPath = pluginKeyPath,
+            AllowUnconfinedPlugins = allowUnconfinedPlugins,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

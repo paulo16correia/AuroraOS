@@ -4,6 +4,7 @@ using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.Resources;
 using Aurora.Adapters.Scheduling;
 using Aurora.Adapters.Self;
@@ -53,7 +54,7 @@ public sealed class SelfModelTests
 
         var health = new AuroraHealthService(
             db.Factory, audit, bus, resources, new AuditClockGuard(audit, clock),
-            new SqliteScheduler(db.Factory, bus, cycles, clock), clock);
+            new SqliteScheduler(db.Factory, bus, cycles, clock), PluginSandbox.ForThisMachine(), clock);
 
         return new SqliteSelfModel(
             db.Factory,

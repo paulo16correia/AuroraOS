@@ -72,6 +72,10 @@ is never available. A suite that opens windows is a suite people stop running.
 
 ## The two that cannot be closed here
 
+*(Both were closed the next day: the Azure adapter was removed rather than validated
+— `docs/adr/0051` — and plugin confinement was implemented — `docs/adr/0052`. What follows is what
+was true on 2026-08-25.)*
+
 **Azure OpenAI has never run against the live service.** There is no endpoint and no key on this
 machine, and there is no honest way to test it from here. Objective mode degrades to the keyword
 fallback when no model is configured, and that is the path every test exercises. Whoever configures

@@ -3,6 +3,7 @@ using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.Persistence;
+using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Resources;
 using Aurora.Adapters.Scheduling;
@@ -40,7 +41,7 @@ public sealed class OperationsTests
             db.Factory, audit, bus,
             new SystemResourceModel(probe ?? new FakeResourceProbe(), clock),
             new AuditClockGuard(audit, clock),
-            new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock),
+            new SqliteScheduler(db.Factory, bus, new SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
             clock);
     }
 
@@ -106,11 +107,24 @@ public sealed class OperationsTests
         IReadOnlyList<HealthCheck> checks = await Health(db, clock, Audit(db, clock)).ReadAsync(Ct);
 
         Assert.Equal(
-            ["database", "audit", "clock", "event-bus", "scheduler", "resources"],
+            ["database", "audit", "clock", "event-bus", "scheduler", "resources", "plugin-sandbox"],
             checks.Select(c => c.Component));
 
-        Assert.All(checks, check => Assert.Equal(HealthStatus.Pass, check.Status));
-        Assert.Equal(HealthStatus.Pass, HealthStatus.Worst(checks.Select(c => c.Status)));
+        Assert.All(
+            checks.Where(c => c.Component != "plugin-sandbox"),
+            check => Assert.Equal(HealthStatus.Pass, check.Status));
+
+        // The sandbox check reports the machine, not the code, so it is asserted against the
+        // machine. A test that demanded PASS here would fail on a Linux without bubblewrap — and
+        // would be right to, which is exactly why it must not be an incidental assertion inside a
+        // test about something else.
+        HealthCheck sandbox = checks.Single(c => c.Component == "plugin-sandbox");
+
+        Assert.Equal(
+            OperatingSystem.IsMacOS() && File.Exists("/usr/bin/sandbox-exec")
+                ? HealthStatus.Pass
+                : HealthStatus.Warn,
+            sandbox.Status);
     }
 
     [Fact]
@@ -148,7 +162,7 @@ public sealed class OperationsTests
     }
 
     [Fact]
-    public async Task AFailingCheckDoesNotTakeTheOtherFiveWithIt()
+    public async Task AFailingCheckDoesNotTakeTheOthersWithIt()
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-15T09:00:00+00:00"));
@@ -165,14 +179,14 @@ public sealed class OperationsTests
             new SqliteScheduler(
                 db.Factory,
                 new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock),
-                new SqliteCognitiveCycle(db.Factory, clock), clock),
+                new SqliteCognitiveCycle(db.Factory, clock), clock), PluginSandbox.ForThisMachine(),
             clock);
 
         IReadOnlyList<HealthCheck> checks = await health.ReadAsync(Ct);
 
         // The moment a health answer matters most is when something is broken, so it reports on
         // everything rather than crashing on the first thing that is.
-        Assert.Equal(6, checks.Count);
+        Assert.Equal(7, checks.Count);
         Assert.Contains(checks, c => c.Status == HealthStatus.Pass);
     }
 

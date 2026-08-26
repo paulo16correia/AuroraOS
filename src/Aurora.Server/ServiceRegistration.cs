@@ -35,6 +35,7 @@ using Aurora.Adapters.Self;
 using Aurora.Adapters.Signals;
 using Aurora.Adapters.Planning;
 using Aurora.Adapters.Plugins;
+using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.Policy;
 using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Relationships;
@@ -131,9 +132,15 @@ public static class ServiceRegistration
         services.AddSingleton<ILifeHistory, SqliteLifeHistory>();
 
         // Third parties on a security contract rather than as a privileged exception (RFC 060).
-        // The host runs them out of process; ADR 0048 states exactly what that does and does not
-        // isolate, because rule 2 is the rule most easily claimed and least easily kept.
-        services.AddSingleton<IPluginHost>(_ => new SubprocessPluginHost(options.PluginRoot));
+        // Out of process for the first half of rule 2, and under an OS sandbox for the second:
+        // no network, no reading the owner's files, no writing outside its own directory. Where
+        // the platform offers no sandbox the host refuses to invoke at all, unless the owner has
+        // set Aurora:Plugins:AllowUnconfined (docs/adr/0052).
+        services.AddSingleton<IPluginSandbox>(_ => PluginSandbox.ForThisMachine());
+        services.AddSingleton<IPluginHost>(sp => new SubprocessPluginHost(
+            options.PluginRoot,
+            sp.GetRequiredService<IPluginSandbox>(),
+            options.AllowUnconfinedPlugins));
         services.AddSingleton<IPluginRegistry>(sp => new SqlitePluginRegistry(
             sp.GetRequiredService<SqliteConnectionFactory>(),
             sp.GetRequiredService<IPluginHost>(),
