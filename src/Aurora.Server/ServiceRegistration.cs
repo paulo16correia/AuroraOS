@@ -222,20 +222,12 @@ public static class ServiceRegistration
         services.AddSingleton<IConsentGate, SessionAwareConsentGate>();
         services.AddSingleton<IPassphraseAuthenticator>(sp => new Pbkdf2PassphraseAuthenticator(
             options.PassphrasePath, sp.GetRequiredService<IClock>(), PassphraseOptions.Default));
-        // Untrusted proposers, tried in order. The kernel commits, never the reasoner.
-        services.AddHttpClient();
-        services.AddSingleton<IReasoner>(sp =>
-        {
-            var proposers = new List<IReasoner>();
-            if (options.AzureOpenAi is { } azure)
-            {
-                var factory = sp.GetRequiredService<IHttpClientFactory>();
-                proposers.Add(new AzureOpenAiReasoner(factory.CreateClient("azure-openai"), azure));
-            }
-
-            proposers.Add(new KeywordReasoner());
-            return new CompositeReasoner(proposers);
-        });
+        // The untrusted proposer. Aurora resolves an objective by matching words against its own
+        // catalogue and nothing else: language understanding belongs to the LLM client (RFC 045),
+        // and a second model here would be a second opinion Aurora has no way to check — reached
+        // over the network, from a machine whose whole point is that it does not need one
+        // (docs/adr/0051). The kernel commits, never the reasoner.
+        services.AddSingleton<IReasoner>(_ => new CompositeReasoner([new KeywordReasoner()]));
         services.AddSingleton<ISandboxFileWriter>(_ => new SandboxFileWriter(options.SandboxRoot));
         services.AddSingleton<ISandboxFileReader>(_ => new SandboxFileReader(options.SandboxRoot));
         services.AddSingleton<ICapability, ClockNowCapability>();

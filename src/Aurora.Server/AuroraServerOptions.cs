@@ -76,9 +76,6 @@ public sealed class AuroraServerOptions
     /// <summary>File mirroring the audit head, so a truncated tail is detectable.</summary>
     public required string AuditAnchorPath { get; init; }
 
-    /// <summary>Azure OpenAI settings, or null when objective mode falls back to keywords only.</summary>
-    public AzureOpenAiOptions? AzureOpenAi { get; init; }
-
     public static AuroraServerOptions FromConfiguration(IConfiguration config)
     {
         var token = config["Aurora:BearerToken"]
@@ -149,25 +146,6 @@ public sealed class AuroraServerOptions
         var auditAnchorPath = config["Aurora:AuditAnchorPath"]
             ?? Path.GetFullPath(dbPath) + ".anchor";
 
-        // Objective mode only reaches the model when all three are present; otherwise the
-        // keyword fallback stands in, restricted to LOW read-only actions.
-        var azureEndpoint = config["Aurora:AzureOpenAI:Endpoint"];
-        var azureDeployment = config["Aurora:AzureOpenAI:Deployment"];
-        var azureKey = config["Aurora:AzureOpenAI:ApiKey"]
-            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
-
-        AzureOpenAiOptions? azure = null;
-        if (!string.IsNullOrWhiteSpace(azureEndpoint)
-            && !string.IsNullOrWhiteSpace(azureDeployment)
-            && !string.IsNullOrWhiteSpace(azureKey))
-        {
-            azure = new AzureOpenAiOptions(
-                azureEndpoint,
-                azureDeployment,
-                azureKey,
-                config["Aurora:AzureOpenAI:ApiVersion"] ?? "2024-10-21");
-        }
-
         var options = new AuroraServerOptions
         {
             BearerToken = token,
@@ -184,7 +162,6 @@ public sealed class AuroraServerOptions
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,
             AuditAnchorPath = auditAnchorPath,
-            AzureOpenAi = azure,
         };
         if (generated)
         {

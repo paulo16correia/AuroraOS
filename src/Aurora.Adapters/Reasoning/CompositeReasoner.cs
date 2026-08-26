@@ -4,10 +4,16 @@ using Aurora.Core.Contracts;
 namespace Aurora.Adapters.Reasoning;
 
 /// <summary>
-/// Tries each proposer in order and returns the first proposal. The model-backed proposer goes
-/// first when configured; the keyword fallback answers when it is absent, offline or unsure, so a
-/// missing Azure deployment degrades objective mode to LOW read-only actions instead of killing it.
+/// Tries each proposer in order and returns the first one that names an action.
 /// </summary>
+/// <remarks>
+/// Today the list holds one entry, <see cref="KeywordReasoner"/>, and Aurora ships no other
+/// (docs/adr/0051): interpreting language is the LLM client's job, and a proposer that reaches the
+/// network would undo the property that Aurora runs entirely on this machine. The seam stays
+/// because it is where a local proposer would be added, and because it is the shape that keeps a
+/// proposer's answer a suggestion — every proposal still goes through the kernel, which resolves,
+/// authorizes and commits on its own terms.
+/// </remarks>
 public sealed class CompositeReasoner : IReasoner
 {
     private readonly IReadOnlyList<IReasoner> _proposers;

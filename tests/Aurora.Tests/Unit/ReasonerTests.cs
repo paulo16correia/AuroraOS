@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using Aurora.Adapters.Reasoning;
@@ -8,6 +7,14 @@ using Xunit;
 
 namespace Aurora.Tests.Unit;
 
+/// <summary>
+/// The keyword proposer, which is the only one there is (docs/adr/0051).
+/// </summary>
+/// <remarks>
+/// It matches words against Aurora's own catalogue and declines rather than guessing. Language
+/// understanding belongs to the LLM client; this exists so an objective still resolves to
+/// something harmless when nobody is there to interpret it.
+/// </remarks>
 public sealed class ReasonerTests
 {
     private static JsonElement Schema(string json) => JsonDocument.Parse(json).RootElement.Clone();
@@ -88,158 +95,4 @@ public sealed class ReasonerTests
             .ProposeAsync("book me a flight to Lisbon", Catalog, CancellationToken.None);
 
         Assert.Null(proposal);
-    }
-
-    // ---- Azure OpenAI ----
-
-    private sealed class StubHandler : HttpMessageHandler
-    {
-        private readonly HttpStatusCode _status;
-        private readonly string _body;
-
-        public StubHandler(HttpStatusCode status, string body)
-        {
-            _status = status;
-            _body = body;
-        }
-
-        public HttpRequestMessage? LastRequest { get; private set; }
-
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-        {
-            LastRequest = request;
-            return Task.FromResult(new HttpResponseMessage(_status)
-            {
-                Content = new StringContent(_body, Encoding.UTF8, "application/json"),
-            });
-        }
-    }
-
-    private static string Completion(string content) =>
-        JsonSerializer.Serialize(new
-        {
-            choices = new[] { new { message = new { content } } },
-        });
-
-    private static AzureOpenAiReasoner Reasoner(StubHandler handler) =>
-        new(new HttpClient(handler), new AzureOpenAiOptions("https://x.openai.azure.com", "gpt", "secret"));
-
-    [Fact]
-    public async Task Azure_ParsesProposal()
-    {
-        var handler = new StubHandler(
-            HttpStatusCode.OK,
-            Completion("""{"action_id":"echo.say","input":{"message":"hi"},"confidence":0.9}"""));
-
-        var proposal = await Reasoner(handler).ProposeAsync("greet the user", Catalog, CancellationToken.None);
-
-        Assert.NotNull(proposal);
-        Assert.Equal("echo.say", proposal!.ActionId);
-        Assert.Equal("hi", proposal.Input!.Value.GetProperty("message").GetString());
-        Assert.Equal(0.9, proposal.Confidence, 3);
-        Assert.Equal(ResolutionVia.Reasoner, proposal.Via);
-    }
-
-    [Fact]
-    public async Task Azure_SendsApiKeyHeaderAndDeploymentUrl()
-    {
-        var handler = new StubHandler(HttpStatusCode.OK, Completion("""{"action_id":null}"""));
-
-        await Reasoner(handler).ProposeAsync("anything", Catalog, CancellationToken.None);
-
-        Assert.Contains("/openai/deployments/gpt/chat/completions", handler.LastRequest!.RequestUri!.ToString());
-        Assert.True(handler.LastRequest.Headers.Contains("api-key"));
-    }
-
-    [Theory]
-    [InlineData(HttpStatusCode.Unauthorized, "{}")]
-    [InlineData(HttpStatusCode.InternalServerError, "{}")]
-    public async Task Azure_ReturnsNullOnHttpFailure(HttpStatusCode status, string body)
-    {
-        var proposal = await Reasoner(new StubHandler(status, body))
-            .ProposeAsync("greet", Catalog, CancellationToken.None);
-
-        Assert.Null(proposal);
-    }
-
-    [Theory]
-    [InlineData("not json at all")]
-    [InlineData("""{"choices":[]}""")]
-    public async Task Azure_ReturnsNullOnUnusableEnvelope(string body)
-    {
-        var proposal = await Reasoner(new StubHandler(HttpStatusCode.OK, body))
-            .ProposeAsync("greet", Catalog, CancellationToken.None);
-
-        Assert.Null(proposal);
-    }
-
-    [Theory]
-    [InlineData("""{"action_id":null}""")]
-    [InlineData("""{"action_id":""}""")]
-    [InlineData("""{"nonsense":true}""")]
-    [InlineData("[1,2,3]")]
-    public async Task Azure_ReturnsNullWhenModelDeclinesOrRambles(string content)
-    {
-        var proposal = await Reasoner(new StubHandler(HttpStatusCode.OK, Completion(content)))
-            .ProposeAsync("greet", Catalog, CancellationToken.None);
-
-        Assert.Null(proposal);
-    }
-
-    [Fact]
-    public async Task Azure_UnknownActionIsStillProposed_ForTheKernelToReject()
-    {
-        // The adapter does not police the catalog; that is the kernel's job, and keeping the
-        // proposal intact means the caller gets "unknown_action" instead of a silent no-op.
-        var handler = new StubHandler(
-            HttpStatusCode.OK, Completion("""{"action_id":"files.delete_everything","input":{}}"""));
-
-        var proposal = await Reasoner(handler).ProposeAsync("wipe the disk", Catalog, CancellationToken.None);
-
-        Assert.Equal("files.delete_everything", proposal!.ActionId);
-    }
-
-    // ---- composition ----
-
-    private sealed class FixedReasoner : IReasoner
-    {
-        private readonly ReasonerProposal? _proposal;
-
-        public FixedReasoner(ReasonerProposal? proposal) => _proposal = proposal;
-
-        public int Calls { get; private set; }
-
-        public ValueTask<ReasonerProposal?> ProposeAsync(
-            string objective, IReadOnlyList<CapabilityDescriptor> catalog, CancellationToken ct)
-        {
-            Calls++;
-            return ValueTask.FromResult(_proposal);
-        }
-    }
-
-    [Fact]
-    public async Task Composite_FallsThroughToTheNextProposer()
-    {
-        var first = new FixedReasoner(null);
-        var second = new FixedReasoner(new ReasonerProposal("clock.now", null, 0.4, ResolutionVia.Keyword));
-
-        var proposal = await new CompositeReasoner([first, second])
-            .ProposeAsync("now", Catalog, CancellationToken.None);
-
-        Assert.Equal("clock.now", proposal!.ActionId);
-        Assert.Equal(1, first.Calls);
-    }
-
-    [Fact]
-    public async Task Composite_StopsAtTheFirstProposal()
-    {
-        var first = new FixedReasoner(new ReasonerProposal("echo.say", null, 0.9, ResolutionVia.Reasoner));
-        var second = new FixedReasoner(new ReasonerProposal("clock.now", null, 0.4, ResolutionVia.Keyword));
-
-        var proposal = await new CompositeReasoner([first, second])
-            .ProposeAsync("greet", Catalog, CancellationToken.None);
-
-        Assert.Equal("echo.say", proposal!.ActionId);
-        Assert.Equal(0, second.Calls);
-    }
-}
+    }}

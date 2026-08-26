@@ -445,10 +445,10 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
     }
 
     [Fact]
-    public async Task Execute_Objective_ResolvesViaKeywordFallback_WhenNoModelIsConfigured()
+    public async Task Execute_Objective_ResolvesViaTheKeywordProposer()
     {
-        // No Azure deployment is configured for tests, so objective mode degrades to the keyword
-        // fallback rather than disappearing.
+        // The keyword proposer is the only one Aurora has (docs/adr/0051), so objective mode
+        // resolves against the catalogue and never leaves the machine.
         await using var client = await ConnectAsync();
         var result = await client.CallToolAsync(
             "aurora_execute",

@@ -1,7 +1,9 @@
 # Design 0004 — Reasoner (It.1)
 
-**Status:** Implemented · **Date:** 2026-08-23
+**Status:** Superseded in part · **Date:** 2026-08-23
 **Depends on:** `docs/adr/0001-mcp-pipeline-slice1.md`
+**Superseded in part by:** `docs/adr/0051-no-model-proposer.md` — the `AzureOpenAiReasoner`
+described below was removed on 2026-08-26. The `KeywordReasoner` half of this design stands.
 
 ## Objective
 

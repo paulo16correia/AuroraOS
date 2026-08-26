@@ -18,9 +18,8 @@ public sealed record PassphraseOptions(int Iterations = 600_000, int FailuresBef
 /// </summary>
 /// <remarks>
 /// PBKDF2 rather than Argon2 because PBKDF2 is in the BCL and Argon2 would mean a new NuGet
-/// dependency; design 0001 requires a supply-chain verdict before any package is added, and the
-/// same rule already kept the Azure SDK out. Argon2 is the better KDF and is recorded as deferred,
-/// not dismissed.
+/// dependency; design 0001 requires a supply-chain verdict before any package is added. Argon2 is
+/// the better KDF and is recorded as deferred, not dismissed.
 /// <para>
 /// The verifier lives in its own owner-only file rather than in SQLite, for the same reason the
 /// audit key does: an attacker with write access to the database could otherwise replace the
