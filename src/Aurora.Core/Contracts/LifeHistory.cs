@@ -55,7 +55,17 @@ public sealed record LifeEpisode(
     string SensitivityClass,
     string ProposedAtUtc,
     string? VerifiedAtUtc = null,
-    string? RetractedReason = null);
+    string? RetractedReason = null,
+    /// <summary>
+    /// The genome in force when this happened (RFC 036 rule 3).
+    /// </summary>
+    /// <remarks>
+    /// "The entire installation preserves reference to the effective Genome in Mind State **and
+    /// Life History**." Mind State had it; this did not, so an episode could not be read against
+    /// the version of Aurora that produced it — and an episode from an earlier genome is an
+    /// episode of a slightly different entity.
+    /// </remarks>
+    string? EffectiveGenomeRef = null);
 
 /// <summary>An audited change to what an episode says. The evidence is never among the changes.</summary>
 public sealed record EpisodeRevision(

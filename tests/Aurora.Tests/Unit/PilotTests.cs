@@ -1,4 +1,5 @@
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.WorkItems;
 using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Memories;
@@ -41,6 +42,7 @@ public sealed class PilotTests
 
         var pilot = new LocalConversationPilot(
             cycle,
+            new SqliteWorkItemService(db.Factory, clock),
             bus,
             new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),

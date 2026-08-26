@@ -1,6 +1,7 @@
 using System.Globalization;
 using Aurora.Adapters.Applications;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.WorkItems;
 using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
@@ -57,7 +58,9 @@ public sealed class ReviewApplicationTests
         var curiosity = new SqliteCuriosityEngine(db.Factory, planner, resources, situation, needs, clock);
 
         var review = new DailyReviewApplication(
-            cycles, bus,
+            cycles,
+            new SqliteWorkItemService(db.Factory, clock),
+            bus,
             new SqliteAttentionSystem(db.Factory, new SensitivityAttentionAuthorization(), clock),
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),

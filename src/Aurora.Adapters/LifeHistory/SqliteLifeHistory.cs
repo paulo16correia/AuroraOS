@@ -66,10 +66,11 @@ public sealed class SqliteLifeHistory : ILifeHistory
             INSERT INTO life_episode
                 (id, mind_id, kind, occurred_at_utc, occurred_until_utc, title, narrative_summary,
                  evidence_refs, significance, status, sensitivity_class, proposed_at_utc,
-                 verified_at_utc, retracted_reason)
+                 verified_at_utc, retracted_reason, effective_genome_ref)
             VALUES (@id, @mind, @kind, @at, @until, @title, @summary, @evidence, @significance,
-                    @status, @sensitivity, @proposed, NULL, NULL);
+                    @status, @sensitivity, @proposed, NULL, NULL, @genome);
             """, ct,
+            ("@genome", (object?)episode.EffectiveGenomeRef ?? DBNull.Value),
             ("@id", episode.Id), ("@mind", episode.MindId), ("@kind", episode.Kind),
             ("@at", episode.OccurredAtUtc),
             ("@until", (object?)episode.OccurredUntilUtc ?? DBNull.Value),
@@ -343,7 +344,7 @@ public sealed class SqliteLifeHistory : ILifeHistory
     private const string Select = """
         SELECT id, mind_id, kind, occurred_at_utc, occurred_until_utc, title, narrative_summary,
                evidence_refs, significance, status, sensitivity_class, proposed_at_utc,
-               verified_at_utc, retracted_reason
+               verified_at_utc, retracted_reason, effective_genome_ref
           FROM life_episode
         """;
 
@@ -368,7 +369,8 @@ public sealed class SqliteLifeHistory : ILifeHistory
                 reader.GetString(5), reader.GetString(6), Lines(reader.GetString(7)),
                 reader.GetString(8), reader.GetString(9), reader.GetString(10), reader.GetString(11),
                 reader.IsDBNull(12) ? null : reader.GetString(12),
-                reader.IsDBNull(13) ? null : reader.GetString(13)));
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                reader.IsDBNull(14) ? null : reader.GetString(14)));
         }
 
         return episodes;

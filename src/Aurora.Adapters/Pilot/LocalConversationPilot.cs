@@ -15,6 +15,7 @@ public sealed class LocalConversationPilot : IPilotApplication
     private const string RespondPolicy = "policy.respond_no_external_effect";
 
     private readonly ICognitiveCycle _cycle;
+    private readonly IWorkItemService _work;
     private readonly IEventBus _bus;
     private readonly IAttentionSystem _attention;
     private readonly IWorkingMemory _working;
@@ -28,6 +29,7 @@ public sealed class LocalConversationPilot : IPilotApplication
 
     public LocalConversationPilot(
         ICognitiveCycle cycle,
+        IWorkItemService work,
         IEventBus bus,
         IAttentionSystem attention,
         IWorkingMemory working,
@@ -40,6 +42,7 @@ public sealed class LocalConversationPilot : IPilotApplication
         IClock clock)
     {
         _cycle = cycle;
+        _work = work;
         _bus = bus;
         _attention = attention;
         _working = working;
@@ -64,8 +67,12 @@ public sealed class LocalConversationPilot : IPilotApplication
             throw new CognitiveCycleException("An empty utterance is not a request.");
         }
 
+        WorkItem work = await _work.HandleAsync(
+            correlationId, $"conversation:{correlationId}",
+            causationId: null, eventId: null, deadlineAtUtc: null, ct).ConfigureAwait(false);
+
         CognitiveCycle cycle = await _cycle.RunAsync(
-            new CycleIngress($"conversation/{request.ConversationRef}", correlationId, correlationId), ct)
+            new CycleIngress(work.Id, $"conversation/{request.ConversationRef}", correlationId), ct)
             .ConfigureAwait(false);
 
         await _cycle.AdvanceAsync(

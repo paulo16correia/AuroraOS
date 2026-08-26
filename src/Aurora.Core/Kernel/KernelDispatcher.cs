@@ -48,6 +48,7 @@ public sealed class KernelDispatcher
     private readonly IDeliberationService _deliberation;
     private readonly IBeliefSystem _beliefs;
     private readonly ISelfModel _self;
+    private readonly IWorkItemService _work;
     private readonly AttentionPolicy _attentionPolicy;
     private readonly IClock _clock;
 
@@ -64,6 +65,7 @@ public sealed class KernelDispatcher
         IDeliberationService deliberation,
         IBeliefSystem beliefs,
         ISelfModel self,
+        IWorkItemService work,
         AttentionPolicy attentionPolicy,
         IClock clock)
     {
@@ -79,6 +81,7 @@ public sealed class KernelDispatcher
         _deliberation = deliberation;
         _beliefs = beliefs;
         _self = self;
+        _work = work;
         _attentionPolicy = attentionPolicy;
         _clock = clock;
     }
@@ -104,9 +107,16 @@ public sealed class KernelDispatcher
         ActionResolution resolved = resolution.Resolution!;
         var correlationId = Guid.NewGuid().ToString("N");
 
+        // The unit of work this cycle belongs to (RFC 02). A repeated call carrying the same
+        // idempotency key joins the work already in flight instead of starting a second one.
+        WorkItem work = await _work.HandleAsync(
+            correlationId,
+            request.IdempotencyKey ?? $"mcp:{resolved.Resolved.ActionId}:{resolved.InputHash}",
+            causationId: null, eventId: null, deadlineAtUtc: null, ct).ConfigureAwait(false);
+
         // --- Perception -------------------------------------------------------------------
         CognitiveCycle cycle = await _cycle.RunAsync(
-            new CycleIngress($"mcp/{resolved.Resolved.ActionId}", correlationId, mcpSessionRef), ct)
+            new CycleIngress(work.Id, $"mcp/{resolved.Resolved.ActionId}", mcpSessionRef), ct)
             .ConfigureAwait(false);
 
         await _cycle.AdvanceAsync(

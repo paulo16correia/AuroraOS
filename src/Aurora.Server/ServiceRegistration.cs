@@ -12,6 +12,7 @@ using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Incidents;
 using Aurora.Adapters.Vault;
+using Aurora.Adapters.WorkItems;
 using Aurora.Adapters.World;
 using Aurora.Adapters.Files;
 using Aurora.Adapters.Genomes;
@@ -19,6 +20,7 @@ using Aurora.Adapters.Lifecycle;
 using Aurora.Adapters.Knowledge;
 using Aurora.Adapters.LifeHistory;
 using Aurora.Adapters.Memories;
+using Aurora.Adapters.Minds;
 using Aurora.Adapters.Observations;
 using Aurora.Adapters.Operations;
 using Aurora.Adapters.MindStates;
@@ -169,6 +171,13 @@ public static class ServiceRegistration
         services.AddSingleton<IWorkingMemory, SqliteWorkingMemory>();
         // The eight Articles, applied rather than quoted (RFC 035, docs/adr/0057). Registered
         // before the engine because a high-risk decision is committed against an assessment.
+        // The aggregate Aurora's persistent state belongs to, and the propose/validate/apply
+        // discipline for its own fields (RFC 020, docs/adr/0058).
+        services.AddSingleton<IMindService, SqliteMindService>();
+
+        // The unit of work a cognitive cycle belongs to (RFC 02, docs/adr/0058).
+        services.AddSingleton<IWorkItemService, SqliteWorkItemService>();
+
         services.AddSingleton<IConstitution, ArticleConstitution>();
         services.AddSingleton<IDecisionEngine, SqliteDecisionEngine>();
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();

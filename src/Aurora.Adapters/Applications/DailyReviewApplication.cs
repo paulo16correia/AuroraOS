@@ -23,6 +23,7 @@ public sealed class DailyReviewApplication : IReviewApplication
     private const string ReviewPolicy = "policy.review_reads_own_records";
 
     private readonly ICognitiveCycle _cycle;
+    private readonly IWorkItemService _work;
     private readonly IEventBus _bus;
     private readonly IAttentionSystem _attention;
     private readonly IWorkingMemory _working;
@@ -42,6 +43,7 @@ public sealed class DailyReviewApplication : IReviewApplication
 
     public DailyReviewApplication(
         ICognitiveCycle cycle,
+        IWorkItemService work,
         IEventBus bus,
         IAttentionSystem attention,
         IWorkingMemory working,
@@ -60,6 +62,7 @@ public sealed class DailyReviewApplication : IReviewApplication
         IClock clock)
     {
         _cycle = cycle;
+        _work = work;
         _bus = bus;
         _attention = attention;
         _working = working;
@@ -84,8 +87,12 @@ public sealed class DailyReviewApplication : IReviewApplication
         var omitted = new List<string>();
 
         // --- Perception -------------------------------------------------------------------
+        WorkItem work = await _work.HandleAsync(
+            correlationId, $"review:{correlationId}",
+            causationId: null, eventId: null, deadlineAtUtc: null, ct).ConfigureAwait(false);
+
         CognitiveCycle cycle = await _cycle.RunAsync(
-            new CycleIngress($"review/{request.Principal.ClientId}", correlationId, null), ct)
+            new CycleIngress(work.Id, $"review/{request.Principal.ClientId}", null), ct)
             .ConfigureAwait(false);
 
         await _cycle.AdvanceAsync(

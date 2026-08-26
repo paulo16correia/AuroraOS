@@ -172,4 +172,53 @@ public sealed class SchemaMigrationTests : IDisposable
         Assert.Equal("PROPOSED", reader.GetString(1));
     }
 
+
+    [Fact]
+    public void ADatabaseWrittenBeforeTheConstitutionGainsItsColumns()
+    {
+        using (var connection = Factory.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (15);
+
+                CREATE TABLE decision (
+                  id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, mode TEXT NOT NULL,
+                  objective_ref TEXT NULL, selected_option_json TEXT NOT NULL,
+                  alternatives_json TEXT NOT NULL, evidence_refs TEXT NOT NULL,
+                  uncertainty TEXT NOT NULL, risk_level TEXT NOT NULL, confidence REAL NOT NULL,
+                  policy_decision_ids TEXT NOT NULL, approval_required INTEGER NOT NULL,
+                  expiry_at_utc TEXT NULL, status TEXT NOT NULL);
+
+                CREATE TABLE life_episode (
+                  id TEXT PRIMARY KEY, mind_id TEXT NOT NULL, kind TEXT NOT NULL,
+                  occurred_at_utc TEXT NOT NULL, occurred_until_utc TEXT NULL, title TEXT NOT NULL,
+                  narrative_summary TEXT NOT NULL, evidence_refs TEXT NOT NULL,
+                  significance TEXT NOT NULL, status TEXT NOT NULL, sensitivity_class TEXT NOT NULL,
+                  proposed_at_utc TEXT NOT NULL, verified_at_utc TEXT NULL,
+                  retracted_reason TEXT NULL);
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        new SqliteDatabase(Factory).Initialize();
+
+        Assert.Equal(SqliteDatabase.TargetSchemaVersion, Version(Factory));
+
+        // Decisions and episodes recorded before there was anywhere to put these read as null
+        // rather than as a value nobody chose.
+        Assert.Equal(
+            "constitutional_assessment_ref",
+            ColumnOf(Factory, "decision", "constitutional_assessment_ref"));
+
+        Assert.Equal(
+            "effective_genome_ref", ColumnOf(Factory, "life_episode", "effective_genome_ref"));
+
+        // And the tables that arrived whole came with the DDL rather than a migration.
+        Assert.Equal("id", ColumnOf(Factory, "mind", "id"));
+        Assert.Equal("id", ColumnOf(Factory, "work_item", "id"));
+        Assert.Equal("id", ColumnOf(Factory, "incident", "id"));
+        Assert.Equal("id", ColumnOf(Factory, "constitutional_assessment", "id"));
+    }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Aurora.Adapters.Beliefs;
 using Aurora.Adapters.Cognition;
+using Aurora.Adapters.WorkItems;
 using Aurora.Adapters.Constitution;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Events;
@@ -86,6 +87,7 @@ public sealed class KernelDispatcherTests
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
             Self(db, clock, capability),
+            new SqliteWorkItemService(db.Factory, clock),
             AttentionPolicy.Default,
             clock);
 
@@ -220,7 +222,7 @@ public sealed class KernelDispatcherTests
             new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, Beliefs(db, clock), Self(db, clock, Echo()),
-            AttentionPolicy.Default, clock);
+            new SqliteWorkItemService(db.Factory, clock), AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
             new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);
@@ -268,7 +270,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
-            deliberation, beliefs, Self(db, clock, capability), AttentionPolicy.Default, clock);
+            deliberation, beliefs, Self(db, clock, capability), new SqliteWorkItemService(db.Factory, clock), AttentionPolicy.Default, clock);
 
         return new Wired(dispatcher, deliberation, beliefs);
     }
@@ -406,7 +408,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
             new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
-            deliberation, Beliefs(db, clock), self, AttentionPolicy.Default, clock);
+            deliberation, Beliefs(db, clock), self, new SqliteWorkItemService(db.Factory, clock), AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
             new ExecuteRequest(ActionId: "mail.send", Input: Message("hi")), Caller, null, Ct);
@@ -497,7 +499,7 @@ public sealed class KernelDispatcherTests
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
             Self(db, clock, capability),
-            AttentionPolicy.Default, clock);
+            new SqliteWorkItemService(db.Factory, clock), AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
             new ExecuteRequest(ActionId: "echo.say", Input: Message("hello")), Caller, null, Ct);

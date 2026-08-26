@@ -298,6 +298,24 @@ public sealed class SqliteDatabase
           at_utc TEXT NOT NULL
         );
 
+        -- RFC 02. The thing a cognitive cycle belongs to, which cognitive_cycle.work_item_id
+        -- referenced for a long time before there was anything to reference.
+        CREATE TABLE IF NOT EXISTS work_item (
+          id TEXT PRIMARY KEY,
+          correlation_id TEXT NOT NULL,
+          causation_id TEXT NULL,
+          event_id TEXT NULL,
+          status TEXT NOT NULL,
+          deadline_at_utc TEXT NULL,
+          retry_count INTEGER NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          updated_at_utc TEXT NOT NULL,
+          cancelled_by TEXT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_work_item_key ON work_item(idempotency_key, status);
+
         CREATE TABLE IF NOT EXISTS cognitive_cycle (
           id TEXT PRIMARY KEY,
           work_item_id TEXT NOT NULL,
@@ -544,6 +562,36 @@ public sealed class SqliteDatabase
         );
 
         CREATE INDEX IF NOT EXISTS idx_revision_memory ON memory_revision(memory_id, at_utc);
+
+        -- RFC 020. One row per tenant; LAW-005's boundary is the same boundary.
+        CREATE TABLE IF NOT EXISTS mind (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL,
+          self_model_id TEXT NULL,
+          identity_id TEXT NULL,
+          policy_set_version TEXT NOT NULL,
+          world_model_version TEXT NOT NULL,
+          last_consolidation_at_utc TEXT NULL,
+          created_at_utc TEXT NOT NULL,
+          updated_at_utc TEXT NOT NULL,
+          paused_by TEXT NULL,
+          paused_reason TEXT NULL
+        );
+
+        -- Kept whatever the outcome, including REJECTED and ROLLED_BACK: what was proposed and
+        -- refused is as much a part of how the Mind got here as what was applied.
+        CREATE TABLE IF NOT EXISTS mind_change_set (
+          id TEXT PRIMARY KEY,
+          mind_id TEXT NOT NULL,
+          source TEXT NOT NULL,
+          changes_json TEXT NOT NULL,
+          evidence_refs TEXT NOT NULL,
+          policy_decision_ids TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at_utc TEXT NOT NULL,
+          detail TEXT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS mind_state_snapshot (
           id TEXT PRIMARY KEY,
@@ -1057,7 +1105,8 @@ public sealed class SqliteDatabase
           sensitivity_class TEXT NOT NULL,
           proposed_at_utc TEXT NOT NULL,
           verified_at_utc TEXT NULL,
-          retracted_reason TEXT NULL
+          retracted_reason TEXT NULL,
+          effective_genome_ref TEXT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_episode_mind
@@ -1561,6 +1610,10 @@ public sealed class SqliteDatabase
         // v16 — RFC 035 rule 2: a high-risk decision names the assessment it was committed
         // against. Null on decisions taken before there was one (docs/adr/0057).
         ("decision", "constitutional_assessment_ref", "TEXT NULL"),
+
+        // v16 — RFC 036 rule 3: an episode names the genome in force when it happened. Null on
+        // episodes recorded before there was anywhere to put it (docs/adr/0058).
+        ("life_episode", "effective_genome_ref", "TEXT NULL"),
     ];
 
     private readonly SqliteConnectionFactory _factory;
