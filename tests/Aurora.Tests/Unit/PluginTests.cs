@@ -6,6 +6,7 @@ using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Tests.Support;
 using Xunit;
+using Aurora.Core;
 
 namespace Aurora.Tests.Unit;
 
@@ -580,23 +581,106 @@ public sealed class PluginTests
     }
 
     [Fact]
-    public async Task APluginThatDeclaresANetworkEndpointDoesNotVerify()
+    public async Task AManifestMustNameEveryHostItReaches()
     {
         using var db = new SqliteTestDb();
         (SqlitePluginRegistry registry, _, _) = Build(db);
 
-        PluginManifest draft = Manifest() with { NetworkEndpoints = ["api.acme.com"] };
+        // A wildcard is not a name. The owner is being asked to agree to something, and "*.acme.com"
+        // is not something anybody can weigh (docs/adr/0067).
+        foreach (var vague in new[] { "*.acme.com", "acme.com/v1", "  " })
+        {
+            PluginManifest draft = Manifest() with { NetworkEndpoints = [vague] };
+            PluginManifest asking = draft with { IntegrityHash = SqlitePluginRegistry.HashOf(draft) };
+
+            PluginVerification verification = await registry.VerifyAsync(asking, Ct);
+
+            Assert.False(verification.Ok);
+            Assert.Contains(PluginRefusal.UndeclaredEndpoint, verification.Refusals);
+        }
+    }
+
+    [Fact]
+    public async Task APluginThatDeclaresAHostAndWasGrantedNoneDoesNotRun()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, ScriptedHost host, _) = Build(db);
+
+        PluginManifest draft = Manifest() with { NetworkEndpoints = ["discord.com"] };
         PluginManifest asking = draft with { IntegrityHash = SqlitePluginRegistry.HashOf(draft) };
 
-        PluginVerification verification = await registry.VerifyAsync(asking, Ct);
+        // Installed with permissions but no endpoints: the owner said yes to the plugin and not to
+        // it leaving the machine.
+        await registry.InstallAsync(asking, ["notes.write"], [], "approval/1", Ct);
 
-        // Verification, not just validation: a manifest that reached the registry another way is
-        // refused too. There is no endpoint Aurora could grant, so declaring one describes a
-        // plugin this platform cannot run.
-        Assert.False(verification.Ok);
-        Assert.Contains(PluginRefusal.UndeclaredEndpoint, verification.Refusals);
+        PluginResult refused = await registry.InvokeAsync(Call(), Ct);
 
-        await Assert.ThrowsAsync<PluginException>(
-            () => registry.InstallAsync(asking, [], "approval/1", Ct));
+        Assert.False(refused.Ok);
+        Assert.Equal(PluginRefusal.NetworkNotGranted, refused.Refusal);
+
+        // Refused before the sandbox, not by it. Nothing was started.
+        Assert.Equal(0, host.Invocations);
+    }
+
+    [Fact]
+    public async Task AGrantCoversTheHostsAgreedToAndNotOneMore()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, ScriptedHost host, _) = Build(db);
+
+        PluginManifest draft = Manifest() with { NetworkEndpoints = ["discord.com", "cdn.discordapp.com"] };
+        PluginManifest asking = draft with { IntegrityHash = SqlitePluginRegistry.HashOf(draft) };
+
+        // Granting more than was asked for cannot widen the request: the intersection is stored.
+        PluginInstallation installed = await registry.InstallAsync(
+            asking, ["notes.write"], ["discord.com", "cdn.discordapp.com", "evil.example"],
+            "approval/1", Ct);
+
+        Assert.Equal(["discord.com", "cdn.discordapp.com"], installed.GrantedEndpoints);
+
+        PluginResult ok = await registry.InvokeAsync(Call(), Ct);
+        Assert.True(ok.Ok);
+        Assert.Equal(1, host.Invocations);
+    }
+
+    [Fact]
+    public async Task AManifestThatGrowsAHostNeedsAFreshDecision()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, ScriptedHost host, _) = Build(db);
+
+        PluginManifest first = Manifest() with { NetworkEndpoints = ["discord.com"] };
+        PluginManifest one = first with { IntegrityHash = SqlitePluginRegistry.HashOf(first) };
+
+        PluginInstallation installed = await registry.InstallAsync(
+            one, ["notes.write"], ["discord.com"], "approval/1", Ct);
+
+        // The manifest on disk gains a host without the grant changing. What the owner agreed to
+        // is on the installation, so the new host is not inherited from the old decision.
+        PluginManifest second = first with { NetworkEndpoints = ["discord.com", "telemetry.example"] };
+        PluginManifest two = second with { IntegrityHash = SqlitePluginRegistry.HashOf(second) };
+
+        await SaveManifestAsync(db, installed, two);
+
+        PluginResult refused = await registry.InvokeAsync(Call(), Ct);
+
+        Assert.False(refused.Ok);
+        Assert.Equal(PluginRefusal.UndeclaredEndpoint, refused.Refusal);
+        Assert.Equal(0, host.Invocations);
+    }
+
+    /// <summary>Rewrites the stored manifest, the way an update on disk would.</summary>
+    private static async Task SaveManifestAsync(
+        SqliteTestDb db, PluginInstallation installation, PluginManifest manifest)
+    {
+        await using Microsoft.Data.Sqlite.SqliteConnection connection =
+            await db.Factory.OpenAsync(Ct);
+
+        await using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            "UPDATE plugin_installation SET manifest_json = @m WHERE plugin_id = @p;";
+        command.Parameters.AddWithValue("@m", AuroraJson.Serialize(manifest));
+        command.Parameters.AddWithValue("@p", installation.PluginId);
+        await command.ExecuteNonQueryAsync(Ct);
     }
 }

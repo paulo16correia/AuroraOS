@@ -36,7 +36,7 @@ public sealed class MacOsSandbox : IPluginSandbox
 
         return new SandboxPlan(
             SandboxExec,
-            ["-p", Profile(workingDirectory, installed)],
+            ["-p", Profile(workingDirectory, installed, request.NetworkGranted)],
             SandboxLevel.Confined,
             "sandbox-exec",
             []);
@@ -46,7 +46,7 @@ public sealed class MacOsSandbox : IPluginSandbox
     /// Builds the profile. Order matters: in SBPL the last rule that matches wins, so every
     /// exception has to come after the denial it is an exception to.
     /// </summary>
-    private static string Profile(string workingDirectory, string installed)
+    private static string Profile(string workingDirectory, string installed, bool network)
     {
         var profile = new StringBuilder();
         profile.Append("(version 1)");
@@ -80,6 +80,19 @@ public sealed class MacOsSandbox : IPluginSandbox
 
         // The rule this whole class exists for.
         profile.Append("(deny network*)");
+
+        // Unless the owner granted it, once, naming the hosts (docs/adr/0067). SBPL filters by
+        // socket and port, not by name — there is no rule here that says "discord.com". So this is
+        // the honest shape of the grant: outbound TCP, and the host list is what the owner agreed
+        // to and what the audit records, not something the kernel checks.
+        if (network)
+        {
+            profile.Append("(allow network-outbound (remote tcp))");
+
+            // Resolving a name needs the resolver, which is a local unix socket, and UDP 53.
+            profile.Append("(allow network-outbound (remote udp))");
+            profile.Append("(allow system-socket)");
+        }
 
         return profile.ToString();
     }

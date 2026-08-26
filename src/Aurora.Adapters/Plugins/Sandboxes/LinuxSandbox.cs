@@ -54,9 +54,6 @@ public sealed class LinuxSandbox : IPluginSandbox
 
         List<string> arguments =
         [
-            // No network namespace means no route to anywhere, not a filtered one.
-            "--unshare-net",
-
             // Its own PID namespace, so it cannot see or signal Aurora or anything else.
             "--unshare-pid",
             "--unshare-uts",
@@ -86,8 +83,24 @@ public sealed class LinuxSandbox : IPluginSandbox
             "--ro-bind", installed, installed,
             "--bind", workingDirectory, workingDirectory,
             "--chdir", workingDirectory,
-            "--",
         ];
+
+        if (request.NetworkGranted)
+        {
+            // Granted by the owner, once, naming the hosts (docs/adr/0067). bubblewrap shares the
+            // host's network namespace or gives none at all — it does not filter by name either, so
+            // the declared hosts are what was agreed and what the audit records, not a boundary the
+            // kernel checks. Resolving a name needs the resolver configuration.
+            arguments.AddRange(["--ro-bind-try", "/etc/resolv.conf", "/etc/resolv.conf"]);
+            arguments.AddRange(["--ro-bind-try", "/etc/hosts", "/etc/hosts"]);
+        }
+        else
+        {
+            // No network namespace means no route to anywhere, not a filtered one.
+            arguments.Add("--unshare-net");
+        }
+
+        arguments.Add("--");
 
         return new SandboxPlan(_bwrap, arguments, SandboxLevel.Confined, "bubblewrap", []);
     }

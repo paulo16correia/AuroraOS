@@ -73,14 +73,18 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             refusals.Add(PluginRefusal.UndeclaredDataClass);
         }
 
-        // RFC 060 rule 1 asks a plugin to declare its network domains and rule 2 says it runs
-        // without the general network. Aurora resolves the two the strict way: the sandbox denies
-        // the network outright (docs/adr/0052), so there is no endpoint Aurora could grant and a
-        // manifest asking for one is describing a plugin this platform cannot run. Refused at
-        // verification rather than accepted and silently unenforceable.
-        if (manifest.NetworkEndpoints.Count > 0)
+        // A declared endpoint used to be refused here: the sandbox denied the network outright, so
+        // there was nothing to grant. Endpoints are grantable since docs/adr/0067, and what a
+        // manifest must not do is ask vaguely. Every host is named, and a wildcard is not a name.
+        foreach (var endpoint in manifest.NetworkEndpoints)
         {
-            refusals.Add(PluginRefusal.UndeclaredEndpoint);
+            if (string.IsNullOrWhiteSpace(endpoint)
+                || endpoint.Contains('*', StringComparison.Ordinal)
+                || endpoint.Contains('/', StringComparison.Ordinal))
+            {
+                refusals.Add(PluginRefusal.UndeclaredEndpoint);
+                break;
+            }
         }
 
         return Task.FromResult(new PluginVerification(
@@ -90,9 +94,14 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
                 : $"refused: {string.Join(", ", refusals)}"));
     }
 
+    public Task<PluginInstallation> InstallAsync(
+        PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+        string approvalRef, CancellationToken ct) =>
+        InstallAsync(manifest, grantedPermissions, [], approvalRef, ct);
+
     public async Task<PluginInstallation> InstallAsync(
         PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
-        string approvalRef, CancellationToken ct)
+        IReadOnlyList<string> grantedEndpoints, string approvalRef, CancellationToken ct)
     {
         PluginVerification verification = await VerifyAsync(manifest, ct).ConfigureAwait(false);
         if (!verification.Ok)
@@ -112,11 +121,18 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             .Intersect(manifest.RequiredPermissions, StringComparer.Ordinal)
             .ToList();
 
+        // The same rule for hosts: what is granted is the intersection with what was asked for, so
+        // agreeing cannot widen the request.
+        var endpoints = grantedEndpoints
+            .Intersect(manifest.NetworkEndpoints, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var now = Iso(_clock.UtcNow);
         var installation = new PluginInstallation(
             Guid.NewGuid().ToString("N"), manifest.PluginId, manifest.Version, manifest.Publisher,
             InstallationStatus.Installed, granted, AuroraJson.Serialize(manifest),
-            now, now, ConsecutiveFailures: 0, QuarantineReason: null, approvalRef);
+            now, now, ConsecutiveFailures: 0, QuarantineReason: null, approvalRef,
+            GrantedEndpoints: endpoints);
 
         await SaveAsync(installation, ct).ConfigureAwait(false);
         return installation;
@@ -219,10 +235,39 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
                 $"never granted: {string.Join(", ", missing)}");
         }
 
+        // Rule 1: a plugin talks to the hosts it declared and the owner agreed to, or to none.
+        // A manifest that asks and an installation that never granted is refused here rather than
+        // handed to a sandbox that would let it out.
+        IReadOnlyList<string> grantedEndpoints = installation.GrantedEndpoints ?? [];
+
+        if (manifest.NetworkEndpoints.Count > 0 && grantedEndpoints.Count == 0)
+        {
+            return Refused(
+                PluginRefusal.NetworkNotGranted,
+                $"{invocation.PluginId} declares {manifest.NetworkEndpoints.Count} host(s) and was "
+                + "granted none");
+        }
+
+        var reaching = manifest.NetworkEndpoints
+            .Except(grantedEndpoints, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (reaching.Count > 0)
+        {
+            // The manifest grew a host since the grant. That is a new decision, not a continuation
+            // of the old one.
+            return Refused(
+                PluginRefusal.UndeclaredEndpoint,
+                $"not covered by the grant: {string.Join(", ", reaching)}");
+        }
+
         PluginResult result;
         try
         {
-            result = await _host.InvokeAsync(manifest, invocation, ct).ConfigureAwait(false);
+            result = await _host.InvokeAsync(
+                manifest,
+                invocation with { NetworkGranted = grantedEndpoints.Count > 0 },
+                ct).ConfigureAwait(false);
         }
         catch (Exception failure) when (failure is not OperationCanceledException)
         {
@@ -471,7 +516,8 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
 
     private const string Select = """
         SELECT id, plugin_id, version, publisher, status, granted_permissions, manifest_json,
-               installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason, approval_ref
+               installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason,
+               approval_ref, granted_endpoints
           FROM plugin_installation
         """;
 
@@ -479,13 +525,15 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
         ExecuteAsync("""
             INSERT INTO plugin_installation
                 (id, plugin_id, version, publisher, status, granted_permissions, manifest_json,
-                 installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason, approval_ref)
+                 installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason,
+                 approval_ref, granted_endpoints)
             VALUES (@id, @plugin, @version, @publisher, @status, @granted, @manifest, @installed,
-                    @updated, @failures, @reason, @approval)
+                    @updated, @failures, @reason, @approval, @endpoints)
             ON CONFLICT(plugin_id) DO UPDATE SET
                 version = @version, publisher = @publisher, status = @status,
                 granted_permissions = @granted, manifest_json = @manifest, updated_at_utc = @updated,
-                consecutive_failures = @failures, quarantine_reason = @reason, approval_ref = @approval;
+                consecutive_failures = @failures, quarantine_reason = @reason,
+                approval_ref = @approval, granted_endpoints = @endpoints;
             """, ct,
             ("@id", installation.Id), ("@plugin", installation.PluginId),
             ("@version", installation.Version), ("@publisher", installation.Publisher),
@@ -495,7 +543,8 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             ("@installed", installation.InstalledAtUtc), ("@updated", installation.UpdatedAtUtc),
             ("@failures", installation.ConsecutiveFailures),
             ("@reason", (object?)installation.QuarantineReason ?? DBNull.Value),
-            ("@approval", (object?)installation.ApprovalRef ?? DBNull.Value));
+            ("@approval", (object?)installation.ApprovalRef ?? DBNull.Value),
+            ("@endpoints", string.Join('\n', installation.GrantedEndpoints ?? [])));
 
     private async Task<IReadOnlyList<PluginInstallation>> ReadAsync(
         string sql, CancellationToken ct, params (string Name, object Value)[] args)
@@ -517,7 +566,8 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
                 reader.GetString(4), Lines(reader.GetString(5)), reader.GetString(6),
                 reader.GetString(7), reader.GetString(8), reader.GetInt32(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetString(11)));
+                reader.IsDBNull(11) ? null : reader.GetString(11),
+                reader.IsDBNull(12) ? [] : Lines(reader.GetString(12))));
         }
 
         return installations;

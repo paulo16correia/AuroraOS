@@ -1138,7 +1138,8 @@ public sealed class SqliteDatabase
           updated_at_utc TEXT NOT NULL,
           consecutive_failures INTEGER NOT NULL,
           quarantine_reason TEXT NULL,
-          approval_ref TEXT NULL
+          approval_ref TEXT NULL,
+          granted_endpoints TEXT NOT NULL DEFAULT ''
         );
 
         CREATE INDEX IF NOT EXISTS idx_plugin_status ON plugin_installation(status);
@@ -1594,6 +1595,10 @@ public sealed class SqliteDatabase
     /// </remarks>
     private static readonly (string Table, string Column, string Declaration)[] RequiredColumns =
     [
+        // v16 — the hosts the owner agreed a plugin may reach (docs/adr/0067). Empty by default,
+        // which is what every installation made before the grant existed actually had.
+        ("plugin_installation", "granted_endpoints", "TEXT NOT NULL DEFAULT ''"),
+
         // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
         ("goal", "mission_ref", "TEXT NULL"),
         ("goal", "ad_hoc_review_at_utc", "TEXT NULL"),

@@ -102,7 +102,21 @@ public interface IPluginSandbox
 /// <param name="WorkingDirectory">
 /// The one directory the plugin may write to. Everything else is read-only at best.
 /// </param>
-public sealed record SandboxRequest(string PluginId, string Executable, string WorkingDirectory);
+public sealed record SandboxRequest(
+    string PluginId,
+    string Executable,
+    string WorkingDirectory,
+    /// <summary>
+    /// Whether the owner granted this plugin the network.
+    /// </summary>
+    /// <remarks>
+    /// A boolean and not a host list, because that is the truth of what the sandbox can do. Neither
+    /// <c>sandbox-exec</c> nor bubblewrap filters outbound traffic by hostname: the choice they
+    /// offer is network or no network. The declared hosts are what the owner agreed to and what the
+    /// plugin is audited against — they are not a boundary the kernel enforces, and pretending
+    /// otherwise in this type would be the lie spreading into the code.
+    /// </remarks>
+    bool NetworkGranted = false);
 
 /// <summary>How confined a plugin actually is once launched.</summary>
 public enum SandboxLevel
