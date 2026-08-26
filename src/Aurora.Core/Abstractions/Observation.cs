@@ -71,6 +71,19 @@ public interface IObservationService
     Task<LearningProposal> ApplyLearningAsync(
         string proposalId, CancellationToken ct, bool acceptInconclusive = false);
 
+    /// <summary>
+    /// Reports that applying a change failed, and rolls it back (RFC 08's limit case).
+    /// </summary>
+    /// <remarks>
+    /// "Execute rollback or mark partial status, block new application and open incident" — all
+    /// four, because the three without the fourth is a system that quietly undoes its own changes.
+    /// The proposal ends at <see cref="LearningProposalState.RolledBack"/>, which
+    /// <see cref="ApplyLearningAsync"/> refuses, so it cannot be applied again without a new
+    /// proposal and a new decision.
+    /// </remarks>
+    Task<LearningProposal> RollBackLearningAsync(
+        string proposalId, string failure, CancellationToken ct);
+
     Task<LearningProposal> DecideLearningAsync(string proposalId, bool approve, CancellationToken ct);
 
     Task<AuroraAction?> GetActionAsync(string actionId, CancellationToken ct);

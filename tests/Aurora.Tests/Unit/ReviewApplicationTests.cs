@@ -61,7 +61,7 @@ public sealed class ReviewApplicationTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             audit, needs, signals, scheduler, missions, curiosity, situation, resources,
             AttentionPolicy.Default, clock);
 

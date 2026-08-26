@@ -46,7 +46,7 @@ public sealed class PilotTests
             memories,
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             audit,
             AttentionPolicy.Default,
             clock);
@@ -140,7 +140,7 @@ public sealed class PilotTests
         using var db = new SqliteTestDb();
         var (pilot, memories, _, _, _) = Build(db);
         await RememberAsync(memories, "Paulo usually drinks tea");
-        var observations = new SqliteObservationService(db.Factory, new TestClock(Now));
+        var observations = new SqliteObservationService(db.Factory, new RecordingIncidentService(), new TestClock(Now));
 
         PilotOutcome outcome = await pilot.RespondAsync(Ask(), Ct);
 

@@ -30,11 +30,14 @@ public sealed class SqliteObservationService : IObservationService
         };
 
     private readonly SqliteConnectionFactory _factory;
+    private readonly IIncidentService _incidents;
     private readonly IClock _clock;
 
-    public SqliteObservationService(SqliteConnectionFactory factory, IClock clock)
+    public SqliteObservationService(
+        SqliteConnectionFactory factory, IIncidentService incidents, IClock clock)
     {
         _factory = factory;
+        _incidents = incidents;
         _clock = clock;
     }
 
@@ -476,6 +479,41 @@ public sealed class SqliteObservationService : IObservationService
                 "the change set carries something shaped like a credential")
             : new Metric(PrivacyDimension, Measured: true, Regressed: false,
                 "no credential shape in the change set");
+
+    public async Task<LearningProposal> RollBackLearningAsync(
+        string proposalId, string failure, CancellationToken ct)
+    {
+        LearningProposal proposal = await RequireProposalAsync(proposalId, ct).ConfigureAwait(false);
+
+        if (proposal.State != LearningProposalState.Deployed)
+        {
+            // Rolling back something that was never applied would record an undoing that did not
+            // happen, and would open an incident about a change that never took effect.
+            throw new ObservationException(
+                $"Only a DEPLOYED change is rolled back; this is {proposal.State}.");
+        }
+
+        await ExecuteAsync("UPDATE learning_proposal SET state = @s WHERE id = @id;", ct,
+            ("@s", LearningProposalState.RolledBack), ("@id", proposalId)).ConfigureAwait(false);
+
+        // Block new application: ROLLED_BACK is not a state ApplyLearningAsync accepts, so getting
+        // this change back in takes a new proposal, a new decision and a new evaluation.
+
+        // And open an incident, which is the part the limit case names and the part a system that
+        // merely undid itself would skip. HIGH rather than CRITICAL: something Aurora changed about
+        // its own behaviour did not work, which is serious and is not an attack.
+        await _incidents.OpenAsync(
+            new SecurityEvent(
+                string.Empty, SecuritySeverity.High, SecurityEventType.UndeclaredBehaviour,
+                Guid.NewGuid().ToString("N"), "learning", $"learning/{proposalId}", null,
+
+                // The rollback plan is the evidence: what was supposed to undo it, so whoever
+                // arrives can tell whether the undoing was possible at all.
+                $"rollback:{proposal.RollbackPlan}", string.Empty),
+            ct).ConfigureAwait(false);
+
+        return proposal with { State = LearningProposalState.RolledBack };
+    }
 
     public async Task<AuroraAction?> GetActionAsync(string actionId, CancellationToken ct)
     {

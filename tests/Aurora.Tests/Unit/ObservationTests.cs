@@ -12,7 +12,7 @@ public sealed class ObservationTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-01-01T00:00:00+00:00");
 
     private static SqliteObservationService New(SqliteTestDb db) =>
-        new(db.Factory, new TestClock(Now));
+        new(db.Factory, new RecordingIncidentService(), new TestClock(Now));
 
     private static Task<AuroraAction> ProposeAsync(SqliteObservationService service) =>
         service.ProposeActionAsync("decision/1", "message.send", "person/paulo", "hash-1", true, Ct);

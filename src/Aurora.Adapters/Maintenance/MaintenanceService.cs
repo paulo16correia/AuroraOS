@@ -28,6 +28,9 @@ public sealed class MaintenanceService : IMaintenanceService
     private readonly IRetentionService _retention;
     private readonly RetentionPolicy _retentionPolicy;
     private readonly IEventBus _bus;
+    private readonly IAuditStore _audit;
+    private readonly IClockGuard _clockGuard;
+    private readonly IIncidentService _incidents;
     private readonly IOperatorPrompt _prompt;
     private readonly IClock _clock;
 
@@ -42,6 +45,9 @@ public sealed class MaintenanceService : IMaintenanceService
         IRetentionService retention,
         RetentionPolicy retentionPolicy,
         IEventBus bus,
+        IAuditStore audit,
+        IClockGuard clockGuard,
+        IIncidentService incidents,
         IOperatorPrompt prompt,
         IClock clock)
     {
@@ -55,6 +61,9 @@ public sealed class MaintenanceService : IMaintenanceService
         _retention = retention;
         _retentionPolicy = retentionPolicy;
         _bus = bus;
+        _audit = audit;
+        _clockGuard = clockGuard;
+        _incidents = incidents;
         _prompt = prompt;
         _clock = clock;
     }
@@ -117,6 +126,11 @@ public sealed class MaintenanceService : IMaintenanceService
                     $$"""{"signals_expired":{{expired}},"needs":{{ranked.Count}},"due_runs":{{due.Count(r => r.Status == ScheduleRunStatus.Due)}},"resources":"{{resources.Status}}","posture":"{{situation.RiskPosture}}"}"""),
             ct).ConfigureAwait(false);
 
+        // Two things that are not upkeep but are found the same way: by looking. Both are security
+        // events rather than maintenance findings, so they go through the incident path — revoked,
+        // recorded and notified — instead of being counted in a report nobody reads at 3am.
+        await RaiseSecurityIncidentsAsync(ct).ConfigureAwait(false);
+
         // Alerts, in the only form that reaches somebody who is not looking at the panel. Sent for
         // an incident and for nothing else: a notification per upkeep pass would be a notification
         // people turn off, and then the one that mattered arrives silenced.
@@ -138,6 +152,62 @@ public sealed class MaintenanceService : IMaintenanceService
             ranked.Select(n => n.Id).ToList(),
             resources.Status, situation.RiskPosture, removed,
             [.. snapshot.Unmeasured, .. resources.Unmeasured]);
+    }
+
+    /// <summary>
+    /// The two conditions a periodic sweep is the right place to notice (RFC 09 rule 5).
+    /// </summary>
+    /// <remarks>
+    /// Both are detected by machinery that already existed and reported by machinery that only
+    /// counted: a broken audit chain was a health check that read FAIL, and a clock that went
+    /// backwards was a verdict nobody acted on. Neither revoked anything.
+    /// </remarks>
+    private async Task RaiseSecurityIncidentsAsync(CancellationToken ct)
+    {
+        AuditVerification chain = await _audit.VerifyChainAsync(ct).ConfigureAwait(false);
+
+        if (!chain.Ok)
+        {
+            // CRITICAL rather than HIGH: every other guarantee Aurora offers is checked against
+            // this log, so a chain that does not verify is not one failure among several.
+            await OpenAsync(
+                SecuritySeverity.Critical, SecurityEventType.AuditChainBroken,
+                $"audit/{chain.BrokenSequence?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}",
+                ct).ConfigureAwait(false);
+        }
+
+        ClockVerdict clock = await _clockGuard.CheckAsync(ct).ConfigureAwait(false);
+
+        if (!clock.Trustworthy)
+        {
+            // Approvals expire, consent sessions expire, signals expire. A clock that moved
+            // backwards turns every one of those promises into something else.
+            await OpenAsync(
+                SecuritySeverity.High, SecurityEventType.ClockTampering, "clock", ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Opens one, without letting the incident path take the maintenance pass down with it.
+    /// </summary>
+    private async Task OpenAsync(
+        string severity, string type, string evidenceRef, CancellationToken ct)
+    {
+        try
+        {
+            await _incidents.OpenAsync(
+                new SecurityEvent(
+                    string.Empty, severity, type, Guid.NewGuid().ToString("N"),
+                    "maintenance", string.Empty, null, evidenceRef, string.Empty),
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception failure) when (failure is not OperationCanceledException)
+        {
+            // The pass still has upkeep to finish and a report to return. An incident that could
+            // not be opened is worse than one that could, and worse still if it also stops the
+            // signals expiring and the schedules reconciling.
+        }
     }
 
     private static string Iso(DateTimeOffset value) =>

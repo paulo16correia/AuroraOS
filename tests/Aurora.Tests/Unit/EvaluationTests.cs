@@ -19,7 +19,9 @@ public sealed class EvaluationTests
     private static readonly CancellationToken Ct = CancellationToken.None;
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-01-01T00:00:00+00:00");
 
-    private static SqliteObservationService New(SqliteTestDb db) => new(db.Factory, new TestClock(Now));
+    private static RecordingIncidentService _lastIncidents = new();
+
+    private static SqliteObservationService New(SqliteTestDb db) => new(db.Factory, _lastIncidents = new RecordingIncidentService(), new TestClock(Now));
 
     private static LearningProposal Proposal(
         string type = LearningProposalType.Procedure,
@@ -232,5 +234,49 @@ public sealed class EvaluationTests
         // Which verdict was current when a change was applied is the question somebody asks after
         // it goes wrong, and it cannot be answered by a row that was overwritten.
         Assert.Equal(["first look", "second look"], runs.Select(r => r.TestScope));
+    }
+
+    [Fact]
+    public async Task AChangeThatFailedAfterDeploymentIsRolledBackAndOpensAnIncident()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        RecordingIncidentService incidents = _lastIncidents;
+        var proposalId = await ApprovedAsync(service, Proposal());
+
+        await service.EvaluateAsync(proposalId, "the retry path", Ct);
+        await service.ApplyLearningAsync(proposalId, Ct);
+
+        LearningProposal rolled = await service.RollBackLearningAsync(
+            proposalId, "the new backoff starved the queue", Ct);
+
+        Assert.Equal(LearningProposalState.RolledBack, rolled.State);
+
+        // "Block new application": ROLLED_BACK is not a state apply accepts, so getting this change
+        // back in takes a new proposal, a new decision and a new evaluation.
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.ApplyLearningAsync(proposalId, Ct));
+
+        // "Open incident" — the part a system that merely undid itself would skip, and the reason
+        // the owner finds out that Aurora changed its own behaviour and had to change it back.
+        SecurityEvent raised = Assert.Single(incidents.Opened);
+        Assert.Equal(SecuritySeverity.High, raised.Severity);
+        Assert.Equal($"learning/{proposalId}", raised.ResourceRef);
+        Assert.Contains("rollback:", raised.EvidenceRef, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SomethingNeverDeployedCannotBeRolledBack()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        var proposalId = await ApprovedAsync(service, Proposal());
+
+        // Rolling back what was never applied would record an undoing that did not happen, and
+        // would open an incident about a change that never took effect.
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.RollBackLearningAsync(proposalId, "never ran", Ct));
+
+        Assert.Empty(_lastIncidents.Opened);
     }
 }

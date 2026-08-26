@@ -447,3 +447,40 @@ public sealed class ScriptedOperatorPrompt(string? answer) : IOperatorPrompt
 
     public Task NotifyAsync(string title, string message, CancellationToken ct) => Task.CompletedTask;
 }
+
+/// <summary>An incident service that remembers what it was asked to open and contains nothing.</summary>
+/// <remarks>
+/// Real containment revokes consent sessions and disables tools, which is not what a test about
+/// maintenance upkeep wants happening underneath it. What those tests need to know is whether the
+/// pass raised the incident at all.
+/// </remarks>
+public sealed class RecordingIncidentService : IIncidentService
+{
+    public List<SecurityEvent> Opened { get; } = [];
+
+    public Task<Incident> OpenAsync(SecurityEvent securityEvent, CancellationToken ct)
+    {
+        Opened.Add(securityEvent);
+
+        return Task.FromResult(new Incident(
+            $"incident-{Opened.Count}", securityEvent, IncidentStatus.Contained, ["recorded"],
+            securityEvent.DetectedAtUtc, securityEvent.DetectedAtUtc, null, null));
+    }
+
+    public Task<Incident> ResolveAsync(
+        string incidentId, string resolution, string actor, CancellationToken ct) =>
+        throw new NotSupportedException("The fake opens incidents; it does not close them.");
+
+    public Task<Incident?> GetAsync(string incidentId, CancellationToken ct) =>
+        Task.FromResult<Incident?>(null);
+
+    public Task<IReadOnlyList<Incident>> OpenIncidentsAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<Incident>>([]);
+}
+
+/// <summary>A clock guard that says whatever the test says.</summary>
+public sealed class FakeClockGuard(bool trustworthy = true) : IClockGuard
+{
+    public Task<ClockVerdict> CheckAsync(CancellationToken ct) =>
+        Task.FromResult(new ClockVerdict(trustworthy, trustworthy ? "fine" : "went backwards"));
+}

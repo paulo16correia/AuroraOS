@@ -81,7 +81,7 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
             Self(db, clock, capability),
@@ -217,7 +217,7 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, Beliefs(db, clock), Self(db, clock, Echo()),
             AttentionPolicy.Default, clock);
 
@@ -266,7 +266,7 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, beliefs, Self(db, clock, capability), AttentionPolicy.Default, clock);
 
         return new Wired(dispatcher, deliberation, beliefs);
@@ -404,7 +404,7 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), bus, clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, clock),
-            new SqliteObservationService(db.Factory, clock),
+            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             deliberation, Beliefs(db, clock), self, AttentionPolicy.Default, clock);
 
         ExecuteResponse response = await dispatcher.DispatchAsync(
@@ -492,7 +492,7 @@ public sealed class KernelDispatcherTests
             new SqliteWorkingMemory(db.Factory, clock, WorkingMemoryOptions.Default),
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
-            decisions, new SqliteObservationService(db.Factory, clock),
+            decisions, new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
             Self(db, clock, capability),

@@ -48,6 +48,7 @@ public static class EventCatalogue
     public const string GoalDrafted = "GoalDrafted";
     public const string IdentityActivated = "IdentityActivated";
     public const string OperationalStateChanged = "OperationalStateChanged";
+    public const string SecurityIncidentOpened = "SecurityIncidentOpened";
 
     /// <summary>Producers, named once so a typo cannot invent one.</summary>
     public static class Producers
@@ -66,6 +67,7 @@ public static class EventCatalogue
         public const string Planner = "planner";
         public const string Identity = "identity";
         public const string Self = "self";
+        public const string Security = "security";
 
         /// <summary>The ingress endpoint. The only producer reachable from outside Aurora.</summary>
         public const string Api = "api";
@@ -148,6 +150,12 @@ public static class EventCatalogue
         new(OperationalStateChanged, 1, Producers.Self, Sensitivity.Private,
             "the operational state moved from and to; published on transition, never on every reading",
             ["ui", "review", "metrics"]),
+
+        // Severity, type and how much was contained. Never the evidence itself: whoever is
+        // subscribed to the bus is not necessarily allowed to read what the incident was about.
+        new(SecurityIncidentOpened, 1, Producers.Security, Sensitivity.Private,
+            "the severity, the kind, and how many things were revoked; never the evidence",
+            ["ui", "review", "audit"]),
 
         // The one ingress type. A UI or channel normalises something it saw and reports it; it is
         // an observation, not a fact Aurora has accepted, and nothing subscribes to it as truth.

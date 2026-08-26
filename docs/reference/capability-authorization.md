@@ -39,6 +39,7 @@ Closes condition 5 of `docs/reviews/architecture-review-v1.0.md`.
 | `JobDue` | 1 | `scheduler` | PRIVATE | run_id and the schedule's target; the run itself is not started by this | cycle, review |
 | `ScheduleDisabled` | 1 | `scheduler` | PRIVATE | the status it moved to and why it stopped firing | ui, needs, review |
 | `ScheduleRunsMissed` | 1 | `scheduler` | PRIVATE | how many occurrences were missed and under which policy | ui, needs, review |
+| `SecurityIncidentOpened` | 1 | `security` | PRIVATE | the severity, the kind, and how many things were revoked; never the evidence | ui, review, audit |
 | `OperationalStateChanged` | 1 | `self` | PRIVATE | the operational state moved from and to; published on transition, never on every reading | ui, review, metrics |
 
 An event type absent from this table cannot be published: the outbox

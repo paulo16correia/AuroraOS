@@ -327,7 +327,8 @@ public sealed class StatusAndMaintenanceTests
             new InMemoryIdempotencyStore(),
             new FakeApprovalStore(),
             new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default,
-            bus, new NoOperatorPrompt(), clock);
+            bus, new RecordingAuditStore(), new FakeClockGuard(),
+            new RecordingIncidentService(), new NoOperatorPrompt(), clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
 
@@ -359,7 +360,9 @@ public sealed class StatusAndMaintenanceTests
             scheduler, signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
             resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(),
-            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, new NoOperatorPrompt(), clock);
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default,
+            bus, new RecordingAuditStore(), new FakeClockGuard(),
+            new RecordingIncidentService(), new NoOperatorPrompt(), clock);
 
         clock.UtcNow = At("2026-01-15T09:00:00+00:00");
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
@@ -390,7 +393,9 @@ public sealed class StatusAndMaintenanceTests
             signals, needs,
             new SituationService(signals, needs, resources, QuietHours.Default, clock),
             resources, new InMemoryIdempotencyStore(), new FakeApprovalStore(pending: 2),
-            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default, bus, new NoOperatorPrompt(), clock);
+            new SqliteRetentionService(db.Factory, clock), RetentionPolicy.Default,
+            bus, new RecordingAuditStore(), new FakeClockGuard(),
+            new RecordingIncidentService(), new NoOperatorPrompt(), clock);
 
         MaintenanceReport report = await maintenance.RunAsync(new SituationContext(Lisbon), Ct);
 

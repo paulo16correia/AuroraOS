@@ -9,6 +9,7 @@ using Aurora.Adapters.Development;
 using Aurora.Adapters.Deliberation;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
+using Aurora.Adapters.Incidents;
 using Aurora.Adapters.Vault;
 using Aurora.Adapters.World;
 using Aurora.Adapters.Files;
@@ -169,6 +170,10 @@ public static class ServiceRegistration
         services.AddSingleton<ICognitiveCycle, SqliteCognitiveCycle>();
         services.AddSingleton<ICapabilityResolver, SqliteCapabilityResolver>();
         services.AddSingleton<IToolManager, SqliteToolManager>();
+
+        // RFC 09 rule 5: revoke, record, notify — in that order, as one mechanism rather than the
+        // three half-measures it used to be (docs/adr/0056).
+        services.AddSingleton<IIncidentService, SqliteIncidentService>();
         services.AddSingleton<IObservationService, SqliteObservationService>();
 
         // The low-risk pilot: the first vertical slice, using no external tool (step 9).

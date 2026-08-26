@@ -127,6 +127,27 @@ public sealed class SqliteDatabase
           executed_at_utc TEXT NOT NULL
         );
 
+        -- RFC 09 rule 5. Kept after resolution rather than deleted: a system whose incident log
+        -- empties itself is a system that cannot show it has ever been attacked.
+        CREATE TABLE IF NOT EXISTS incident (
+          id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL,
+          severity TEXT NOT NULL,
+          type TEXT NOT NULL,
+          correlation_id TEXT NOT NULL,
+          actor_ref TEXT NOT NULL,
+          resource_ref TEXT NOT NULL,
+          decision_ref TEXT NULL,
+          evidence_ref TEXT NOT NULL,
+          detected_at_utc TEXT NOT NULL,
+          status TEXT NOT NULL,
+          containment_actions TEXT NOT NULL,
+          opened_at_utc TEXT NOT NULL,
+          contained_at_utc TEXT NULL,
+          resolved_at_utc TEXT NULL,
+          resolution TEXT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS tool_manifest (
           tool_id TEXT PRIMARY KEY,
           version TEXT NOT NULL,
