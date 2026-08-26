@@ -159,21 +159,27 @@ public sealed class SqliteIncidentService : IIncidentService
         }
         else if (resource.StartsWith("plugin/", StringComparison.Ordinal))
         {
+            // The prefix says which kind of thing this is; the id after it is what the registry
+            // knows the plugin by. Passing the whole string would look up "plugin/acme/notes" and
+            // find nothing, which reads in the incident as "not installed" — a containment that
+            // reported success at doing nothing.
+            var pluginId = resource["plugin/".Length..];
+
             actions.Add(await TryAsync(
                 async () =>
                 {
                     PluginInstallation? installed =
-                        await _plugins.GetAsync(resource, ct).ConfigureAwait(false);
+                        await _plugins.GetAsync(pluginId, ct).ConfigureAwait(false);
 
                     if (installed is null)
                     {
-                        return $"plugin {resource} is not installed";
+                        return $"plugin {pluginId} is not installed";
                     }
 
                     await _plugins.DisableAsync(installed.Id, "incident", ct).ConfigureAwait(false);
-                    return $"disabled plugin {resource}";
+                    return $"disabled plugin {pluginId}";
                 },
-                $"plugin {resource} could not be disabled").ConfigureAwait(false));
+                $"plugin {pluginId} could not be disabled").ConfigureAwait(false));
         }
 
         return actions;

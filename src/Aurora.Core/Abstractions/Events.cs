@@ -34,6 +34,16 @@ public interface IEventConsumer
 {
     string Name { get; }
 
+    /// <summary>
+    /// Which event types this consumer wants. Empty means every declared type.
+    /// </summary>
+    /// <remarks>
+    /// Declared here rather than at registration so the two cannot drift: a consumer that started
+    /// handling a new type and forgot to widen a subscription written elsewhere would silently
+    /// stop being given the thing it was changed to handle.
+    /// </remarks>
+    IReadOnlyList<string> EventTypes => [];
+
     Task<ConsumeResult> ConsumeAsync(DomainEvent domainEvent, CancellationToken ct);
 }
 

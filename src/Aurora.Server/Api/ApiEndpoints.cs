@@ -68,6 +68,8 @@ public static class ApiEndpoints
         app.MapPost("/v1/personality/{id}/activate", ActivatePersonalityAsync);
         app.MapGet("/v1/cycles/{id}/why", ExplainAsync);
         app.MapPost("/v1/maintenance", RunMaintenanceAsync);
+        app.MapGet("/v1/plugins", ReadPluginsAsync);
+        app.MapPost("/v1/plugins/{id}/decide", DecidePluginAsync);
         return app;
     }
 
@@ -499,6 +501,107 @@ public static class ApiEndpoints
     /// </summary>
     private static MemoryAccessContext AccessFor(Principal principal) =>
         new(principal.ClientId, [MemoryAccessPolicy.Owner], Sensitivity.Confidential);
+
+    /// <summary>
+    /// What is installed, for the panel.
+    /// </summary>
+    /// <remarks>
+    /// Operator-only, like everything else on this surface that is about how much Aurora is
+    /// allowed to do. What is installed is also what an attacker holding the agent's token would
+    /// most want to read before deciding what to attack (docs/adr/0063).
+    /// </remarks>
+    private static async Task<IResult> ReadPluginsAsync(
+        IPluginRegistry plugins, HttpContext context, CancellationToken ct)
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
+
+        IReadOnlyList<PluginInstallation> installed = await plugins.ListAsync(ct);
+
+        return Results.Json(ApiEnvelopes.Ok(
+            installed.Select(p => new
+            {
+                p.PluginId,
+                p.Version,
+                p.Publisher,
+                p.Status,
+                p.GrantedPermissions,
+                p.QuarantineReason,
+                p.ConsecutiveFailures,
+                p.InstalledAtUtc,
+            }).ToList(),
+            correlationId));
+    }
+
+    /// <summary>
+    /// Stops a plugin running, or lets a quarantined one run again.
+    /// </summary>
+    /// <remarks>
+    /// The half of plugin management that belongs on this surface. Installing does not: it grants
+    /// third-party code a place in Aurora's catalogue, and doing that from a folder path over HTTP
+    /// would mean the panel could install anything the server user can read. Disabling only ever
+    /// reduces what Aurora will do, and releasing is a person deciding to trust something they had
+    /// already installed.
+    /// </remarks>
+    private static async Task<IResult> DecidePluginAsync(
+        string id, PluginDecisionRequest request, IPluginRegistry plugins,
+        HttpContext context, CancellationToken ct)
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
+
+        PluginInstallation? installed = await plugins.GetAsync(id, ct);
+
+        if (installed is null)
+        {
+            return Results.Json(
+                ApiEnvelopes.Fail(correlationId, ApiErrorCode.NotFound, "No such plugin."),
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Reason))
+        {
+            return Results.Json(
+                ApiEnvelopes.Fail(
+                    correlationId, ApiErrorCode.Invalid,
+                    "Say why. A plugin disabled or released without a reason is one nobody can "
+                    + "explain later."),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            PluginInstallation decided = request.Decision switch
+            {
+                "disable" => await plugins.DisableAsync(installed.Id, Actor(context), ct),
+                "release" => await plugins.ReleaseAsync(installed.Id, Actor(context), request.Reason, ct),
+                _ => throw new PluginException("Decision must be 'disable' or 'release'."),
+            };
+
+            return Results.Json(ApiEnvelopes.Ok(
+                new { decided.PluginId, decided.Status }, correlationId));
+        }
+        catch (PluginException wrong)
+        {
+            return Results.Json(
+                ApiEnvelopes.Fail(correlationId, ApiErrorCode.Invalid, wrong.Message),
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private static string Actor(HttpContext context) =>
+        RequestActor.IsOperator(context) ? "operator" : "agent";
+
+    /// <summary>What the panel sends to disable or release a plugin.</summary>
+    private sealed record PluginDecisionRequest(string Decision, string Reason);
 
     /// <summary>
     /// Refuses a deciding request that did not come from a person.

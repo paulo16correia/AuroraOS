@@ -66,6 +66,16 @@ public sealed class AuroraServerOptions
     public bool AllowUnconfinedPlugins { get; init; }
 
     /// <summary>
+    /// How often Aurora's own upkeep runs, or <see cref="TimeSpan.Zero"/> to not run at all.
+    /// </summary>
+    /// <remarks>
+    /// Zero is for tests, which want a deterministic instance rather than one doing things
+    /// underneath them. On a real installation, off means signals never expire, needs never decay
+    /// and events are never delivered (docs/adr/0063).
+    /// </remarks>
+    public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// File holding the key that encrypts deliberation traces (docs/adr/0040).
     /// </summary>
     /// <remarks>
@@ -141,6 +151,9 @@ public sealed class AuroraServerOptions
         var pluginRoot = config["Aurora:PluginRoot"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "plugins");
 
+        var heartbeatSeconds =
+            config.GetValue<int?>("Aurora:HeartbeatSeconds") ?? 300;
+
         var allowUnconfinedPlugins =
             config.GetValue<bool?>("Aurora:Plugins:AllowUnconfined") ?? false;
 
@@ -173,6 +186,7 @@ public sealed class AuroraServerOptions
             PluginRoot = pluginRoot,
             PluginKeyPath = pluginKeyPath,
             AllowUnconfinedPlugins = allowUnconfinedPlugins,
+            HeartbeatInterval = TimeSpan.FromSeconds(Math.Max(0, heartbeatSeconds)),
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

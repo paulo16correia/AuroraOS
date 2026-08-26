@@ -593,4 +593,49 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
 
         Assert.Equal(ApproveStatus.NotFound, data.GetProperty("status").GetString());
     }
+
+    // ---- plugin management belongs to the person, not the agent (docs/adr/0063) ----
+
+    [Fact]
+    public async Task TheAgentSTokenCannotSeeOrDecideAboutPlugins()
+    {
+        using HttpClient http = Client();
+
+        // What is installed is what somebody holding the agent's token would most want to read
+        // before deciding what to attack.
+        Assert.Equal(
+            HttpStatusCode.Forbidden, (await http.GetAsync("/v1/plugins", Ct())).StatusCode);
+
+        HttpResponseMessage decided = await http.PostAsJsonAsync(
+            "/v1/plugins/acme%2Fnotes/decide",
+            new { decision = "disable", reason = "because" },
+            Ct());
+
+        Assert.Equal(HttpStatusCode.Forbidden, decided.StatusCode);
+    }
+
+    [Fact]
+    public async Task AnOperatorSeesWhatIsInstalled()
+    {
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+
+        HttpResponseMessage response = await http.GetAsync("/v1/plugins", Ct());
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        JsonElement body = await BodyAsync(response);
+        Assert.Equal(JsonValueKind.Array, body.GetProperty("data").ValueKind);
+    }
+
+    [Fact]
+    public async Task DecidingAboutAPluginThatIsNotInstalledSaysSo()
+    {
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+
+        HttpResponseMessage response = await http.PostAsJsonAsync(
+            "/v1/plugins/nobody%2Fnothing/decide",
+            new { decision = "disable", reason = "tidying up" },
+            Ct());
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }

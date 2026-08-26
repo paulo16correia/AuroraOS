@@ -49,10 +49,6 @@ public sealed class DormantSurfaceTests
             // RFC 06's connector seam. Aurora reaches nothing outside this machine, so there is
             // nothing to connect to; the tool manager behind it is used, for incident containment.
             ["IToolConnector"] = "Aurora is local-only and ships no external connector",
-
-            // RFC 050's push-consumer seam. Events are consumed today by the SSE stream, which
-            // pulls from the outbox by sequence; nothing in-process subscribes yet.
-            ["IEventConsumer"] = "events are read by the stream, not pushed to in-process consumers",
         };
 
     [Fact]

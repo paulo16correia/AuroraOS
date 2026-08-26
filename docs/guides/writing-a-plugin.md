@@ -141,6 +141,35 @@ you anything above it — so asking for less is a promise you benefit from keepi
 
 Fixing six mistakes should take one round trip.
 
+## Listening to events
+
+Declare what you want and Aurora hands it to you as it happens:
+
+```json
+"event_subscriptions": ["MemoryRevised", "GoalDrafted"]
+```
+
+Your program is called on the capability key `on_event`, with the event on standard input:
+
+```json
+{
+  "type": "MemoryRevised",
+  "event_id": "…", "correlation_id": "…", "occurred_at_utc": "…",
+  "aggregate_ref": "memory/1",
+  "payload": "{…}"
+}
+```
+
+You are given only the types the owner granted you, and `payload` is `null` for anything classified
+`CONFIDENTIAL` or above — you learn that something happened, not what it was.
+
+**A subscription is not an invitation to act.** What arrives is a fact. If you want to *do*
+something about it, ask Aurora for a capability, and that goes through policy and approval like
+anything else.
+
+Delivery goes through the same path a call does, so the same sandbox, permissions and circuit
+breaker apply. A delivery that fails counts against you exactly as a failed call does.
+
 ## What Aurora does about a plugin that misbehaves
 
 Not as a threat — as the thing you can rely on, and the reason an owner can afford to install

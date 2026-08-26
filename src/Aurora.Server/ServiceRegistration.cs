@@ -191,6 +191,12 @@ public static class ServiceRegistration
         // RFC 09 rule 5: revoke, record, notify — in that order, as one mechanism rather than the
         // three half-measures it used to be (docs/adr/0056).
         services.AddSingleton<IIncidentService, SqliteIncidentService>();
+
+        // The two things that consume events in process (docs/adr/0063). Both are registered as
+        // IEventConsumer, which is what the heartbeat pumps; neither is reachable any other way,
+        // so an event nobody subscribed to reaches nobody.
+        services.AddSingleton<IEventConsumer, QuarantineIncidentConsumer>();
+        services.AddSingleton<IEventConsumer, PluginEventConsumer>();
         services.AddSingleton<IObservationService, SqliteObservationService>();
 
         // The low-risk pilot: the first vertical slice, using no external tool (step 9).
@@ -299,6 +305,14 @@ public static class ServiceRegistration
         // Every MCP call is reasoned through the cycle rather than executed beside it (RFC 045
         // rule 3). The Kernel stays the sole authority that commits an effect.
         services.AddSingleton<KernelDispatcher>();
+
+        // The only thing that happens without being asked. Off entirely at zero, which is what
+        // tests want: an instance doing upkeep underneath them is not a deterministic one.
+        if (options.HeartbeatInterval > TimeSpan.Zero)
+        {
+            services.AddSingleton(options);
+            services.AddHostedService<AuroraHeartbeat>();
+        }
 
         return services;
     }

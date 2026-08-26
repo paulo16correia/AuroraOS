@@ -38,6 +38,10 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         // day somebody changed it.
         builder.UseSetting("Aurora:SandboxFilesEnabled", "true");
 
+        // No heartbeat: a test wants an instance that does exactly what the test asks and nothing
+        // else, and upkeep running underneath one is how a suite becomes intermittent.
+        builder.UseSetting("Aurora:HeartbeatSeconds", "0");
+
         // A deterministic host. Without this the integration tests read the machine's real disk,
         // so a developer with a full drive watches Aurora correctly refuse every effectful action
         // and incorrectly conclude the tests are broken.
