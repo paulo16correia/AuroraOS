@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Aurora.Adapters.Persistence;
 using Aurora.Core;
 using Aurora.Core.Abstractions;
@@ -18,7 +17,7 @@ namespace Aurora.Adapters.Plugins;
 /// authority — a manifest states limits, and what is enforced is exactly those limits and nothing
 /// softer. An empty list in a manifest means "none", never "unspecified".
 /// </remarks>
-public sealed partial class SqlitePluginRegistry : IPluginRegistry
+public sealed class SqlitePluginRegistry : IPluginRegistry
 {
     /// <summary>What this build of Aurora is, for a manifest's minimum-platform claim.</summary>
     public const int PlatformVersion = 1;
@@ -336,14 +335,7 @@ public sealed partial class SqlitePluginRegistry : IPluginRegistry
     /// exfiltration. The structural control is elsewhere: the plugin is never handed a secret in
     /// the first place, so what this protects against is a plugin that found one another way.
     /// </remarks>
-    private static bool LooksLikeSecret(string output) =>
-        SecretShapes().IsMatch(output);
-
-    [GeneratedRegex(
-        @"(-----BEGIN [A-Z ]*PRIVATE KEY-----)|(\bBearer\s+[A-Za-z0-9._~+/-]{20,})|" +
-        @"(""(?:api[_-]?key|secret|password|token|credential)""\s*:\s*""[^""]{8,}"")",
-        RegexOptions.IgnoreCase)]
-    private static partial Regex SecretShapes();
+    private static bool LooksLikeSecret(string output) => SecretShape.Matches(output);
 
     private bool SignatureValid(PluginManifest manifest) =>
         string.Equals(

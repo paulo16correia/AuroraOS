@@ -129,4 +129,47 @@ public sealed class SchemaMigrationTests : IDisposable
 
         return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
+
+    [Fact]
+    public void ADatabaseWrittenBeforeTheEvaluatorGainsItsColumnsAndKeepsItsRows()
+    {
+        // A learning_proposal table in the shape that shipped up to schema 14: the three fields
+        // RFC 08 names — expected_benefit, risk, evidence_refs — were never there.
+        using (var connection = Factory.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (14);
+
+                CREATE TABLE learning_proposal (
+                  id TEXT PRIMARY KEY, reflection_id TEXT NOT NULL, type TEXT NOT NULL,
+                  change_set_json TEXT NOT NULL, evaluation_plan TEXT NOT NULL,
+                  rollback_plan TEXT NOT NULL, state TEXT NOT NULL);
+
+                INSERT INTO learning_proposal
+                  (id, reflection_id, type, change_set_json, evaluation_plan, rollback_plan, state)
+                VALUES ('p1', 'r1', 'MEMORY', '{}', 'plan', 'undo', 'PROPOSED');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        new SqliteDatabase(Factory).Initialize();
+
+        Assert.Equal(SqliteDatabase.TargetSchemaVersion, Version(Factory));
+        Assert.Equal("risk", ColumnOf(Factory, "learning_proposal", "risk"));
+        Assert.Equal("evidence_refs", ColumnOf(Factory, "learning_proposal", "evidence_refs"));
+
+        using var check = Factory.Open();
+        using var read = check.CreateCommand();
+
+        // The row survives, and the proposal it describes reads as HIGH risk rather than as low —
+        // a change written before anybody recorded its risk is not thereby a safe one.
+        read.CommandText = "SELECT risk, state FROM learning_proposal WHERE id = 'p1';";
+        using var reader = read.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("HIGH", reader.GetString(0));
+        Assert.Equal("PROPOSED", reader.GetString(1));
+    }
+
 }

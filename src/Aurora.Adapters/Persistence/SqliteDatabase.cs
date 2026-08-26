@@ -108,7 +108,23 @@ public sealed class SqliteDatabase
           change_set_json TEXT NOT NULL,
           evaluation_plan TEXT NOT NULL,
           rollback_plan TEXT NOT NULL,
-          state TEXT NOT NULL
+          state TEXT NOT NULL,
+          expected_benefit TEXT NOT NULL DEFAULT '',
+          risk TEXT NOT NULL DEFAULT 'HIGH',
+          evidence_refs TEXT NOT NULL DEFAULT ''
+        );
+
+        -- One test of one proposal (RFC 08). Kept rather than overwritten: a proposal evaluated
+        -- twice has two answers, and which one was current when it was applied is the question
+        -- somebody asks after it goes wrong.
+        CREATE TABLE IF NOT EXISTS evaluation_run (
+          id TEXT PRIMARY KEY,
+          proposal_id TEXT NOT NULL,
+          test_scope TEXT NOT NULL,
+          dataset_ref TEXT NOT NULL,
+          metrics_json TEXT NOT NULL,
+          verdict TEXT NOT NULL,
+          executed_at_utc TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS tool_manifest (
@@ -1054,7 +1070,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 14;
+    public const int TargetSchemaVersion = 15;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1502,6 +1518,12 @@ public sealed class SqliteDatabase
 
         // LAW-005 — state crossing a component boundary says who owns it (docs/adr/0050).
         ("domain_event", "tenant_id", "TEXT NOT NULL DEFAULT 'tenant/local'"),
+
+        // v15 — RFC 08 names these on LearningProposal and the table never held them; without
+        // risk there is no way to tell a low-risk memory change from anything else (docs/adr/0055).
+        ("learning_proposal", "expected_benefit", "TEXT NOT NULL DEFAULT ''"),
+        ("learning_proposal", "risk", "TEXT NOT NULL DEFAULT 'HIGH'"),
+        ("learning_proposal", "evidence_refs", "TEXT NOT NULL DEFAULT ''"),
     ];
 
     private readonly SqliteConnectionFactory _factory;

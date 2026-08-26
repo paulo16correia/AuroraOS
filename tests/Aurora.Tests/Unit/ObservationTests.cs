@@ -240,7 +240,9 @@ public sealed class ObservationTests
 
         var proposalId = reflection.ProposalRefs[0];
 
-        // A system that deploys its own suggestions is not learning; it is drifting.
+        // A system that deploys its own suggestions is not learning; it is drifting. This one is
+        // a low-risk memory change, so approval is the only thing standing between it and being
+        // applied — and it is enough to stop it.
         await Assert.ThrowsAsync<ObservationException>(() => service.ApplyLearningAsync(proposalId, Ct));
 
         await service.DecideLearningAsync(proposalId, approve: true, Ct);
@@ -285,7 +287,11 @@ public sealed class ObservationTests
             () => service.DecideReflectionAsync(reflection.Id, accept: false, Ct));
     }
 
+    /// <summary>
+    /// A low-risk memory change: the one kind RFC 08 rule 2 lets through on approval alone.
+    /// </summary>
     private static LearningProposal Proposal() => new(
-        string.Empty, string.Empty, "policy.retry", """{"backoff":"exponential"}""",
-        "shadow for one week", "restore the previous policy", LearningProposalState.Proposed);
+        string.Empty, string.Empty, LearningProposalType.Memory, """{"lesson":"back off sooner"}""",
+        "compare against the last week of observations", "forget the memory",
+        LearningProposalState.Proposed, "fewer eager retries", LearningRisk.Low);
 }

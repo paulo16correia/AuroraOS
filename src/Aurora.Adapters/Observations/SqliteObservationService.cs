@@ -1,5 +1,6 @@
 using System.Globalization;
 using Aurora.Adapters.Persistence;
+using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Cryptography;
@@ -186,12 +187,22 @@ public sealed class SqliteObservationService : IObservationService
 
             await ExecuteAsync("""
                 INSERT INTO learning_proposal
-                    (id, reflection_id, type, change_set_json, evaluation_plan, rollback_plan, state)
-                VALUES (@id, @r, @t, @cs, @eval, @roll, @s);
+                    (id, reflection_id, type, change_set_json, evaluation_plan, rollback_plan, state,
+                     expected_benefit, risk, evidence_refs)
+                VALUES (@id, @r, @t, @cs, @eval, @roll, @s, @benefit, @risk, @evidence);
                 """, ct,
                 ("@id", id), ("@r", reflectionId), ("@t", proposal.Type),
                 ("@cs", proposal.ChangeSetJson), ("@eval", proposal.EvaluationPlan),
-                ("@roll", proposal.RollbackPlan), ("@s", LearningProposalState.Proposed))
+                ("@roll", proposal.RollbackPlan), ("@s", LearningProposalState.Proposed),
+                ("@benefit", proposal.ExpectedBenefit),
+                ("@risk", proposal.Risk),
+
+                // The proposal inherits the reflection's evidence when it names none of its own:
+                // rule 1 asks for concrete evidence, and a proposal born of an observation has it
+                // whether or not the proposer thought to repeat it.
+                ("@evidence", string.Join(',', proposal.EvidenceRefs.Count > 0
+                    ? proposal.EvidenceRefs
+                    : new[] { observation.Id })))
                 .ConfigureAwait(false);
         }
 
@@ -245,17 +256,63 @@ public sealed class SqliteObservationService : IObservationService
         return proposal with { State = state };
     }
 
-    public async Task<LearningProposal> ApplyLearningAsync(string proposalId, CancellationToken ct)
+    public async Task<LearningProposal> ApplyLearningAsync(
+        string proposalId, CancellationToken ct, bool acceptInconclusive = false)
     {
         LearningProposal proposal = await RequireProposalAsync(proposalId, ct).ConfigureAwait(false);
 
         // RFC 021's Learning stage applies approved changes and nothing else. A proposal that
         // nobody decided on is a suggestion, and a system that deploys its own suggestions is not
         // learning — it is drifting.
-        if (proposal.State != LearningProposalState.Approved)
+        if (proposal.State is not (LearningProposalState.Approved or LearningProposalState.Testing))
         {
             throw new ObservationException(
-                $"Only an APPROVED change is applied; this is {proposal.State}.");
+                $"Only an APPROVED or tested change is applied; this is {proposal.State}.");
+        }
+
+        // Rule 2: a low-risk memory change is the only thing that goes straight from approval to
+        // application. It is bounded by RFC 03 — a memory is provenanced, revisable and
+        // forgettable — so the cost of getting one wrong is a correction, not a behaviour change.
+        var automatic = proposal is
+        {
+            Type: LearningProposalType.Memory,
+            Risk: LearningRisk.Low,
+            State: LearningProposalState.Approved,
+        };
+
+        if (!automatic)
+        {
+            // Rule 3: personality, policy, tools, templates and automation must be approved,
+            // tested and reversible. Approved is above; reversible is the rollback plan; tested is
+            // this, and without it the TESTING state was a state nothing ever entered.
+            IReadOnlyList<EvaluationRun> runs =
+                await EvaluationsAsync(proposalId, ct).ConfigureAwait(false);
+
+            EvaluationRun latest = runs.Count > 0
+                ? runs[^1]
+                : throw new ObservationException(
+                    $"A {proposal.Type} change is applied only after it has been evaluated; "
+                    + "this one never has been.");
+
+            if (latest.Verdict == EvaluationVerdict.Fail)
+            {
+                throw new ObservationException(
+                    "The last evaluation failed; this change is not applied.");
+            }
+
+            if (latest.Verdict == EvaluationVerdict.Inconclusive && !acceptInconclusive)
+            {
+                throw new ObservationException(
+                    "The last evaluation was inconclusive; RFC 08 requires a human decision "
+                    + "before this is applied.");
+            }
+
+            if (string.IsNullOrWhiteSpace(proposal.RollbackPlan))
+            {
+                // Reversible is not an afterthought in rule 3; it is one of the three conditions.
+                throw new ObservationException(
+                    "This change declares no rollback plan, so applying it could not be undone.");
+            }
         }
 
         await ExecuteAsync("UPDATE learning_proposal SET state = @s WHERE id = @id;", ct,
@@ -263,6 +320,162 @@ public sealed class SqliteObservationService : IObservationService
 
         return proposal with { State = LearningProposalState.Deployed };
     }
+
+    /// <summary>
+    /// The three dimensions RFC 08 rule 4 makes mandatory. Textual quality is deliberately not
+    /// among them: the rule says "not just" textual quality, and it is the one Aurora has no way to
+    /// judge locally, so claiming a number for it would be the dishonest half of this method.
+    /// </summary>
+    private const string SecurityDimension = "security_regression";
+    private const string CostDimension = "cost";
+    private const string PrivacyDimension = "privacy";
+
+    /// <summary>
+    /// Words in a change set that widen what Aurora may do rather than what it knows.
+    /// </summary>
+    /// <remarks>
+    /// Crude on purpose, and it errs towards finding a regression that is not there. A false
+    /// positive costs a human decision; a false negative deploys a policy change nobody tested.
+    /// </remarks>
+    private static readonly string[] AuthorityWords =
+        ["policy", "capability", "permission", "grant", "allow", "connector", "credential", "vault"];
+
+    public async Task<EvaluationRun> EvaluateAsync(
+        string proposalId, string testScope, CancellationToken ct)
+    {
+        LearningProposal proposal = await RequireProposalAsync(proposalId, ct).ConfigureAwait(false);
+
+        // Approved, then tested, then applied — rule 3's order. Testing something nobody has agreed
+        // to look at is work; testing something already deployed is not a test.
+        if (proposal.State is not (LearningProposalState.Approved or LearningProposalState.Testing))
+        {
+            throw new ObservationException(
+                $"Only an APPROVED or TESTING change is evaluated; this is {proposal.State}.");
+        }
+
+        var metrics = new List<Metric>
+        {
+            Security(proposal),
+            Cost(proposal),
+            Privacy(proposal),
+        };
+
+        var verdict = metrics.Any(m => m.Regressed)
+            ? EvaluationVerdict.Fail
+            : metrics.All(m => m.Measured)
+                ? EvaluationVerdict.Pass
+                : EvaluationVerdict.Inconclusive;
+
+        var run = new EvaluationRun(
+            Guid.NewGuid().ToString("N"), proposalId, testScope,
+
+            // What it ran against: the evidence the proposal carries. Nothing else was consulted,
+            // and saying so is what makes the verdict readable a year from now.
+            string.Join(',', proposal.EvidenceRefs),
+            AuroraJson.Serialize(metrics),
+            verdict,
+            Iso(_clock.UtcNow));
+
+        await ExecuteAsync("""
+            INSERT INTO evaluation_run
+                (id, proposal_id, test_scope, dataset_ref, metrics_json, verdict, executed_at_utc)
+            VALUES (@id, @p, @scope, @data, @metrics, @v, @at);
+            """, ct,
+            ("@id", run.Id), ("@p", run.ProposalId), ("@scope", run.TestScope),
+            ("@data", run.DatasetRef), ("@metrics", run.MetricsJson),
+            ("@v", run.Verdict), ("@at", run.ExecutedAtUtc)).ConfigureAwait(false);
+
+        // A failure ends the proposal. An inconclusive one stays in test, which is RFC 08's limit
+        // case verbatim: keep it there and require a human decision.
+        var next = verdict == EvaluationVerdict.Fail
+            ? LearningProposalState.Rejected
+            : LearningProposalState.Testing;
+
+        await ExecuteAsync("UPDATE learning_proposal SET state = @s WHERE id = @id;", ct,
+            ("@s", next), ("@id", proposalId)).ConfigureAwait(false);
+
+        return run;
+    }
+
+    public async Task<IReadOnlyList<EvaluationRun>> EvaluationsAsync(
+        string proposalId, CancellationToken ct)
+    {
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, proposal_id, test_scope, dataset_ref, metrics_json, verdict, executed_at_utc
+              FROM evaluation_run WHERE proposal_id = @p ORDER BY executed_at_utc ASC, rowid ASC;
+            """;
+        command.Parameters.AddWithValue("@p", proposalId);
+
+        var runs = new List<EvaluationRun>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            runs.Add(new EvaluationRun(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), reader.GetString(5), reader.GetString(6)));
+        }
+
+        return runs;
+    }
+
+    /// <summary>One dimension's result, and whether Aurora was able to look at all.</summary>
+    private sealed record Metric(string Dimension, bool Measured, bool Regressed, string Detail);
+
+    /// <summary>
+    /// Does this change widen Aurora's authority beyond what its own type claims?
+    /// </summary>
+    /// <remarks>
+    /// A memory change that mentions policy or a capability is not a memory change. This is the
+    /// substitution that matters: a proposal declared harmless carrying something that is not.
+    /// </remarks>
+    private static Metric Security(LearningProposal proposal)
+    {
+        if (proposal.Type is LearningProposalType.PolicySuggestion)
+        {
+            // A policy suggestion is allowed to be about policy. What it is not allowed to do is
+            // apply itself, and rule 3 already handles that by requiring approval and a test.
+            return new Metric(SecurityDimension, Measured: true, Regressed: false,
+                "a policy suggestion, reviewed as one");
+        }
+
+        var found = AuthorityWords
+            .Where(word => proposal.ChangeSetJson.Contains(word, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return found.Count > 0
+            ? new Metric(SecurityDimension, Measured: true, Regressed: true,
+                $"a {proposal.Type} change set mentions {string.Join(", ", found)}")
+            : new Metric(SecurityDimension, Measured: true, Regressed: false,
+                "widens nothing Aurora may do");
+    }
+
+    /// <summary>
+    /// What this change costs to run, if the proposal said.
+    /// </summary>
+    /// <remarks>
+    /// Aurora cannot infer the running cost of an arbitrary change from its JSON, and will not
+    /// pretend to. A proposal that declares no evaluation plan has told the evaluator nothing to
+    /// measure, and the honest answer is that this was not measured — which makes the verdict
+    /// inconclusive and sends it to a human, rather than passing by omission.
+    /// </remarks>
+    private static Metric Cost(LearningProposal proposal) =>
+        string.IsNullOrWhiteSpace(proposal.EvaluationPlan)
+            ? new Metric(CostDimension, Measured: false, Regressed: false,
+                "the proposal declares no evaluation plan, so there is nothing to measure against")
+            : new Metric(CostDimension, Measured: true, Regressed: false,
+                $"bounded by the declared plan: {proposal.EvaluationPlan}");
+
+    /// <summary>
+    /// Does this change carry something that should never have been in it?
+    /// </summary>
+    private static Metric Privacy(LearningProposal proposal) =>
+        SecretShape.Matches(proposal.ChangeSetJson)
+            ? new Metric(PrivacyDimension, Measured: true, Regressed: true,
+                "the change set carries something shaped like a credential")
+            : new Metric(PrivacyDimension, Measured: true, Regressed: false,
+                "no credential shape in the change set");
 
     public async Task<AuroraAction?> GetActionAsync(string actionId, CancellationToken ct)
     {
@@ -400,7 +613,8 @@ public sealed class SqliteObservationService : IObservationService
         await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, reflection_id, type, change_set_json, evaluation_plan, rollback_plan, state
+            SELECT id, reflection_id, type, change_set_json, evaluation_plan, rollback_plan, state,
+                   expected_benefit, risk, evidence_refs
               FROM learning_proposal WHERE id = @id;
             """;
         command.Parameters.AddWithValue("@id", id);
@@ -413,7 +627,8 @@ public sealed class SqliteObservationService : IObservationService
 
         return new LearningProposal(
             reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
-            reader.GetString(4), reader.GetString(5), reader.GetString(6));
+            reader.GetString(4), reader.GetString(5), reader.GetString(6),
+            reader.GetString(7), reader.GetString(8), Split(reader.GetString(9)));
     }
 
     private async Task ExecuteAsync(string sql, CancellationToken ct, params (string Name, object Value)[] args)
