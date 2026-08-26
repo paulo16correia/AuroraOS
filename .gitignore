@@ -1,23 +1,23 @@
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Editors
-.vscode/
-.idea/
-*.swp
-*~
-
-# Env / secrets
-.env
-.env.*
-*.local
 
 # Build / deps (adjust to stack once code lands)
-node_modules/
-dist/
-build/
-bin/
-obj/
+# Editors
+# Env / secrets
+# OS
+*.local
 *.log
+*.pyc
+*.swp
+*~
+.DS_Store
+.env
+.env.*
+.idea/
+.vscode/
+Thumbs.db
+__pycache__/
+bin/
+build/
+desktop.ini
+dist/
+node_modules/
+obj/
