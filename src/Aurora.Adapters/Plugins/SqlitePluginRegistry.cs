@@ -73,6 +73,16 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             refusals.Add(PluginRefusal.UndeclaredDataClass);
         }
 
+        // RFC 060 rule 1 asks a plugin to declare its network domains and rule 2 says it runs
+        // without the general network. Aurora resolves the two the strict way: the sandbox denies
+        // the network outright (docs/adr/0052), so there is no endpoint Aurora could grant and a
+        // manifest asking for one is describing a plugin this platform cannot run. Refused at
+        // verification rather than accepted and silently unenforceable.
+        if (manifest.NetworkEndpoints.Count > 0)
+        {
+            refusals.Add(PluginRefusal.UndeclaredEndpoint);
+        }
+
         return Task.FromResult(new PluginVerification(
             refusals.Count == 0, refusals,
             refusals.Count == 0

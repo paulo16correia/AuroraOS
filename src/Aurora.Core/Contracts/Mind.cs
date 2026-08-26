@@ -1,11 +1,23 @@
 namespace Aurora.Core.Contracts;
 
-/// <summary>The Mind's own life cycle (RFC 020).</summary>
+/// <summary>
+/// The Mind's own life cycle (RFC 020).
+/// </summary>
+/// <remarks>
+/// Three states, not the six RFC 020 lists, and the difference is deliberate. INITIALIZING,
+/// DEGRADED and RECOVERING are descriptions of how the instance is running, and Aurora already
+/// models those: <c>SelfModel.OperationalState</c> owns degraded and recovering (RFC 027), and
+/// <c>InstanceState</c> owns bootstrapping and restore (RFC 039). Declaring them again here would
+/// give "is Aurora degraded" two answers that drift apart.
+/// <para>
+/// What is left is what the aggregate itself owns: whether this Mind is the live one, held, or
+/// finished with. Written after a test found the other three declared and unreachable, which is
+/// what an over-declared enum looks like from the outside.
+/// </para>
+/// </remarks>
 public static class MindStatus
 {
-    public const string Initializing = "INITIALIZING";
     public const string Active = "ACTIVE";
-    public const string Degraded = "DEGRADED";
 
     /// <summary>
     /// Nothing starts on its own. Inspection and authorized export still work — rule 3 is a
@@ -13,7 +25,10 @@ public static class MindStatus
     /// </summary>
     public const string Paused = "PAUSED";
 
-    public const string Recovering = "RECOVERING";
+    /// <summary>
+    /// This Mind is finished with. Terminal: a retired Mind does not resume, because what came
+    /// back would be a different entity wearing the same identity.
+    /// </summary>
     public const string Retired = "RETIRED";
 }
 

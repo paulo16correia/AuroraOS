@@ -42,4 +42,14 @@ public interface IMindService
     Task<Mind> PauseAsync(string mindId, string actor, string reason, CancellationToken ct);
 
     Task<Mind> ResumeAsync(string mindId, string actor, CancellationToken ct);
+
+    /// <summary>
+    /// Ends this Mind. Terminal — a retired Mind does not resume.
+    /// </summary>
+    /// <remarks>
+    /// What comes back after a retirement would be a different entity wearing the same identity,
+    /// which is the one thing LAW-008 exists to prevent. Retiring is how an owner finishes with an
+    /// Aurora without deleting what it did.
+    /// </remarks>
+    Task<Mind> RetireAsync(string mindId, string actor, string reason, CancellationToken ct);
 }

@@ -20,6 +20,15 @@ public static class PluginRefusal
     public const string PlatformTooOld = "PLATFORM_TOO_OLD";
     public const string IntegrityMismatch = "INTEGRITY_MISMATCH";
     public const string UndeclaredEffect = "UNDECLARED_EFFECT";
+    /// <summary>
+    /// The manifest asks for the network, and Aurora has none to give.
+    /// </summary>
+    /// <remarks>
+    /// RFC 060 rule 1 asks a plugin to declare its network domains; rule 2 says it runs without
+    /// the general network. Aurora resolves the two strictly — the sandbox denies the network
+    /// outright — so a declared endpoint is a request that cannot be granted rather than a limit
+    /// to be enforced.
+    /// </remarks>
     public const string UndeclaredEndpoint = "UNDECLARED_ENDPOINT";
     public const string UndeclaredDataClass = "UNDECLARED_DATA_CLASS";
     public const string PermissionNotGranted = "PERMISSION_NOT_GRANTED";

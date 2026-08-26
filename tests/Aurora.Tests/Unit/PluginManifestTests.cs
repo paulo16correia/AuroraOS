@@ -183,4 +183,21 @@ public sealed class PluginManifestTests
         Assert.False(read.Ok);
         Assert.Contains(read.Problems, p => p.Contains("offers nothing", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void AManifestAskingForTheNetworkIsRefused()
+    {
+        PluginManifestRead read = Read(Good.Replace(
+            "\"required_permissions\": [\"notes.write\"],",
+            "\"required_permissions\": [\"notes.write\"], \"network_endpoints\": [\"api.acme.com\"],",
+            StringComparison.Ordinal));
+
+        // RFC 060 rule 1 asks a plugin to declare its network domains and rule 2 says it runs
+        // without the general network. Aurora resolves the two strictly: the sandbox denies the
+        // network, so a declared endpoint is a request it cannot grant rather than a limit it
+        // could enforce. Better to say so while somebody is still writing the file.
+        Assert.False(read.Ok);
+        Assert.Contains(
+            read.Problems, p => p.Contains("denies plugins the network", StringComparison.Ordinal));
+    }
 }

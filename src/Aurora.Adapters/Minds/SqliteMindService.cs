@@ -44,9 +44,9 @@ public sealed class SqliteMindService : IMindService
 
         var now = Iso(_clock.UtcNow);
 
-        // ACTIVE rather than INITIALIZING: by the time anything asks for the Mind, the schema is
-        // created and every service behind it is constructed. A status meaning "not ready yet"
-        // that is never observably true is a status that teaches people to ignore it.
+        // ACTIVE from the start: by the time anything asks for the Mind, the schema is created and
+        // every service behind it is constructed. Bootstrapping is InstanceState's business
+        // (RFC 039) and describing it here as well would give it two answers.
         var mind = new Mind(
             Guid.NewGuid().ToString("N"), tenantId, MindStatus.Active,
             SelfModelId: null, IdentityId: null,
@@ -254,11 +254,47 @@ public sealed class SqliteMindService : IMindService
     public Task<Mind> ResumeAsync(string mindId, string actor, CancellationToken ct) =>
         SetPausedAsync(mindId, MindStatus.Active, null, null, ct);
 
+    public async Task<Mind> RetireAsync(
+        string mindId, string actor, string reason, CancellationToken ct)
+    {
+        Mind mind = await GetAsync(mindId, ct).ConfigureAwait(false)
+            ?? throw new MindException("Unknown mind.");
+
+        if (mind.Status == MindStatus.Retired)
+        {
+            throw new MindException("This Mind is already retired.");
+        }
+
+        if (string.IsNullOrWhiteSpace(actor) || string.IsNullOrWhiteSpace(reason))
+        {
+            throw new MindException("Retiring a Mind records who did it and why.");
+        }
+
+        Mind retired = mind with
+        {
+            Status = MindStatus.Retired,
+            PausedBy = actor,
+            PausedReason = reason,
+            UpdatedAtUtc = Iso(_clock.UtcNow),
+        };
+
+        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await WriteMindAsync(connection, null, retired, ct).ConfigureAwait(false);
+        return retired;
+    }
+
     private async Task<Mind> SetPausedAsync(
         string mindId, string status, string? actor, string? reason, CancellationToken ct)
     {
         Mind mind = await GetAsync(mindId, ct).ConfigureAwait(false)
             ?? throw new MindException("Unknown mind.");
+
+        // Terminal means terminal. Pausing or resuming a retired Mind would be operating on an
+        // entity its owner has finished with.
+        if (mind.Status == MindStatus.Retired)
+        {
+            throw new MindException("This Mind is retired.");
+        }
 
         if (status == MindStatus.Paused && string.IsNullOrWhiteSpace(reason))
         {

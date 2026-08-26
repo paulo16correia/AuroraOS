@@ -152,6 +152,14 @@ public static class PluginManifestReader
                 + $"or {Sensitivity.Secret}");
         }
 
+        if (file.NetworkEndpoints.Count > 0)
+        {
+            problems.Add(
+                "network_endpoints must be empty: Aurora denies plugins the network entirely, so "
+                + "there is no endpoint it could grant you. If your plugin needs the internet, it "
+                + "cannot run here.");
+        }
+
         if (file.Capabilities.Count == 0)
         {
             problems.Add("capabilities is empty; a plugin that offers nothing cannot be installed");

@@ -578,4 +578,25 @@ public sealed class PluginTests
         PluginInstallation removed = await registry.RemoveAsync(installed.Id, "owner", Ct);
         Assert.Contains("owner", removed.QuarantineReason!, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task APluginThatDeclaresANetworkEndpointDoesNotVerify()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, _, _) = Build(db);
+
+        PluginManifest draft = Manifest() with { NetworkEndpoints = ["api.acme.com"] };
+        PluginManifest asking = draft with { IntegrityHash = SqlitePluginRegistry.HashOf(draft) };
+
+        PluginVerification verification = await registry.VerifyAsync(asking, Ct);
+
+        // Verification, not just validation: a manifest that reached the registry another way is
+        // refused too. There is no endpoint Aurora could grant, so declaring one describes a
+        // plugin this platform cannot run.
+        Assert.False(verification.Ok);
+        Assert.Contains(PluginRefusal.UndeclaredEndpoint, verification.Refusals);
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => registry.InstallAsync(asking, [], "approval/1", Ct));
+    }
 }

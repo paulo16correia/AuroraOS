@@ -200,4 +200,32 @@ public sealed class MindTests
         await Assert.ThrowsAsync<MindException>(
             () => service.ProposeAsync(Draft(mind.Id, changes: []), Ct));
     }
+
+    [Fact]
+    public async Task ARetiredMindIsFinishedWithAndDoesNotComeBack()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        Mind mind = await service.OpenAsync(Tenant.Local, Ct);
+
+        await Assert.ThrowsAsync<MindException>(
+            () => service.RetireAsync(mind.Id, "owner", "  ", Ct));
+
+        Mind retired = await service.RetireAsync(mind.Id, "owner", "moving to a new machine", Ct);
+        Assert.Equal(MindStatus.Retired, retired.Status);
+
+        // Terminal. What came back after a retirement would be a different entity wearing the same
+        // identity, which is the one thing LAW-008 exists to prevent.
+        await Assert.ThrowsAsync<MindException>(
+            () => service.ResumeAsync(mind.Id, "owner", Ct));
+
+        await Assert.ThrowsAsync<MindException>(
+            () => service.PauseAsync(mind.Id, "owner", "changed my mind", Ct));
+
+        await Assert.ThrowsAsync<MindException>(
+            () => service.RetireAsync(mind.Id, "owner", "again", Ct));
+
+        // And it still reads back, because what this Mind did is not erased by finishing with it.
+        Assert.Equal(MindStatus.Retired, (await service.GetAsync(mind.Id, Ct))!.Status);
+    }
 }
