@@ -385,7 +385,7 @@ public sealed class KernelDispatcherTests
             new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}")));
 
         // A machine with no disk left. Reading is unaffected; reaching outside it is not.
-        var resources = new SystemResourceModel(new FakeResourceProbe(disk: 0.99), clock);
+        var resources = new SystemResourceModel(new FakeResourceProbe(disk: 0.99, diskFreeBytes: 64L * 1024 * 1024), clock);
 
         var self = new SqliteSelfModel(
             db.Factory, new FakeRegistry(effectful), new FakePolicy(true), resources,

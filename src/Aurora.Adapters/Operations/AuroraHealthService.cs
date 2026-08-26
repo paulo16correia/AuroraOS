@@ -146,8 +146,14 @@ public sealed class AuroraHealthService : IHealthService
         // Disk is called out separately because the withdrawn RFC 12 did, and that part of it was
         // kept (docs/adr/0045): a full disk is the one resource
         // problem that can cost data rather than throughput.
+        // Both figures, because the status is decided on the second one and a reader given only
+        // the first would think a healthy instance was about to fall over (docs/adr/0061).
+        var room = state.DiskFreeBytes is { } free
+            ? $"{free / (1024.0 * 1024 * 1024):F1} GB free"
+            : "free space not measurable";
+
         var detail = state.DiskPct is { } disk
-            ? $"{state.Status}, disk {disk * 100:F0}%"
+            ? $"{state.Status}, disk {disk * 100:F0}% used, {room}"
             : $"{state.Status}, disk not measurable";
 
         return state.Status switch

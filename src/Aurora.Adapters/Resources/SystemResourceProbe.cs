@@ -26,7 +26,11 @@ public sealed class SystemResourceProbe : IResourceProbe
         _lastSampleAt = clock.UtcNow;
     }
 
-    public ResourceReading Read() => new(SampleCpu(), SampleMemory(), SampleDisk());
+    public ResourceReading Read()
+    {
+        (double? fraction, long? free) = SampleDisk();
+        return new ResourceReading(SampleCpu(), SampleMemory(), fraction, free);
+    }
 
     /// <summary>
     /// Processor use since the last reading, as a fraction of one machine.
@@ -85,7 +89,14 @@ public sealed class SystemResourceProbe : IResourceProbe
             : Math.Clamp((double)info.MemoryLoadBytes / info.TotalAvailableMemoryBytes, 0, 1);
     }
 
-    private static double? SampleDisk()
+    /// <summary>
+    /// How full the disk is, and how much room is left on it.
+    /// </summary>
+    /// <remarks>
+    /// Both, because they answer different questions and only the second one decides whether
+    /// Aurora can work. See <see cref="ResourceReading.DiskFreeBytes"/>.
+    /// </remarks>
+    private static (double? Fraction, long? FreeBytes) SampleDisk()
     {
         try
         {
@@ -94,12 +105,13 @@ public sealed class SystemResourceProbe : IResourceProbe
                     && AppContext.BaseDirectory.StartsWith(d.RootDirectory.FullName, StringComparison.Ordinal));
 
             return root is null
-                ? null
-                : Math.Clamp(1.0 - ((double)root.AvailableFreeSpace / root.TotalSize), 0, 1);
+                ? (null, null)
+                : (Math.Clamp(1.0 - ((double)root.AvailableFreeSpace / root.TotalSize), 0, 1),
+                   root.AvailableFreeSpace);
         }
         catch (Exception unavailable) when (unavailable is IOException or UnauthorizedAccessException)
         {
-            return null;
+            return (null, null);
         }
     }
 }

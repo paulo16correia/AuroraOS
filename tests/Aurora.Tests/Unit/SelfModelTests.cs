@@ -117,7 +117,7 @@ public sealed class SelfModelTests
         var clock = new TestClock(At("2026-01-15T09:00:00+00:00"));
 
         // A machine under real pressure. Reading is unaffected; acting on the world is not.
-        SqliteSelfModel self = Build(db, clock, new FakeResourceProbe(disk: 0.99));
+        SqliteSelfModel self = Build(db, clock, new FakeResourceProbe(disk: 0.99, diskFreeBytes: 64L * 1024 * 1024));
 
         SelfModel model = await self.RefreshAsync("local", Ct);
         Assert.Equal(OperationalState.Degraded, model.OperationalState);
@@ -191,6 +191,10 @@ public sealed class SelfModelTests
         // The world moved while the reading sat there. Permissions and health are exactly what
         // changes between readings, so a stale one is not even a starting guess.
         probe.Disk = 0.99;
+
+        // Both, because a disk being 99% full is not by itself a reason Aurora cannot work — what
+        // stops it is having nowhere left to write (docs/adr/0061).
+        probe.DiskFreeBytes = 64L * 1024 * 1024;
         clock.UtcNow = At("2026-01-15T09:30:00+00:00");
 
         CapabilityAssessment sending = await self.CanAsync("mail.send", Caller, Ct);
@@ -268,6 +272,10 @@ public sealed class SelfModelTests
         await self.PauseAsync("paulo", "maintenance", Ct);
 
         probe.Disk = 0.99;
+
+        // Both, because a disk being 99% full is not by itself a reason Aurora cannot work — what
+        // stops it is having nowhere left to write (docs/adr/0061).
+        probe.DiskFreeBytes = 64L * 1024 * 1024;
         SelfModel resumed = await self.ResumeAsync("paulo", Ct);
 
         // Resuming says "look again", not "everything is fine".

@@ -292,6 +292,10 @@ public sealed class Law007ProducerTests
             await PublishedAsync(bus), e => e.Type == EventCatalogue.OperationalStateChanged);
 
         probe.Disk = 0.99;
+
+        // Both, because a disk being 99% full is not by itself a reason Aurora cannot work — what
+        // stops it is having nowhere left to write (docs/adr/0061).
+        probe.DiskFreeBytes = 64L * 1024 * 1024;
         await self.RefreshAsync("mind/local", Ct);
 
         IReadOnlyList<DomainEvent> transitions =

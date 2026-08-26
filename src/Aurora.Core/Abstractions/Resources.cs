@@ -2,12 +2,27 @@ using Aurora.Core.Contracts;
 
 namespace Aurora.Core.Abstractions;
 
-/// <summary>One reading of the host, as fractions of capacity in use.</summary>
+/// <summary>One reading of the host.</summary>
 /// <remarks>
 /// Null means the platform could not report it. Kept distinct from zero all the way through,
 /// because "I could not measure it" and "there is none in use" call for opposite responses.
 /// </remarks>
-public sealed record ResourceReading(double? CpuFraction, double? MemoryFraction, double? DiskFraction);
+/// <param name="DiskFreeBytes">
+/// How much room is actually left, which is a different question from how full the disk is.
+/// </param>
+/// <remarks>
+/// A fraction answers "how much of this machine is spoken for". What Aurora needs to know is
+/// whether there is room to write a database, a snapshot and a backup — and 3% of a 228 GB disk
+/// is nearly seven gigabytes, while 3% of a 32 GB disk is one. Both read as 97% used, and only
+/// one of them is a problem. Reported alongside the fraction rather than instead of it: the
+/// fraction is still the right way to say how full a disk is, it is just not the right way to
+/// say whether Aurora can work.
+/// </remarks>
+public sealed record ResourceReading(
+    double? CpuFraction,
+    double? MemoryFraction,
+    double? DiskFraction,
+    long? DiskFreeBytes = null);
 
 /// <summary>
 /// Reads the host's actual load.

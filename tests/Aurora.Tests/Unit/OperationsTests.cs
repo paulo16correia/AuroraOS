@@ -135,7 +135,7 @@ public sealed class OperationsTests
         var clock = new TestClock(At("2026-01-15T09:00:00+00:00"));
 
         IReadOnlyList<HealthCheck> checks = await Health(
-            db, clock, Audit(db, clock), new FakeResourceProbe(disk: 0.99)).ReadAsync(Ct);
+            db, clock, Audit(db, clock), new FakeResourceProbe(disk: 0.99, diskFreeBytes: 64L * 1024 * 1024)).ReadAsync(Ct);
 
         HealthCheck resources = checks.Single(c => c.Component == "resources");
 
@@ -214,5 +214,63 @@ public sealed class OperationsTests
         Assert.Equal(HealthStatus.Pass, HealthStatus.Worst([HealthStatus.Pass, HealthStatus.Pass]));
         Assert.Equal(HealthStatus.Warn, HealthStatus.Worst([HealthStatus.Pass, HealthStatus.Warn]));
         Assert.Equal(HealthStatus.Fail, HealthStatus.Worst([HealthStatus.Warn, HealthStatus.Fail]));
+    }
+
+    // ---- the disk is judged on room left, not on proportion used (docs/adr/0061) ----
+
+    [Theory]
+    // A large disk at 97% still has room to work. This is the case that started it: an instance
+    // refused every effectful action on a machine with seven gigabytes free.
+    [InlineData(0.97, 7L * 1024 * 1024 * 1024, ResourceStatus.Normal)]
+    // The same 97% on a small disk leaves a gigabyte, which is not room to be relaxed about.
+    [InlineData(0.97, 1L * 1024 * 1024 * 1024, ResourceStatus.Constrained)]
+    // And below half a gigabyte Aurora cannot safely write a snapshot or a backup.
+    [InlineData(0.97, 200L * 1024 * 1024, ResourceStatus.Critical)]
+    // Nearly full is the one place the fraction still decides something: a terabyte at 99.5% has
+    // room and is also filling fast enough that discretionary work should get out of the way.
+    [InlineData(0.995, 5L * 1024 * 1024 * 1024, ResourceStatus.Constrained)]
+    public async Task TheDiskIsJudgedOnRoomLeft(double fraction, long freeBytes, string expected)
+    {
+        var model = new SystemResourceModel(
+            new FakeResourceProbe(disk: fraction, diskFreeBytes: freeBytes),
+            new TestClock(At("2026-01-15T09:00:00+00:00")));
+
+        ResourceState state = await model.ObserveAsync(Ct);
+
+        Assert.Equal(expected, state.Status);
+        Assert.Equal(freeBytes, state.DiskFreeBytes);
+    }
+
+    [Fact]
+    public async Task APlatformThatReportsNoFreeSpaceFallsBackToTheFraction()
+    {
+        var model = new SystemResourceModel(
+            new FakeResourceProbe(disk: 0.97, diskFreeBytes: null),
+            new TestClock(At("2026-01-15T09:00:00+00:00")));
+
+        ResourceState state = await model.ObserveAsync(Ct);
+
+        // A guess from the only number available beats treating an unmeasured disk as empty — and
+        // beats treating it as healthy, which is the failure the unmeasured list exists to prevent.
+        Assert.Equal(ResourceStatus.Critical, state.Status);
+        Assert.Null(state.DiskFreeBytes);
+    }
+
+    [Fact]
+    public async Task HealthReportsBothFiguresSoTheStatusMakesSense()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(At("2026-01-15T09:00:00+00:00"));
+
+        IReadOnlyList<HealthCheck> checks = await Health(
+            db, clock, Audit(db, clock),
+            new FakeResourceProbe(disk: 0.97, diskFreeBytes: 7L * 1024 * 1024 * 1024)).ReadAsync(Ct);
+
+        HealthCheck resources = checks.Single(c => c.Component == "resources");
+
+        // A reader given only "97%" would think a healthy instance was about to fall over.
+        Assert.Equal(HealthStatus.Pass, resources.Status);
+        Assert.Contains("97% used", resources.DetailSafe, StringComparison.Ordinal);
+        Assert.Contains("7.0 GB free", resources.DetailSafe, StringComparison.Ordinal);
     }
 }

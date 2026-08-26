@@ -131,5 +131,7 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
 /// <summary>A host that is comfortably idle, so integration tests are about Aurora.</summary>
 internal sealed class StubResourceProbe : IResourceProbe
 {
-    public ResourceReading Read() => new(CpuFraction: 0.1, MemoryFraction: 0.2, DiskFraction: 0.3);
+    public ResourceReading Read() => new(
+        CpuFraction: 0.1, MemoryFraction: 0.2, DiskFraction: 0.3,
+        DiskFreeBytes: 64L * 1024 * 1024 * 1024);
 }

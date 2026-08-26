@@ -75,7 +75,16 @@ public sealed record ResourceState(
     double OperationalEnergy,
     string Status,
     /// <summary>Which metrics could not be read. Empty when everything was measurable.</summary>
-    IReadOnlyList<string> Unmeasured);
+    IReadOnlyList<string> Unmeasured,
+    /// <summary>
+    /// Room left on the disk, which is what the disk's status is actually decided on.
+    /// </summary>
+    /// <remarks>
+    /// Reported beside <c>DiskPct</c> rather than instead of it, because on a large disk the two
+    /// stop agreeing and only one of them answers "can Aurora write". Null where the platform
+    /// reported no figure.
+    /// </remarks>
+    long? DiskFreeBytes = null);
 
 public sealed record ResourceBudget(
     string Id,

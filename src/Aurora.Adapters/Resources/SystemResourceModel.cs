@@ -27,6 +27,82 @@ public sealed class SystemResourceModel : IResourceModel
     /// <summary>Above this, only essential work proceeds.</summary>
     private const double CriticalAt = 0.95;
 
+    /// <summary>
+    /// Below this much free space Aurora cannot safely do the things it must be able to do.
+    /// </summary>
+    /// <remarks>
+    /// Derived from what Aurora writes rather than from a round number: the database and its
+    /// write-ahead log, an encrypted snapshot of the same, and a backup copy beside it — with room
+    /// left for none of those to be the thing that fills the disk. Half a gigabyte is generous for
+    /// all three and small enough that reaching it means something is genuinely wrong.
+    /// </remarks>
+    private const long CriticalFreeBytes = 512L * 1024 * 1024;
+
+    /// <summary>Below this, there is room to work and not room to be relaxed about it.</summary>
+    private const long ConstrainedFreeBytes = 2L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// A disk this full is about to be a problem whatever the absolute figure says.
+    /// </summary>
+    /// <remarks>
+    /// The one place the fraction still decides something. A terabyte at 99.5% has five gigabytes
+    /// left, which is room — and it is also a machine filling up fast enough that discretionary
+    /// work should get out of the way.
+    /// </remarks>
+    private const double NearlyFull = 0.99;
+
+    /// <summary>
+    /// What the disk says about whether Aurora can work.
+    /// </summary>
+    /// <remarks>
+    /// Judged on room left rather than on proportion used. A percentage answers how much of the
+    /// machine is spoken for; Aurora needs to know whether there is space to write into, and those
+    /// two stop agreeing exactly when the disk is large. This was found the honest way: an
+    /// instance refused every effectful action on a machine with seven gigabytes free, and it was
+    /// right by its own rule and wrong about the machine.
+    /// <para>
+    /// Where the platform reports no free-space figure this falls back to the fraction, because a
+    /// guess from the only number available beats treating an unmeasured disk as empty.
+    /// </para>
+    /// </remarks>
+    private static string DiskStatus(long? freeBytes, double? fraction)
+    {
+        if (freeBytes is null)
+        {
+            return fraction switch
+            {
+                null => ResourceStatus.Unknown,
+                >= CriticalAt => ResourceStatus.Critical,
+                >= ConstrainedAt => ResourceStatus.Constrained,
+                _ => ResourceStatus.Normal,
+            };
+        }
+
+        if (freeBytes < CriticalFreeBytes)
+        {
+            return ResourceStatus.Critical;
+        }
+
+        return freeBytes < ConstrainedFreeBytes || fraction >= NearlyFull
+            ? ResourceStatus.Constrained
+            : ResourceStatus.Normal;
+    }
+
+    /// <summary>The worse of two, on the order Normal &lt; Unknown &lt; Constrained &lt; Critical.</summary>
+    private static string Worse(string left, string right) =>
+        Rank(left) >= Rank(right) ? left : right;
+
+    private static int Rank(string status) => status switch
+    {
+        ResourceStatus.Critical => 3,
+        ResourceStatus.Constrained => 2,
+
+        // Unknown sits above Normal: RFC 033 admits conservatively on a metric nobody read.
+        ResourceStatus.Unknown => 1,
+        _ => 0,
+    };
+
+
     private readonly ConcurrentDictionary<string, Reservation> _held = new(StringComparer.Ordinal);
     private readonly IResourceProbe _probe;
     private readonly IClock _clock;
@@ -72,16 +148,20 @@ public sealed class SystemResourceModel : IResourceModel
         // not a working network. Reported as unknown rather than guessed at.
         unmeasured.Add("network");
 
-        var worst = new[] { cpu, memory, disk }.Where(v => v is not null).Select(v => v!.Value).ToList();
-        var pressure = worst.Count == 0 ? (double?)null : worst.Max();
+        // CPU and memory are proportions of a fixed capacity, so a fraction is the right measure
+        // for them. The disk is not: see DiskStatus.
+        var load = new[] { cpu, memory }.Where(v => v is not null).Select(v => v!.Value).ToList();
+        var pressure = load.Count == 0 ? (double?)null : load.Max();
 
-        var status = pressure switch
+        var fromLoad = pressure switch
         {
             null => ResourceStatus.Unknown,
             >= CriticalAt => ResourceStatus.Critical,
             >= ConstrainedAt => ResourceStatus.Constrained,
             _ => ResourceStatus.Normal,
         };
+
+        var status = Worse(fromLoad, DiskStatus(reading.DiskFreeBytes, disk));
 
         // Capacity, not comfort: what is left after the machine's own pressure and the work already
         // in flight. Unknown pressure counts as half, so an unmeasurable host is treated as busier
@@ -93,7 +173,7 @@ public sealed class SystemResourceModel : IResourceModel
             Round(cpu), Round(memory), Round(disk), Core.Contracts.NetworkState.Unknown,
             QueueDepth: _held.Count, ActiveWorkers: _held.Count,
             ModelCostToday: CostToday(), RateLimitState: "UNKNOWN",
-            OperationalEnergy: energy, status, unmeasured);
+            OperationalEnergy: energy, status, unmeasured, reading.DiskFreeBytes);
     }
 
     public Task<AdmissionResult> AdmitAsync(

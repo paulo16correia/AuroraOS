@@ -323,7 +323,8 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 /// way first — gets tested against stated conditions instead.
 /// </remarks>
 public sealed class FakeResourceProbe(
-    double? cpu = 0.1, double? memory = 0.2, double? disk = 0.3) : IResourceProbe
+    double? cpu = 0.1, double? memory = 0.2, double? disk = 0.3,
+    long? diskFreeBytes = 64L * 1024 * 1024 * 1024) : IResourceProbe
 {
     public double? Cpu { get; set; } = cpu;
 
@@ -331,7 +332,10 @@ public sealed class FakeResourceProbe(
 
     public double? Disk { get; set; } = disk;
 
-    public ResourceReading Read() => new(Cpu, Memory, Disk);
+    /// <summary>Plenty by default, so a test about something else is not about the disk.</summary>
+    public long? DiskFreeBytes { get; set; } = diskFreeBytes;
+
+    public ResourceReading Read() => new(Cpu, Memory, Disk, DiskFreeBytes);
 
     /// <summary>A host that reports nothing at all.</summary>
     public static FakeResourceProbe Blind() => new(null, null, null);
