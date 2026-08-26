@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Globalization;
 using Aurora.Adapters.Persistence;
 using Aurora.Core;
@@ -334,6 +335,28 @@ public sealed class SqliteObservationService : IObservationService
     private const string PrivacyDimension = "privacy";
 
     /// <summary>
+    /// Whether the change is well-formed enough to be the thing it says it is.
+    /// </summary>
+    /// <remarks>
+    /// Not whether it will work — Aurora cannot know that about an arbitrary change, and a
+    /// dimension claiming to would be the dishonest half of this method. What it can check is that
+    /// the change set parses, is an object, and is not empty: three ways a proposal is wrong that
+    /// nothing else here would catch, and that would otherwise be found by whatever consumed it
+    /// after it was applied.
+    /// </remarks>
+    private const string CorrectnessDimension = "correctness";
+
+    /// <summary>
+    /// Whether there is a way back.
+    /// </summary>
+    /// <remarks>
+    /// Also enforced at application, and measured here as well on purpose: a proposal whose
+    /// rollback plan is missing should be told so while somebody is still deciding about it,
+    /// rather than at the moment they try to apply it.
+    /// </remarks>
+    private const string ReversibilityDimension = "reversibility";
+
+    /// <summary>
     /// Words in a change set that widen what Aurora may do rather than what it knows.
     /// </summary>
     /// <remarks>
@@ -358,9 +381,11 @@ public sealed class SqliteObservationService : IObservationService
 
         var metrics = new List<Metric>
         {
+            Correctness(proposal),
             Security(proposal),
             Cost(proposal),
             Privacy(proposal),
+            Reversibility(proposal),
         };
 
         var verdict = metrics.Any(m => m.Regressed)
@@ -422,6 +447,40 @@ public sealed class SqliteObservationService : IObservationService
 
         return runs;
     }
+
+    /// <summary>Is this well-formed enough to be the thing it says it is?</summary>
+    private static Metric Correctness(LearningProposal proposal)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(proposal.ChangeSetJson);
+
+            if (document.RootElement.ValueKind is not JsonValueKind.Object)
+            {
+                return new Metric(CorrectnessDimension, Measured: true, Regressed: true,
+                    "the change set is not an object");
+            }
+
+            return document.RootElement.EnumerateObject().Any()
+                ? new Metric(CorrectnessDimension, Measured: true, Regressed: false,
+                    "the change set is a well-formed object")
+                : new Metric(CorrectnessDimension, Measured: true, Regressed: true,
+                    "the change set is empty; there is nothing here to apply");
+        }
+        catch (JsonException)
+        {
+            return new Metric(CorrectnessDimension, Measured: true, Regressed: true,
+                "the change set is not valid JSON");
+        }
+    }
+
+    /// <summary>Is there a way back from this?</summary>
+    private static Metric Reversibility(LearningProposal proposal) =>
+        string.IsNullOrWhiteSpace(proposal.RollbackPlan)
+            ? new Metric(ReversibilityDimension, Measured: true, Regressed: true,
+                "no rollback plan; applying this could not be undone")
+            : new Metric(ReversibilityDimension, Measured: true, Regressed: false,
+                $"undone by: {proposal.RollbackPlan}");
 
     /// <summary>One dimension's result, and whether Aurora was able to look at all.</summary>
     private sealed record Metric(string Dimension, bool Measured, bool Regressed, string Detail);

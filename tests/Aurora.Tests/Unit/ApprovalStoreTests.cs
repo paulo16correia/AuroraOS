@@ -119,4 +119,47 @@ public sealed class ApprovalStoreTests
         Assert.Equal(ApprovalOutcome.Pending, stillPendingB.Outcome);
         Assert.Equal(b.ApprovalId, stillPendingB.ApprovalId);
     }
+
+    [Fact]
+    public async Task AnApprovalThatExpiredIsNotUsableAndANewOneIsAsked()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var store = new SqliteApprovalStore(db.Factory, clock);
+
+        var pending = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
+        await store.DecideAsync(Caller, pending.ApprovalId, approve: true, CancellationToken.None);
+
+        // Long enough for any window: an approval is a person agreeing to something now, and two
+        // days later they are not in the room.
+        clock.UtcNow = DateTimeOffset.UnixEpoch.AddDays(2);
+
+        var stale = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
+
+        // Not consumed, and not silently reused: what comes back is a fresh pending record,
+        // because the question has to be asked again rather than assumed answered.
+        Assert.Equal(ApprovalOutcome.Pending, stale.Outcome);
+        Assert.NotEqual(pending.ApprovalId, stale.ApprovalId);
+    }
+
+    [Fact]
+    public async Task APendingApprovalThatExpiredIsReplacedRatherThanRevived()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var store = new SqliteApprovalStore(db.Factory, clock);
+
+        var first = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
+        clock.UtcNow = DateTimeOffset.UnixEpoch.AddDays(2);
+
+        var second = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
+        Assert.NotEqual(first.ApprovalId, second.ApprovalId);
+
+        // And deciding the dead one does not bring it back. A prompt somebody answered a day late
+        // is not consent to something happening now.
+        await store.DecideAsync(Caller, first.ApprovalId, approve: true, CancellationToken.None);
+
+        var after = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
+        Assert.NotEqual(ApprovalOutcome.Consumed, after.Outcome);
+    }
 }

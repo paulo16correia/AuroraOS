@@ -412,7 +412,7 @@ public sealed class PluginTests
             return;
         }
 
-        var root = Path.Combine(Path.GetTempPath(), $"aurora-plug-{Guid.NewGuid():N}");
+        var root = TestTemp.Path("plug");
         var script = Path.Combine(root, "echo-env.sh");
         Directory.CreateDirectory(root);
 
@@ -461,7 +461,7 @@ public sealed class PluginTests
             return;
         }
 
-        var root = Path.Combine(Path.GetTempPath(), $"aurora-plug-{Guid.NewGuid():N}");
+        var root = TestTemp.Path("plug");
         var script = Path.Combine(root, "hang.sh");
         Directory.CreateDirectory(root);
 

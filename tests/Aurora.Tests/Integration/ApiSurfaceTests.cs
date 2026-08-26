@@ -638,4 +638,71 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    // ---- the two security events, through the real flow (docs/adr/0064) ----
+
+    [Fact]
+    public async Task RepeatedBadCredentialsRaiseAnIncidentThroughTheRealMiddleware()
+    {
+        var incidents = _factory.Services.GetRequiredService<IIncidentService>();
+        var before = (await incidents.OpenIncidentsAsync(Ct())).Count;
+
+        using HttpClient anonymous = _factory.CreateClient();
+        anonymous.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "not-the-token");
+
+        // Five, which is where the line is. Every one of them is refused by the middleware; what
+        // is being asserted is that the fifth also produces an incident.
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            Assert.Equal(
+                HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/v1/status", Ct())).StatusCode);
+        }
+
+        IReadOnlyList<Incident> open = await incidents.OpenIncidentsAsync(Ct());
+        Assert.Equal(before + 1, open.Count);
+
+        Incident raised = open[0];
+        Assert.Equal(SecurityEventType.AuthenticationAbuse, raised.Event.Type);
+        Assert.Equal(IncidentStatus.Contained, raised.Status);
+
+        // Contained means something was actually revoked, not that a row was written.
+        Assert.Contains(
+            raised.ContainmentActions,
+            a => a.Contains("consent session", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheAgentReachingForAPersonSDecisionRaisesAnEscalation()
+    {
+        var incidents = _factory.Services.GetRequiredService<IIncidentService>();
+        var before = (await incidents.OpenIncidentsAsync(Ct())).Count;
+
+        using HttpClient http = Client();
+
+        // The agent holds a valid credential and used it on an endpoint that is not its to call.
+        // That is not a mistake the way a missing token is: it had to choose this over the tool.
+        Assert.Equal(
+            HttpStatusCode.Forbidden, (await http.GetAsync("/v1/plugins", Ct())).StatusCode);
+
+        // Fire and forget on the request path, so the recording may land just after the response.
+        Incident? raised = null;
+
+        for (var attempt = 0; attempt < 40 && raised is null; attempt++)
+        {
+            IReadOnlyList<Incident> open = await incidents.OpenIncidentsAsync(Ct());
+
+            raised = open.FirstOrDefault(
+                i => i.Event.Type == SecurityEventType.PrivilegeEscalation);
+
+            if (raised is null)
+            {
+                await Task.Delay(25, Ct());
+            }
+        }
+
+        Assert.NotNull(raised);
+        Assert.Contains("/v1/plugins", raised!.Event.EvidenceRef, StringComparison.Ordinal);
+        Assert.True((await incidents.OpenIncidentsAsync(Ct())).Count > before);
+    }
 }

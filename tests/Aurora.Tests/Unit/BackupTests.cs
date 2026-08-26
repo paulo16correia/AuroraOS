@@ -10,7 +10,7 @@ public sealed class BackupTests
     private sealed class TempDir : IDisposable
     {
         public string Path { get; } =
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"aurora-bk-{Guid.NewGuid():N}");
+            TestTemp.Path("bk");
 
         public TempDir() => Directory.CreateDirectory(Path);
 

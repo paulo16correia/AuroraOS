@@ -30,7 +30,7 @@ public sealed class LifeHistoryTests
         var clock = new TestClock(At(now));
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         return new World(new SqliteLifeHistory(db.Factory, audit, clock, TestBus.Over(db.Factory, clock)), audit, clock);
     }

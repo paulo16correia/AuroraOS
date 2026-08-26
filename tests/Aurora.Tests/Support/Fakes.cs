@@ -488,3 +488,29 @@ public sealed class FakeClockGuard(bool trustworthy = true) : IClockGuard
     public Task<ClockVerdict> CheckAsync(CancellationToken ct) =>
         Task.FromResult(new ClockVerdict(trustworthy, trustworthy ? "fine" : "went backwards"));
 }
+
+/// <summary>A security watch that remembers what it was told, and raises nothing.</summary>
+/// <remarks>
+/// The real one opens incidents, which revoke consent sessions. A test about a plugin refusing a
+/// call should not have that happening underneath it — what it needs to know is whether the
+/// refusal was reported as an escalation at all.
+/// </remarks>
+public sealed class RecordingSecurityWatch : ISecurityWatch
+{
+    public List<string> AuthenticationFailures { get; } = [];
+
+    public List<(string Actor, string ResourceRef, string Detail)> Escalations { get; } = [];
+
+    public Task AuthenticationFailedAsync(string source, CancellationToken ct)
+    {
+        AuthenticationFailures.Add(source);
+        return Task.CompletedTask;
+    }
+
+    public Task PrivilegeEscalationAsync(
+        string actor, string resourceRef, string detail, CancellationToken ct)
+    {
+        Escalations.Add((actor, resourceRef, detail));
+        return Task.CompletedTask;
+    }
+}

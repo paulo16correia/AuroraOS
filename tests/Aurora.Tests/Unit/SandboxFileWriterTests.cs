@@ -1,6 +1,7 @@
 using Aurora.Adapters.Files;
 using Aurora.Core.Abstractions;
 using Xunit;
+using Aurora.Tests.Support;
 
 namespace Aurora.Tests.Unit;
 
@@ -9,9 +10,9 @@ public sealed class SandboxFileWriterTests
     /// <summary>A throwaway sandbox root, plus an outside directory to attempt escapes into.</summary>
     private sealed class TempSandbox : IDisposable
     {
-        public string Root { get; } = Path.Combine(Path.GetTempPath(), $"aurora-sbx-{Guid.NewGuid():N}");
+        public string Root { get; } = TestTemp.Path("sbx");
 
-        public string Outside { get; } = Path.Combine(Path.GetTempPath(), $"aurora-out-{Guid.NewGuid():N}");
+        public string Outside { get; } = TestTemp.Path("out");
 
         public TempSandbox()
         {
@@ -132,7 +133,7 @@ public sealed class SandboxFileWriterTests
     public async Task Write_ResolvesSandboxRootThroughItsOwnSymlink()
     {
         using var sandbox = new TempSandbox();
-        var linkedRoot = Path.Combine(Path.GetTempPath(), $"aurora-link-{Guid.NewGuid():N}");
+        var linkedRoot = TestTemp.Path("link");
         Directory.CreateSymbolicLink(linkedRoot, sandbox.Root);
 
         try
@@ -163,7 +164,7 @@ public sealed class SandboxFileWriterTests
         }
 
         var root = NewRoot();
-        var outside = Path.Combine(Path.GetTempPath(), $"aurora-outside-{Guid.NewGuid():N}");
+        var outside = TestTemp.Path("outside");
         Directory.CreateDirectory(outside);
 
         try
@@ -223,7 +224,7 @@ public sealed class SandboxFileWriterTests
 
     private static string NewRoot()
     {
-        var root = Path.Combine(Path.GetTempPath(), $"aurora-sbx-{Guid.NewGuid():N}");
+        var root = TestTemp.Path("sbx");
         Directory.CreateDirectory(root);
         return root;
     }

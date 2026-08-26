@@ -19,15 +19,33 @@ namespace Aurora.Adapters.Plugins;
 /// </remarks>
 public sealed class PluginCapabilityBridge : ICapability
 {
+    /// <summary>
+    /// Refusals that mean a plugin reached for authority it was not given, rather than that
+    /// something went wrong.
+    /// </summary>
+    /// <remarks>
+    /// The manifest reader refuses an undeclared permission at install and the catalogue refuses
+    /// an unknown action, so a call arriving here with one of these got past both.
+    /// </remarks>
+    private static readonly string[] Escalations =
+    [
+        PluginRefusal.PermissionNotGranted,
+        PluginRefusal.UndeclaredEffect,
+        PluginRefusal.AboveDeclaredClassification,
+    ];
+
     private readonly IPluginRegistry _registry;
+    private readonly ISecurityWatch _watch;
     private readonly string _pluginId;
     private readonly string _capabilityKey;
     private readonly string _dataClass;
 
     public PluginCapabilityBridge(
-        IPluginRegistry registry, PluginManifest manifest, PluginCapability capability)
+        IPluginRegistry registry, ISecurityWatch watch,
+        PluginManifest manifest, PluginCapability capability)
     {
         _registry = registry;
+        _watch = watch;
         _pluginId = manifest.PluginId;
         _capabilityKey = capability.Key;
         _dataClass = manifest.MaxDataClass;
@@ -60,6 +78,13 @@ public sealed class PluginCapabilityBridge : ICapability
 
         if (!result.Ok)
         {
+            if (result.Refusal is { } refusal && Escalations.Contains(refusal, StringComparer.Ordinal))
+            {
+                await _watch.PrivilegeEscalationAsync(
+                    _pluginId, $"plugin/{_pluginId}", $"{refusal}: {result.Detail}", ct)
+                    .ConfigureAwait(false);
+            }
+
             throw new PluginException(
                 $"{_capabilityKey} did not complete: {result.Refusal ?? "no reason given"} — {result.Detail}");
         }

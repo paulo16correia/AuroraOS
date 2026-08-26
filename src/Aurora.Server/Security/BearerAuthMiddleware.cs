@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Aurora.Core.Abstractions;
 
 namespace Aurora.Server.Security;
 
@@ -44,7 +45,8 @@ public sealed class BearerAuthMiddleware
     /// </remarks>
     private static readonly string[] Unauthenticated = ["/ui/session", "/health/live"];
 
-    public async Task InvokeAsync(HttpContext context, OperatorSessions sessions)
+    public async Task InvokeAsync(
+        HttpContext context, OperatorSessions sessions, ISecurityWatch watch)
     {
         if (Unauthenticated.Any(path => context.Request.Path.Equals(path, StringComparison.Ordinal)))
         {
@@ -70,6 +72,13 @@ public sealed class BearerAuthMiddleware
             || !CryptographicOperations.FixedTimeEquals(
                 SHA256.HashData(Encoding.UTF8.GetBytes(header[Prefix.Length..])), _expectedDigest))
         {
+            // Counted, not acted on here: five in five minutes is somebody working at it rather
+            // than somebody mistyping, and that is an incident (docs/adr/0064). The refusal below
+            // is what protects the request either way.
+            await watch.AuthenticationFailedAsync(
+                context.Request.Path.StartsWithSegments("/mcp") ? "mcp" : "api",
+                context.RequestAborted);
+
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             context.Response.Headers.WWWAuthenticate = "Bearer";
             context.Response.ContentType = "application/json";

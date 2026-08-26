@@ -71,7 +71,7 @@ public sealed class RetentionTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(At("2026-01-01T00:00:00+00:00"));
-        var anchor = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchor = TestTemp.Path("anchor");
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchor));
 
         await audit.AppendAsync(

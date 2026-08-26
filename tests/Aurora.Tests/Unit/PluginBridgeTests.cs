@@ -3,6 +3,7 @@ using Aurora.Adapters.Capabilities;
 using Aurora.Adapters.Plugins;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Tests.Support;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -69,10 +70,15 @@ public sealed class PluginBridgeTests
         IdempotencySupport: true, AuditLevel: "FULL",
         Title: "Append a note", Description: "Adds a line.", Risk: risk, Reversible: reversible);
 
-    private static PluginCapabilityBridge Bridge(PluginResult result, out RecordingRegistry registry)
+    private static PluginCapabilityBridge Bridge(PluginResult result, out RecordingRegistry registry) =>
+        Bridge(result, out registry, out _);
+
+    private static PluginCapabilityBridge Bridge(
+        PluginResult result, out RecordingRegistry registry, out RecordingSecurityWatch watch)
     {
         registry = new RecordingRegistry(result);
-        return new PluginCapabilityBridge(registry, Manifest(), Capability());
+        watch = new RecordingSecurityWatch();
+        return new PluginCapabilityBridge(registry, watch, Manifest(), Capability());
     }
 
     private static JsonElement Input(string json) => JsonDocument.Parse(json).RootElement.Clone();
@@ -81,8 +87,9 @@ public sealed class PluginBridgeTests
     public void TheDescriptorSaysWhoWroteIt()
     {
         CapabilityDescriptor descriptor =
-            new PluginCapabilityBridge(new RecordingRegistry(new PluginResult(true, "{}", null, "", 1)),
-                Manifest(), Capability()).Descriptor;
+            new PluginCapabilityBridge(
+                new RecordingRegistry(new PluginResult(true, "{}", null, "", 1)),
+                new RecordingSecurityWatch(), Manifest(), Capability()).Descriptor;
 
         Assert.Equal("notes.append", descriptor.ActionId);
         Assert.Equal(RiskLevel.Medium, descriptor.Risk);
@@ -146,6 +153,7 @@ public sealed class PluginBridgeTests
 
         var shadow = new PluginCapabilityBridge(
             new RecordingRegistry(new PluginResult(true, "{}", null, "", 1)),
+            new RecordingSecurityWatch(),
             Manifest(),
             Capability() with { Key = "echo.say", Title = "Not the real one" });
 
@@ -157,5 +165,41 @@ public sealed class PluginBridgeTests
 
         // And it appears once, not twice, so nobody reading the catalogue has to work out which.
         Assert.Single(composite.List(null), d => d.ActionId == "echo.say");
+    }
+
+    [Theory]
+    [InlineData(PluginRefusal.PermissionNotGranted)]
+    [InlineData(PluginRefusal.UndeclaredEffect)]
+    [InlineData(PluginRefusal.AboveDeclaredClassification)]
+    public async Task ReachingPastTheManifestIsReportedAsAnEscalation(string refusal)
+    {
+        PluginCapabilityBridge bridge = Bridge(
+            new PluginResult(false, null, refusal, "never granted: notes.write", 1),
+            out _, out RecordingSecurityWatch watch);
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => bridge.ExecuteAsync(Input("{}"), Ct).AsTask());
+
+        // The manifest reader refuses an undeclared permission at install and the catalogue
+        // refuses an unknown action, so a call arriving here with one of these got past both.
+        (var actor, var resource, var detail) = Assert.Single(watch.Escalations);
+        Assert.Equal("acme/notes", actor);
+        Assert.Equal("plugin/acme/notes", resource);
+        Assert.Contains(refusal, detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnOrdinaryFailureIsNotAnEscalation()
+    {
+        PluginCapabilityBridge bridge = Bridge(
+            new PluginResult(false, null, "timed_out", "took longer than 5s", 5000),
+            out _, out RecordingSecurityWatch watch);
+
+        await Assert.ThrowsAsync<PluginException>(
+            () => bridge.ExecuteAsync(Input("{}"), Ct).AsTask());
+
+        // A plugin that hung is a plugin that hung. Reporting it as an attempt to exceed its
+        // authority would make the incident log useless for the thing it is for.
+        Assert.Empty(watch.Escalations);
     }
 }

@@ -16,15 +16,15 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
     public string BearerToken { get; } = "test-bearer-token-" + Guid.NewGuid().ToString("N");
 
     private readonly string _dbPath =
-        Path.Combine(Path.GetTempPath(), $"aurora-test-{Guid.NewGuid():N}.db");
+        TestTemp.Path("factory") + ".db";
 
     /// <summary>Passphrase verifier file for this instance, so enrolling never touches the real one.</summary>
     public string PassphrasePath { get; } =
-        Path.Combine(Path.GetTempPath(), $"aurora-pass-{Guid.NewGuid():N}.json");
+        TestTemp.Path("pass") + ".json";
 
     /// <summary>Sandbox root for this instance, so a test write never escapes into the real one.</summary>
     public string SandboxRoot { get; } =
-        Path.Combine(Path.GetTempPath(), $"aurora-sandbox-{Guid.NewGuid():N}");
+        TestTemp.Path("sandbox");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {

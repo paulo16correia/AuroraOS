@@ -1,6 +1,7 @@
 using Aurora.Server;
 using Microsoft.Extensions.Configuration;
 using Xunit;
+using Aurora.Tests.Support;
 
 namespace Aurora.Tests.Unit;
 
@@ -47,7 +48,7 @@ public sealed class ServerOptionsTests
             return;
         }
 
-        var root = Path.Combine(Path.GetTempPath(), $"aurora-opt-{Guid.NewGuid():N}");
+        var root = TestTemp.Path("opt");
 
         try
         {

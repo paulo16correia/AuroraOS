@@ -1,12 +1,13 @@
 using Aurora.Core.Files;
 using Xunit;
+using Aurora.Tests.Support;
 
 namespace Aurora.Tests.Unit;
 
 public sealed class SandboxPathTests
 {
     private static readonly string Root =
-        Path.Combine(Path.GetTempPath(), "aurora-validator-root");
+        TestTemp.Path("validator-root");
 
     [Theory]
     // Traversal, in the shapes that actually get tried.

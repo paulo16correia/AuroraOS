@@ -59,7 +59,7 @@ public sealed class PluginSandboxTests
     /// <summary>Writes a shell plugin and returns (root, path).</summary>
     private static async Task<(string Root, string Script)> PluginAsync(string body)
     {
-        var root = Path.Combine(Path.GetTempPath(), $"aurora-sbx-{Guid.NewGuid():N}");
+        var root = TestTemp.Path("sbx");
         Directory.CreateDirectory(root);
         var script = Path.Combine(root, "probe.sh");
 
@@ -153,7 +153,7 @@ public sealed class PluginSandboxTests
             return;
         }
 
-        var elsewhere = Path.Combine(Path.GetTempPath(), $"aurora-elsewhere-{Guid.NewGuid():N}.txt");
+        var elsewhere = TestTemp.Path("elsewhere") + ".txt";
 
         (string root, string script) = await PluginAsync(
             $"echo out > '{elsewhere}' 2>/dev/null && printf '{{\"out\":\"wrote\"}}' || "

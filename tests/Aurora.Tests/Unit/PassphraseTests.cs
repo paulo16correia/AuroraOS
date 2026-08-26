@@ -8,7 +8,7 @@ namespace Aurora.Tests.Unit;
 public sealed class PassphraseTests : IDisposable
 {
     private readonly string _path =
-        Path.Combine(Path.GetTempPath(), $"aurora-pass-{Guid.NewGuid():N}.json");
+        TestTemp.Path("pass") + ".json";
 
     // Low iteration count: these tests exercise the policy around the KDF, not the KDF's cost.
     private static readonly PassphraseOptions Fast = new(Iterations: 1_000, FailuresBeforeLockout: 3);

@@ -43,7 +43,7 @@ public sealed class ReviewApplicationTests
     private static World Build(SqliteTestDb db, string now = "2026-01-15T14:00:00+00:00")
     {
         var clock = new TestClock(At(now));
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchorPath));
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);

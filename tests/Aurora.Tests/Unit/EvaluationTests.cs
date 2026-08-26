@@ -63,7 +63,7 @@ public sealed class EvaluationTests
         Metrics(run).Single(m => m.GetProperty("dimension").GetString() == name);
 
     [Fact]
-    public async Task AnEvaluationMeasuresSecurityCostAndPrivacy()
+    public async Task AnEvaluationMeasuresEveryDimensionItClaimsTo()
     {
         using var db = new SqliteTestDb();
         var service = New(db);
@@ -71,10 +71,11 @@ public sealed class EvaluationTests
 
         EvaluationRun run = await service.EvaluateAsync(proposalId, "the retry path", Ct);
 
-        // Rule 4 names three dimensions and this is all three of them, every time. A dimension
-        // that is absent from the metrics is a dimension nobody will notice was never checked.
+        // Rule 4 names three as mandatory and this is all three, every time, plus the two Aurora
+        // can also check honestly. A dimension absent from the metrics is a dimension nobody will
+        // notice was never checked.
         Assert.Equal(
-            ["security_regression", "cost", "privacy"],
+            ["correctness", "security_regression", "cost", "privacy", "reversibility"],
             Metrics(run).Select(m => m.GetProperty("dimension").GetString()));
 
         Assert.Equal(EvaluationVerdict.Pass, run.Verdict);
@@ -185,19 +186,42 @@ public sealed class EvaluationTests
     }
 
     [Fact]
-    public async Task AChangeWithNoWayBackIsNotApplied()
+    public async Task AChangeWithNoWayBackFailsEvaluationAndIsNotApplied()
     {
         using var db = new SqliteTestDb();
         var service = New(db);
         var proposalId = await ApprovedAsync(service, Proposal(rollbackPlan: ""));
 
-        await service.EvaluateAsync(proposalId, "anything", Ct);
+        EvaluationRun run = await service.EvaluateAsync(proposalId, "anything", Ct);
 
-        // Reversible is one of rule 3's three conditions, not a nice-to-have alongside them.
-        ObservationException irreversible = await Assert.ThrowsAsync<ObservationException>(
+        // Told while somebody is still deciding about it, rather than at the moment they try to
+        // apply it. Reversible is one of rule 3's three conditions, not a nice-to-have.
+        Assert.Equal(EvaluationVerdict.Fail, run.Verdict);
+        Assert.True(Dimension(run, "reversibility").GetProperty("regressed").GetBoolean());
+
+        await Assert.ThrowsAsync<ObservationException>(
             () => service.ApplyLearningAsync(proposalId, Ct));
+    }
 
-        Assert.Contains("rollback", irreversible.Message, StringComparison.Ordinal);
+    [Theory]
+    // Not JSON at all.
+    [InlineData("this is not json")]
+    // JSON, but not an object.
+    [InlineData("[1,2,3]")]
+    // An object with nothing in it: there is nothing here to apply.
+    [InlineData("{}")]
+    public async Task AChangeSetThatIsNotWellFormedFailsOnCorrectness(string changeSet)
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        var proposalId = await ApprovedAsync(service, Proposal(changeSet: changeSet));
+
+        EvaluationRun run = await service.EvaluateAsync(proposalId, "anything", Ct);
+
+        // Aurora cannot know whether an arbitrary change will work. It can know that this one is
+        // not the thing it says it is, which nothing else here would catch.
+        Assert.Equal(EvaluationVerdict.Fail, run.Verdict);
+        Assert.True(Dimension(run, "correctness").GetProperty("regressed").GetBoolean());
     }
 
     [Fact]
@@ -278,5 +302,89 @@ public sealed class EvaluationTests
             () => service.RollBackLearningAsync(proposalId, "never ran", Ct));
 
         Assert.Empty(_lastIncidents.Opened);
+    }
+
+    // ---- states that cannot be reached are refused rather than half-reached ----
+
+    [Fact]
+    public async Task SomethingNobodyDecidedOnCannotBeEvaluated()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+
+        AuroraAction action = await service.ProposeActionAsync(
+            "decision/1", "message.send", "person/paulo", "hash-1", true, Ct);
+
+        await service.AuthorizeActionAsync(action.Id, Ct);
+        await service.DispatchActionAsync(action.Id, "call/1", Ct);
+
+        Observation raw = await service.RecordAsync(
+            action.Id, "kernel", "tool", ObservationOutcome.Failure, null, null, Ct);
+
+        await service.ValidateAsync(raw.Id, valid: true, null, Ct);
+
+        Reflection reflection = await service.ReflectAsync(
+            raw.Id, "too eager", ["back off"], [Proposal()], Ct);
+
+        // Approved, then tested, then applied — rule 3's order. Testing something nobody has
+        // agreed to look at is work.
+        ObservationException early = await Assert.ThrowsAsync<ObservationException>(
+            () => service.EvaluateAsync(reflection.ProposalRefs[0], "anything", Ct));
+
+        Assert.Contains("APPROVED or TESTING", early.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SomethingAlreadyDeployedCannotBeEvaluatedAgain()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        var proposalId = await ApprovedAsync(service, Proposal());
+
+        await service.EvaluateAsync(proposalId, "the retry path", Ct);
+        await service.ApplyLearningAsync(proposalId, Ct);
+
+        // Testing something already deployed is not a test, and it would move a live change back
+        // into TESTING while it is still in force.
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.EvaluateAsync(proposalId, "again", Ct));
+    }
+
+    [Fact]
+    public async Task SomethingRejectedByEvaluationStaysRejected()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+
+        var proposalId = await ApprovedAsync(service, Proposal(
+            changeSet: """{"token":"ghp_A1b2C3d4E5f6G7h8"}"""));
+
+        EvaluationRun failed = await service.EvaluateAsync(proposalId, "anything", Ct);
+        Assert.Equal(EvaluationVerdict.Fail, failed.Verdict);
+
+        // A failed evaluation ends the proposal. Evaluating it again until it passes would make
+        // the verdict advisory, which is the one thing it must not be.
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.EvaluateAsync(proposalId, "again", Ct));
+
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.ApplyLearningAsync(proposalId, Ct, acceptInconclusive: true));
+    }
+
+    [Fact]
+    public async Task ARolledBackChangeCannotBeRolledBackTwice()
+    {
+        using var db = new SqliteTestDb();
+        var service = New(db);
+        var proposalId = await ApprovedAsync(service, Proposal());
+
+        await service.EvaluateAsync(proposalId, "the retry path", Ct);
+        await service.ApplyLearningAsync(proposalId, Ct);
+        await service.RollBackLearningAsync(proposalId, "it starved the queue", Ct);
+
+        // Recording an undoing that did not happen would open a second incident about a change
+        // that was already not in force.
+        await Assert.ThrowsAsync<ObservationException>(
+            () => service.RollBackLearningAsync(proposalId, "again", Ct));
     }
 }

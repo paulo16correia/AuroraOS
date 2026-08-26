@@ -57,14 +57,14 @@ public sealed class IncidentTests
 
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"inc-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         SqliteToolManager tools = ToolManagerTestsSupport.Manager(db, out _);
 
         var plugins = new SqlitePluginRegistry(
             db.Factory,
             new SubprocessPluginHost(
-                Path.Combine(Path.GetTempPath(), $"inc-plug-{Guid.NewGuid():N}"),
+                TestTemp.Path("plug"),
                 new UnconfinedSandbox("not used"), allowUnconfined: true),
             bus, Enumerable.Repeat((byte)9, 32).ToArray(), clock);
 

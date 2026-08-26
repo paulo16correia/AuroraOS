@@ -10,7 +10,7 @@ public sealed class AuditStoreTests
     /// <summary>A store with a throwaway signing key and anchor, isolated per test.</summary>
     private static SqliteAuditStore NewStore(SqliteTestDb db, out string anchorPath)
     {
-        anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        anchorPath = TestTemp.Path("anchor");
         return new SqliteAuditStore(
             db.Factory,
             new TestClock(DateTimeOffset.UnixEpoch),
@@ -92,7 +92,7 @@ public sealed class AuditStoreTests
     public async Task WholesaleRewrite_FailsWithoutTheSigningKey()
     {
         using var db = new SqliteTestDb();
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var real = StoreWith(db, RandomKey(1), anchorPath);
         await real.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
@@ -137,7 +137,7 @@ public sealed class AuditStoreTests
     [Fact]
     public void Anchor_NeverMovesBackwards()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var path = TestTemp.Path("anchor");
         var anchor = new AuditAnchorFile(path);
 
         anchor.Advance(5, "hash-5");
@@ -153,7 +153,7 @@ public sealed class AuditStoreTests
     [Fact]
     public void AuditKey_IsCreatedOnceAndReused()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"aurora-key-{Guid.NewGuid():N}");
+        var path = TestTemp.Path("key");
 
         var first = AuditKeyFile.LoadOrCreate(path);
         var second = AuditKeyFile.LoadOrCreate(path);
@@ -167,7 +167,7 @@ public sealed class AuditStoreTests
     [Fact]
     public void AuditKey_RefusesAWrongLengthFileRatherThanRegenerating()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"aurora-key-{Guid.NewGuid():N}");
+        var path = TestTemp.Path("key");
         File.WriteAllBytes(path, new byte[8]);
 
         // Regenerating would silently invalidate every existing record and destroy the evidence.
@@ -210,7 +210,7 @@ public sealed class AuditStoreTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var original = new SqliteAuditStore(
             db.Factory, clock, KeyOf(1), new AuditAnchorFile(anchorPath));
@@ -244,7 +244,7 @@ public sealed class AuditStoreTests
     {
         using var db = new SqliteTestDb();
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var real = new SqliteAuditStore(db.Factory, clock, KeyOf(1), new AuditAnchorFile(anchorPath));
         await real.AppendAsync(Entry("first"), CancellationToken.None);
@@ -278,7 +278,7 @@ public sealed class AuditStoreTests
         using var db = new SqliteTestDb();
         var store = new SqliteAuditStore(
             db.Factory, new TestClock(DateTimeOffset.UnixEpoch), KeyOf(1),
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         // Nobody should be able to find an unexplained break in an audit log.
         await Assert.ThrowsAsync<InvalidOperationException>(() =>

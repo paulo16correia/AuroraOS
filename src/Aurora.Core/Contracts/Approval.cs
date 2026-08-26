@@ -9,6 +9,17 @@ public static class ApprovalStatus
     public const string Approved = "APPROVED";
     public const string Rejected = "REJECTED";
     public const string Consumed = "CONSUMED";
+
+    /// <summary>
+    /// Nobody answered in time.
+    /// </summary>
+    /// <remarks>
+    /// A terminal state rather than a deletion: the ledger records that Aurora asked and was not
+    /// answered, which is a different thing from never having asked. It also has to exist for the
+    /// question to be askable again — the unique index allows one PENDING per scope, so a pending
+    /// row that expired and stayed PENDING would block that scope for ever.
+    /// </remarks>
+    public const string Expired = "EXPIRED";
 }
 
 /// <summary>A persisted approval row.</summary>

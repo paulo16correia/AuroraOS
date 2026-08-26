@@ -56,7 +56,7 @@ public sealed class KernelDispatcherTests
         Build(SqliteTestDb db, FakeCapability capability, ReasonerProposal? proposal = null)
     {
         var clock = new TestClock(Now);
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var kernel = new AuroraKernel(
             new FakeReasoner(proposal),
@@ -106,7 +106,7 @@ public sealed class KernelDispatcherTests
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
         var resources = new SystemResourceModel(new FakeResourceProbe(), clock);
 
         return new SqliteSelfModel(
@@ -208,7 +208,7 @@ public sealed class KernelDispatcherTests
             new DirectExecutor(),
             new SqliteAuditStore(
                 db.Factory, clock, new byte[32],
-                new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
+                new AuditAnchorFile(TestTemp.Path("anchor"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
             TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
@@ -257,7 +257,7 @@ public sealed class KernelDispatcherTests
             new DirectExecutor(),
             new SqliteAuditStore(
                 db.Factory, clock, new byte[32],
-                new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
+                new AuditAnchorFile(TestTemp.Path("anchor"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
             TestBus.Over(db.Factory, clock), new NoOperatorPrompt());
@@ -382,7 +382,7 @@ public sealed class KernelDispatcherTests
         var bus = TestBus.Over(db.Factory, clock);
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"s-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         // A machine with no disk left. Reading is unaffected; reaching outside it is not.
         var resources = new SystemResourceModel(new FakeResourceProbe(disk: 0.99, diskFreeBytes: 64L * 1024 * 1024), clock);
@@ -481,7 +481,7 @@ public sealed class KernelDispatcherTests
             new DirectExecutor(),
             new SqliteAuditStore(
                 db.Factory, clock, new byte[32],
-                new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}"))),
+                new AuditAnchorFile(TestTemp.Path("anchor"))),
             new InMemoryIdempotencyStore(),
             new Adapters.Observability.InMemoryMetrics(clock), new FakePassphrase(),
             TestBus.Over(db.Factory, clock), new NoOperatorPrompt());

@@ -60,7 +60,7 @@ public sealed class LawComplianceTests
 
     private static SqliteAuditStore TestAudit(SqliteTestDb db, TestClock clock) => new(
         db.Factory, clock, new byte[32],
-        new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"law008-{Guid.NewGuid():N}")));
+        new AuditAnchorFile(TestTemp.Path("anchor")));
 
     /// <summary>A real Self over a real audit store, because the trace is what is being asserted.</summary>
     private static SqliteSelfModel SelfOver(SqliteTestDb db, TestClock clock, IAuditStore audit)

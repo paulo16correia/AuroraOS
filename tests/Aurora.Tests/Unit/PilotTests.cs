@@ -33,7 +33,7 @@ public sealed class PilotTests
         SqliteAuditStore Audit, SqliteEventBus Bus, SqliteCognitiveCycle Cycle) Build(SqliteTestDb db)
     {
         var clock = new TestClock(Now);
-        var anchorPath = Path.Combine(Path.GetTempPath(), $"aurora-anchor-{Guid.NewGuid():N}");
+        var anchorPath = TestTemp.Path("anchor");
 
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(anchorPath));
         var bus = new SqliteEventBus(db.Factory, new SqliteOutbox(new PermissiveEventCatalogue(), clock), clock);

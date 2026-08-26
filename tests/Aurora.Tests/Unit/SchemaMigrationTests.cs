@@ -1,13 +1,14 @@
 using Aurora.Adapters.Persistence;
 using Microsoft.Data.Sqlite;
 using Xunit;
+using Aurora.Tests.Support;
 
 namespace Aurora.Tests.Unit;
 
 public sealed class SchemaMigrationTests : IDisposable
 {
     private readonly string _path =
-        Path.Combine(Path.GetTempPath(), $"aurora-mig-{Guid.NewGuid():N}.db");
+        TestTemp.Path("mig") + ".db";
 
     private SqliteConnectionFactory Factory => new(_path);
 

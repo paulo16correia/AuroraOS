@@ -4,6 +4,7 @@ using Aurora.Adapters.Files;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Xunit;
+using Aurora.Tests.Support;
 
 namespace Aurora.Tests.Unit;
 
@@ -20,7 +21,7 @@ public sealed class OrganiseSandboxTests : IDisposable
     private static readonly CancellationToken Ct = CancellationToken.None;
 
     private readonly string _root =
-        Path.Combine(Path.GetTempPath(), $"aurora-organise-{Guid.NewGuid():N}");
+        TestTemp.Path("organise");
 
     public OrganiseSandboxTests() => Directory.CreateDirectory(_root);
 
@@ -232,7 +233,7 @@ public sealed class OrganiseSandboxTests : IDisposable
 
         Given("notes.md");
 
-        var outside = Path.Combine(Path.GetTempPath(), $"aurora-outside-{Guid.NewGuid():N}.md");
+        var outside = TestTemp.Path("outside") + ".md";
         await File.WriteAllTextAsync(outside, "not yours", Ct);
         File.CreateSymbolicLink(Path.Combine(_root, "linked.md"), outside);
 

@@ -49,7 +49,7 @@ public sealed class SelfModelTests
         var cycles = new SqliteCognitiveCycle(db.Factory, clock);
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
         var resources = new SystemResourceModel(probe ?? new FakeResourceProbe(), clock);
 
         var health = new AuroraHealthService(

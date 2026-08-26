@@ -613,15 +613,31 @@ public static class ApiEndpoints
     /// belongs to the MCP client, is not enough. Without this the agent could approve its own
     /// request simply by calling the endpoint instead of the tool.
     /// </remarks>
-    private static IResult? RequireOperator(HttpContext context, string correlationId) =>
-        RequestActor.IsOperator(context)
-            ? null
-            : Results.Json(
-                ApiEnvelopes.Fail(
-                    correlationId, ApiErrorCode.Forbidden,
-                    "This decision is made by a person. Run 'ui' on the Aurora console to open the "
-                    + "control panel."),
-                statusCode: StatusCodes.Status403Forbidden);
+    private static IResult? RequireOperator(HttpContext context, string correlationId)
+    {
+        if (RequestActor.IsOperator(context))
+        {
+            return null;
+        }
+
+        // The agent holds a credential and used it to reach a decision that is not its to make.
+        // That is not a mistake the way a missing token is: it had to know the endpoint existed
+        // and choose it over the tool (docs/adr/0064). Fire and forget — the refusal below does
+        // not wait on the recording, and the recording cannot change the refusal.
+        _ = context.RequestServices.GetRequiredService<ISecurityWatch>()
+            .PrivilegeEscalationAsync(
+                RequestActor.Agent,
+                resourceRef: string.Empty,
+                $"the agent's token was used on {context.Request.Method} {context.Request.Path}",
+                CancellationToken.None);
+
+        return Results.Json(
+            ApiEnvelopes.Fail(
+                correlationId, ApiErrorCode.Forbidden,
+                "This decision is made by a person. Run 'ui' on the Aurora console to open the "
+                + "control panel."),
+            statusCode: StatusCodes.Status403Forbidden);
+    }
 
     private static string? KeyOf(HttpRequest request) =>
         request.Headers.TryGetValue("Idempotency-Key", out var key) ? key.ToString() : null;

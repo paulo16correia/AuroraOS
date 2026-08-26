@@ -44,7 +44,7 @@ public sealed class MindStateTests
             new AesGcmSecretProtector(Enumerable.Repeat((byte)5, 32).ToArray()),
             clock,
             new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(
-                Path.Combine(Path.GetTempPath(), $"anchor-{Guid.NewGuid():N}"))),
+                TestTemp.Path("anchor"))),
             idempotency,
             sessions,
             lifecycle);
@@ -85,7 +85,7 @@ public sealed class MindStateTests
         var (service, _, _, _) = New(db);
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
         var audit = new SqliteAuditStore(db.Factory, clock, new byte[32], new AuditAnchorFile(
-            Path.Combine(Path.GetTempPath(), $"anchor-{Guid.NewGuid():N}")));
+            TestTemp.Path("anchor")));
         await audit.AppendAsync(new AuditEntry("c1", "u1", "echo.say", "ih", "completed"), Ct);
 
         MindStateSnapshot snapshot = await service.CaptureAsync(

@@ -192,6 +192,10 @@ public static class ServiceRegistration
         // three half-measures it used to be (docs/adr/0056).
         services.AddSingleton<IIncidentService, SqliteIncidentService>();
 
+        // Counts refusals and turns a pattern of them into an incident. It decides nothing and
+        // allows nothing: every caller has already refused before it is told (docs/adr/0064).
+        services.AddSingleton<ISecurityWatch, SecurityWatch>();
+
         // The two things that consume events in process (docs/adr/0063). Both are registered as
         // IEventConsumer, which is what the heartbeat pumps; neither is reachable any other way,
         // so an event nobody subscribed to reaches nobody.
@@ -373,6 +377,7 @@ public static class ServiceRegistration
     private static ICapabilityRegistry PluginCatalogue(IServiceProvider services)
     {
         var registry = services.GetRequiredService<IPluginRegistry>();
+        var watch = services.GetRequiredService<ISecurityWatch>();
         var capabilities = new List<ICapability>();
 
         try
@@ -392,7 +397,7 @@ public static class ServiceRegistration
                 }
 
                 capabilities.AddRange(manifest.Capabilities.Select(
-                    c => new PluginCapabilityBridge(registry, manifest, c)));
+                    c => new PluginCapabilityBridge(registry, watch, manifest, c)));
             }
         }
         catch (Exception unreadable) when (unreadable is SqliteException or JsonException)

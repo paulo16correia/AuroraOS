@@ -27,7 +27,7 @@ public sealed class OperationsTests
 
     private static SqliteAuditStore Audit(SqliteTestDb db, IClock clock) =>
         new(db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
     private static AuditEntry Entry() =>
         new("c1", "u1", "echo.say", "hash", "completed",
@@ -170,7 +170,7 @@ public sealed class OperationsTests
 
         // An audit store whose anchor path is a directory: every call throws.
         var broken = new SqliteAuditStore(
-            db.Factory, clock, new byte[32], new AuditAnchorFile(Path.GetTempPath()));
+            db.Factory, clock, new byte[32], new AuditAnchorFile(TestTemp.Path("anchor")));
 
         var health = new AuroraHealthService(
             db.Factory, broken,

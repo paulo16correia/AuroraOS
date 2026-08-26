@@ -108,6 +108,28 @@ public sealed class SqliteApprovalStore : IApprovalStore
                 return new ApprovalEvaluation(ApprovalOutcome.Pending, livePendingId);
             }
 
+            // A pending row that expired is retired before a new one is asked for. The unique
+            // index allows one PENDING per scope, so leaving a dead one there would block that
+            // scope for ever: Aurora would refuse the action, refuse to ask about it, and have no
+            // way out. Found by a test; the state was reachable and had no exit.
+            await using (var retire = connection.CreateCommand())
+            {
+                retire.Transaction = transaction;
+                retire.CommandText =
+                    "UPDATE approval SET status = @expired " +
+                    " WHERE principal_client_id = @c AND action_id = @a AND scope_hash = @s " +
+                    "   AND status = @pending AND expires_at_utc <= @now;";
+
+                retire.Parameters.AddWithValue("@expired", ApprovalStatus.Expired);
+                retire.Parameters.AddWithValue("@c", principal.ClientId);
+                retire.Parameters.AddWithValue("@a", actionId);
+                retire.Parameters.AddWithValue("@s", scopeHash);
+                retire.Parameters.AddWithValue("@pending", ApprovalStatus.Pending);
+                retire.Parameters.AddWithValue("@now", nowText);
+
+                await retire.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
             try
             {
                 var newId = Guid.NewGuid().ToString("N");

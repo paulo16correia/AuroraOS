@@ -147,7 +147,7 @@ public sealed class Law007ProducerTests
 
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         var development = new SqliteDevelopmentModel(
             db.Factory, audit,
@@ -183,7 +183,7 @@ public sealed class Law007ProducerTests
 
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         await audit.AppendAsync(
             new AuditEntry(
@@ -271,7 +271,7 @@ public sealed class Law007ProducerTests
 
         var audit = new SqliteAuditStore(
             db.Factory, clock, new byte[32],
-            new AuditAnchorFile(Path.Combine(Path.GetTempPath(), $"a-{Guid.NewGuid():N}")));
+            new AuditAnchorFile(TestTemp.Path("anchor")));
 
         var self = new SqliteSelfModel(
             db.Factory, new StaticCapabilityRegistry([FakeClock()]), new FakePolicy(true),
