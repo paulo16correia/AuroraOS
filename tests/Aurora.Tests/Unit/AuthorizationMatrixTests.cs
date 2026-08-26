@@ -43,6 +43,7 @@ public sealed class AuthorizationMatrixTests
             new RecallNotesCapability(new NullNoteStore(), Principals),
             new WriteSandboxFileCapability(new NullSandboxWriter()),
             new ReadSandboxFileCapability(new NullSandboxReader()),
+            new OrganiseSandboxCapability(new NullSandboxIndex(), new NullSandboxMover()),
         ]);
 
         return registry.List(null);
@@ -159,5 +160,33 @@ public sealed class AuthorizationMatrixTests
     {
         public Task<SandboxReadResult> ReadAsync(string relativePath, CancellationToken ct) =>
             Task.FromResult(new SandboxReadResult(relativePath, string.Empty, 0));
+    }
+
+    private sealed class NullSandboxIndex : ISandboxFileIndex
+    {
+        public Task<IReadOnlyList<SandboxEntry>> ListAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SandboxEntry>>([]);
+    }
+
+    private sealed class NullSandboxMover : ISandboxFileMover
+    {
+        public Task<SandboxMoveResult> MoveAsync(string from, string to, CancellationToken ct) =>
+            Task.FromResult(new SandboxMoveResult(from, to));
+    }
+
+    [Fact]
+    public void TheMatrixCoversEveryCapabilityThatExists()
+    {
+        var listed = Capabilities().Select(c => c.ActionId).ToHashSet(StringComparer.Ordinal);
+
+        var implemented = typeof(EchoSayCapability).Assembly.GetTypes()
+            .Where(t => typeof(ICapability).IsAssignableFrom(t) && t is { IsAbstract: false, IsInterface: false })
+            .Select(t => t.Name)
+            .ToList();
+
+        // The list above is written by hand, which is fine right up until somebody adds a
+        // capability and does not touch it. Then the matrix documents everything except the newest
+        // thing — which is the one a reader most needs the table for.
+        Assert.Equal(implemented.Count, listed.Count);
     }
 }

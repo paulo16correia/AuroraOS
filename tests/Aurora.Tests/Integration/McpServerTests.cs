@@ -753,4 +753,91 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             authenticator.Revoke();
         }
     }
+
+    // --- the reference capability, all the way through the kernel (docs/adr/0060) ---
+
+    [Fact]
+    public async Task Organise_PlansWithoutApproval_ThenNeedsOneToMoveAnything()
+    {
+        await using var client = await ConnectAsync();
+
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, "notes.md"), "x", Timeout());
+        await File.WriteAllTextAsync(Path.Combine(_factory.SandboxRoot, "photo.png"), "x", Timeout());
+
+        Dictionary<string, object?> Args(bool dryRun) => new()
+        {
+            ["action_id"] = "files.organise_sandbox",
+            ["input"] = new Dictionary<string, object?>
+            {
+                ["rules"] = new[]
+                {
+                    new Dictionary<string, object?> { ["match"] = "*.md", ["into"] = "documents" },
+                },
+                ["dry_run"] = dryRun,
+            },
+        };
+
+        // HIGH is permitted by policy because it is approval-gated and declares itself reversible.
+        // Approval is still a person saying yes, and a dry run is not exempt: the plan discloses
+        // what the sandbox contains, which is the same reading the real run does.
+        var denied = JsonDocument.Parse(ToJson(
+            await client.CallToolAsync("aurora_execute", Args(dryRun: true), cancellationToken: Timeout())));
+
+        Assert.Equal("denied", denied.RootElement.GetProperty("status").GetString());
+        Assert.Equal(
+            "approval_required",
+            denied.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?>
+            {
+                ["approval_id"] = denied.RootElement.GetProperty("consent")
+                    .GetProperty("approval_id").GetString(),
+                ["decision"] = "approved",
+            },
+            cancellationToken: Timeout());
+
+        var planned = JsonDocument.Parse(ToJson(
+            await client.CallToolAsync("aurora_execute", Args(dryRun: true), cancellationToken: Timeout())));
+
+        Assert.Equal("completed", planned.RootElement.GetProperty("status").GetString());
+        JsonElement result = planned.RootElement.GetProperty("result");
+        Assert.Equal(1, result.GetProperty("planned").GetInt32());
+        Assert.Equal(0, result.GetProperty("moved").GetInt32());
+
+        // Nothing moved, which is the point of asking first.
+        Assert.True(File.Exists(Path.Combine(_factory.SandboxRoot, "notes.md")));
+
+        // The real run is a different input, so it is a different approval. Scoped to this exact
+        // input is the whole reason a dry run is safe to approve.
+        var second = JsonDocument.Parse(ToJson(
+            await client.CallToolAsync("aurora_execute", Args(dryRun: false), cancellationToken: Timeout())));
+
+        Assert.Equal("denied", second.RootElement.GetProperty("status").GetString());
+
+        await client.CallToolAsync(
+            "aurora_approve",
+            new Dictionary<string, object?>
+            {
+                ["approval_id"] = second.RootElement.GetProperty("consent")
+                    .GetProperty("approval_id").GetString(),
+                ["decision"] = "approved",
+            },
+            cancellationToken: Timeout());
+
+        var done = JsonDocument.Parse(ToJson(
+            await client.CallToolAsync("aurora_execute", Args(dryRun: false), cancellationToken: Timeout())));
+
+        Assert.Equal("completed", done.RootElement.GetProperty("status").GetString());
+        Assert.Equal(1, done.RootElement.GetProperty("result").GetProperty("moved").GetInt32());
+
+        Assert.True(File.Exists(Path.Combine(_factory.SandboxRoot, "documents", "notes.md")));
+        Assert.True(File.Exists(Path.Combine(_factory.SandboxRoot, "photo.png")));
+
+        // And it left the caller the means to put it back.
+        JsonElement undo = done.RootElement.GetProperty("result").GetProperty("undo");
+        Assert.Equal("documents/notes.md", undo[0].GetProperty("from").GetString());
+        Assert.Equal("notes.md", undo[0].GetProperty("to").GetString());
+    }
 }

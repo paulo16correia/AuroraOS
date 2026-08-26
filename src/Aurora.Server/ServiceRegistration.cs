@@ -257,6 +257,8 @@ public static class ServiceRegistration
         services.AddSingleton<IReasoner>(_ => new CompositeReasoner([new KeywordReasoner()]));
         services.AddSingleton<ISandboxFileWriter>(_ => new SandboxFileWriter(options.SandboxRoot));
         services.AddSingleton<ISandboxFileReader>(_ => new SandboxFileReader(options.SandboxRoot));
+        services.AddSingleton<ISandboxFileIndex>(_ => new SandboxFileIndex(options.SandboxRoot));
+        services.AddSingleton<ISandboxFileMover>(_ => new SandboxFileMover(options.SandboxRoot));
         services.AddSingleton<ICapability, ClockNowCapability>();
         services.AddSingleton<ICapability, EchoSayCapability>();
         services.AddSingleton<ICapability, RememberNoteCapability>();
@@ -269,6 +271,11 @@ public static class ServiceRegistration
         {
             services.AddSingleton<ICapability, WriteSandboxFileCapability>();
             services.AddSingleton<ICapability, ReadSandboxFileCapability>();
+
+            // The reference capability (docs/adr/0060): a plan separate from its effect, all of it
+            // or none of it, and an inverse the caller holds. HIGH, because rearranging a directory
+            // by rule is not what somebody pictures when they approve a file write.
+            services.AddSingleton<ICapability, OrganiseSandboxCapability>();
         }
         services.AddSingleton<ICapabilityRegistry, StaticCapabilityRegistry>();
         services.AddSingleton<ICapabilityExecutor, CapabilityExecutor>();

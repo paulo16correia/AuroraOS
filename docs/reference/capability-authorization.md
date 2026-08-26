@@ -11,6 +11,7 @@ Closes condition 5 of `docs/reviews/architecture-review-v1.0.md`.
 | --- | --- | --- | --- | --- |
 | `clock.now` | Low | none — reads only | not required | automatic (LOW, effect-free) |
 | `echo.say` | Low | none — reads only | not required | automatic (LOW, effect-free) |
+| `files.organise_sandbox` | High | files.read, files.write, files.move | required | persisted approval, one-time, scoped to this exact input |
 | `files.read_sandbox` | Medium | none — reads only | required | persisted approval, one-time, scoped to this exact input |
 | `files.write_sandbox` | Medium | files.write | required | persisted approval, one-time, scoped to this exact input |
 | `memory.recall` | Low | none — reads only | not required | automatic (LOW, effect-free) |
