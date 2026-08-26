@@ -1,6 +1,7 @@
 # Design 0068 — Voice, and what about it is unverified
 
-**Status:** Partially implemented · **Date:** 2026-08-26
+**Status:** Implemented, unverified against Discord · **Date:** 2026-08-26
+**Updated:** the transport was written after this was first recorded; the section saying it was not is kept below, marked, because a design record that quietly rewrites itself is not a record.
 
 ## What voice actually needs
 
@@ -59,13 +60,44 @@ by nobody being at the keyboard. A test asserts both halves.
 and compares that to what the manifest declares. A promised capability nothing implements is a
 catalogue entry that fails on first use.
 
-## What is UNVERIFIED
+## The transport, added after the above was written
 
-**The audio transport.** The voice gateway, the UDP flow, the encryption and the Opus framing are
-not implemented, and nothing here pretends they are. `discord.voice.speak` refuses with
-`voice_unavailable` when the engines are missing, and reports an **unknown** outcome when the
-session exists and the transport does not — because saying "failed" about a transport that may be
-half-connected is a guess, and this integration does not guess about external effects.
+The paragraph that stood here said the transport was not implemented. It is now, and the
+paragraph is replaced rather than deleted so the sequence stays legible: the refusal came first and
+the capability came second, which is the right order.
+
+**Encryption.** `aead_xchacha20_poly1305_rtpsize`, from libsodium when it is installed and from
+`crypto.py` when it is not. Hand-written cryptography deserves suspicion, so it is checked instead
+of trusted: nine test vectors copied from RFC 8439 and the XChaCha20 draft run in the suite,
+including intermediate keystream blocks. That is the only kind of test that tells a correct
+implementation from a self-consistent wrong one. The tag is compared with `hmac.compare_digest`.
+What the Python path cannot offer is a constant-time cipher, which is why libsodium is preferred
+and recommended.
+
+**Opus.** ctypes onto the system `libopus`. A codec cannot be implemented in a plugin and is not
+optional in Discord's protocol, so its absence is a refusal with the package to install.
+
+**Framing.** RTP with the twelve-byte header as the cipher's associated data — carried in the clear
+so Discord can route it, authenticated so it cannot be altered in flight. Sequence and timestamp
+wrap rather than overflow, because a long call reaches the end of both and a crash there would be a
+crash after an hour of working. The four significant nonce bytes travel at the end of the packet,
+which is what `rtpsize` means.
+
+**A packet that does not authenticate is dropped silently.** It is somebody else's or it was
+altered; there is nothing to report and nothing to be done about it.
+
+**One decoder per speaker**, because Opus carries state between frames and mixing two people
+through one produces artefacts that sound like a bad connection.
+
+**A failed join leaves the channel again.** Joining is a gateway message and succeeds on its own,
+so without this Aurora would sit in the channel unable to hear or be heard — which reads as being
+ignored and cannot be told apart from a bug.
+
+Eleven tests cover the wire format and a full round trip: real PCM through the real encoder, the
+real cipher and the real packet layout, and back. Anything wrong with the framing shows up there
+rather than as silence in a call.
+
+## What is still UNVERIFIED
 
 **Nothing has been run against Discord.** No credentials were available, and a sandbox server was
 not created without asking. Every Discord-facing test in this repository runs against a stand-in on
@@ -83,11 +115,13 @@ would land in a live conversation.
 
 What is written is what could be checked. What could not be checked says so.
 
+**Listening.** The transport decodes incoming packets and the turn-taking rules are tested, but
+nothing has run speech recognition on a real voice: no local speech-to-text is installed on the
+machine this was written on. `can_listen` reports false and says what to install.
+
 ## To finish it
 
-1. Install the native dependencies: `libopus`, and a local speech-to-text (`whisper.cpp`).
-2. Implement `voice_transport.py`: gateway v4, IP discovery, `aead_xchacha20_poly1305_rtpsize`,
-   RTP framing at 20ms.
-3. Point it at a Discord server created for the purpose, and run the live checks.
-4. Move the row in the platform table from UNVERIFIED to VERIFIED — on evidence, not on the code
+1. Install a local speech-to-text (`whisper.cpp`), and `libsodium` for the vetted cipher.
+2. Point Aurora at a Discord server created for the purpose, and run the live checks.
+3. Move the rows in the platform table from UNVERIFIED to VERIFIED — on evidence, not on the code
    existing.

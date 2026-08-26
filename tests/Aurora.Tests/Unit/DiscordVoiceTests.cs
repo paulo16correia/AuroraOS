@@ -44,12 +44,9 @@ public sealed class DiscordVoiceTests : IDisposable
 
     // ---- the turn-taking rules, tested where they live ----
 
-    [Fact]
-    public void TheTurnTakingRulesHold()
+    /// <summary>Runs one of the plugin's Python test modules and surfaces its output on failure.</summary>
+    private static string RunPython(string module, int expected)
     {
-        // The state machine is Python, so its tests are Python. Run from here so the suite is one
-        // place to look: a rule about not talking over people is not less important for being
-        // written in another language.
         using var python = new Process
         {
             StartInfo = new ProcessStartInfo
@@ -64,18 +61,46 @@ public sealed class DiscordVoiceTests : IDisposable
 
         python.StartInfo.ArgumentList.Add("-m");
         python.StartInfo.ArgumentList.Add("unittest");
-        python.StartInfo.ArgumentList.Add("test_voice");
+        python.StartInfo.ArgumentList.Add(module);
         python.StartInfo.ArgumentList.Add("-v");
 
         python.Start();
         var output = python.StandardOutput.ReadToEnd() + python.StandardError.ReadToEnd();
-        python.WaitForExit(60_000);
+        python.WaitForExit(120_000);
 
         Assert.True(python.ExitCode == 0, output);
 
-        // The count is asserted so a file that silently stops being collected fails here rather
+        // The count is asserted so a module that silently stops being collected fails here rather
         // than passing with nothing run.
-        Assert.Contains("Ran 13 tests", output, StringComparison.Ordinal);
+        Assert.Contains($"Ran {expected} test", output, StringComparison.Ordinal);
+
+        return output;
+    }
+
+    [Fact]
+    public void TheCipherMatchesTheRfcTestVectors()
+    {
+        // Hand-written cryptography deserves suspicion, so it is checked against vectors copied
+        // from the specification rather than produced by the code. That is the only kind of test
+        // that tells a correct implementation from a self-consistent wrong one.
+        RunPython("test_crypto", 9);
+    }
+
+    [Fact]
+    public void TheWireFormatAndAFullRoundTripHold()
+    {
+        // Real PCM through the real encoder, the real cipher and the real packet layout, and back
+        // again. Anything wrong with the framing shows up here rather than as silence in a call.
+        RunPython("test_transport", 11);
+    }
+
+    [Fact]
+    public void TheTurnTakingRulesHold()
+    {
+        // The state machine is Python, so its tests are Python. Run from here so the suite is one
+        // place to look: a rule about not talking over people is not less important for being
+        // written in another language.
+        RunPython("test_voice", 13);
     }
 
     // ---- the manifest and the program agree ----
@@ -333,13 +358,15 @@ public sealed class DiscordVoiceTests : IDisposable
 
         // Joining is a gateway message, so it would succeed on its own — Aurora would appear in
         // the channel, seen by everybody in it, hearing nothing and saying nothing. A silent
-        // presence in somebody's conversation reads as being ignored, and nobody in the call can
-        // tell it apart from a bug. So the transport is part of what "can join" means.
-        Assert.False(capabilities["transport"]!.GetValue<bool>());
-        Assert.False(capabilities["can_join"]!.GetValue<bool>());
+        // presence reads as being ignored and nobody in the call can tell it apart from a bug, so
+        // the transport and the codec are both part of what "can join" means.
+        Assert.Equal(
+            capabilities["transport"]!.GetValue<bool>() && capabilities["opus"] is not null,
+            capabilities["can_join"]!.GetValue<bool>());
 
-        Assert.Contains(
-            capabilities["missing"]!.AsArray().Select(m => m!.GetValue<string>()),
-            m => m.Contains("transport", StringComparison.Ordinal));
+        // And listening additionally needs speech recognition, which is a separate install.
+        Assert.Equal(
+            capabilities["can_join"]!.GetValue<bool>() && capabilities["stt"] is not null,
+            capabilities["can_listen"]!.GetValue<bool>());
     }
 }

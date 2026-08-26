@@ -14,6 +14,7 @@ message we did not hear back about was actually sent.
 import json
 import os
 import ssl
+import struct
 import sys
 import threading
 import time
@@ -23,6 +24,7 @@ import urllib.request
 
 import voice_engines
 from gateway import Gateway
+from voice_transport import VoiceTransport
 from voice_session import VoiceSession
 
 DEFAULT_API = "https://discord.com/api/v10"
@@ -519,6 +521,32 @@ def voice_join(state, args, nonce=None):
     # Discord is told through the gateway, not the REST API: voice membership is gateway state.
     gateway.voice_state(args["guild_id"], args["channel_id"])
 
+    credentials = gateway.await_voice_credentials(timeout=10)
+
+    if credentials is None:
+        state.pop("voice", None)
+        raise Refused(
+            E_NETWORK,
+            "Discord did not send the voice server details; Aurora is not in the channel")
+
+    try:
+        transport = VoiceTransport(
+            credentials["endpoint"], args["guild_id"], credentials["user_id"],
+            credentials["session_id"], credentials["token"])
+
+        transport.start(timeout=20)
+    except Exception as broken:
+        # Leaving again, so a failed join never leaves Aurora sitting in the channel unable to
+        # hear or be heard.
+        state.pop("voice", None)
+        gateway.voice_state(args["guild_id"], None)
+
+        raise Refused(
+            E_VOICE_UNAVAILABLE,
+            "the voice connection failed: %s" % type(broken).__name__) from None
+
+    state["voice_transport"] = transport
+
     report("voice.joined", session.snapshot())
     return session.snapshot()
 
@@ -526,6 +554,12 @@ def voice_join(state, args, nonce=None):
 def voice_leave(state, args, nonce=None):
     session = state.pop("voice", None)
     state["voice_listening"] = False
+
+    transport = state.pop("voice_transport", None)
+
+    if transport is not None:
+        transport.close()
+
     gateway = state.get("gateway")
 
     if gateway is not None and session is not None:
@@ -586,10 +620,42 @@ def voice_speak(state, args, nonce=None):
         session.stop_speaking("no_transport")
         raise Unknown("the voice transport is not connected; nothing was heard")
 
-    transport.play(audio, speech)
-    session.finished_speaking(speech)
+    frames = transport.play(_pcm_from_wav(audio), speech)
+    finished = session.finished_speaking(speech)
 
-    return {"spoke": True, "characters": len(args["text"]), "speech_id": speech}
+    return {
+        "spoke": True,
+        "characters": len(args["text"]),
+        "speech_id": speech,
+        "frames": frames,
+
+        # False when somebody interrupted. Recording it as finished would say Aurora delivered a
+        # whole sentence it was cut off in the middle of.
+        "completed": finished,
+    }
+
+
+def _pcm_from_wav(audio):
+    """The samples out of a WAV, without a dependency to read one.
+
+    The local speech programs write WAV files. Opus wants raw 48kHz stereo 16-bit samples, and the
+    difference is a header this skips past.
+    """
+    if audio[:4] != b"RIFF":
+        return audio
+
+    at = 12
+
+    while at + 8 <= len(audio):
+        chunk = audio[at:at + 4]
+        (size,) = struct.unpack("<I", audio[at + 4:at + 8])
+
+        if chunk == b"data":
+            return audio[at + 8:at + 8 + size]
+
+        at += 8 + size + (size % 2)
+
+    return audio
 
 
 def voice_stop(state, args, nonce=None):

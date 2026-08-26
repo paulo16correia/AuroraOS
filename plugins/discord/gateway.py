@@ -64,6 +64,13 @@ class Gateway:
         self._seen = []
         self._seen_set = set()
 
+        # What Discord sends back after being asked to move Aurora into a voice channel. Both
+        # halves are needed to open the voice connection and they arrive as two separate events,
+        # in either order.
+        self._voice_session = None
+        self._voice_server = None
+        self._voice_ready = threading.Event()
+
         self.state = "disconnected"
         self.detail = None
 
@@ -86,6 +93,26 @@ class Gateway:
                 self._socket.close()
                 self._socket = None
 
+    def _maybe_voice_ready(self):
+        if self._voice_session and self._voice_server:
+            self._voice_ready.set()
+
+    def await_voice_credentials(self, timeout=10):
+        """The session id and server details, once both have arrived.
+
+        Two separate events in either order, so waiting for one is not enough. Returns None on a
+        timeout rather than raising, because "Discord did not answer" is a refusal the caller
+        phrases better than this does.
+        """
+        if not self._voice_ready.wait(timeout):
+            return None
+
+        return {
+            "session_id": self._voice_session,
+            "user_id": (self._identity or {}).get("id"),
+            **self._voice_server,
+        }
+
     def voice_state(self, guild_id, channel_id):
         """Tells Discord which voice channel to put Aurora in, or none to leave.
 
@@ -96,6 +123,12 @@ class Gateway:
 
         if socket is None:
             raise WebSocketError("not connected to the gateway")
+
+        # Cleared before asking, so a stale session from a previous channel is never mistaken for
+        # the answer to this request.
+        self._voice_ready.clear()
+        self._voice_session = None
+        self._voice_server = None
 
         self._send(socket, {"op": 4, "d": {
             "guild_id": guild_id,
@@ -251,13 +284,30 @@ class Gateway:
             self._on_message(data)
             return
 
-        if kind in ("VOICE_STATE_UPDATE", "VOICE_SERVER_UPDATE"):
-            # Carried for the voice work; harmless and cheap to report.
-            self._report("voice.state", {
+        if kind == "VOICE_STATE_UPDATE":
+            if data.get("user_id") == (self._identity or {}).get("id"):
+                self._voice_session = data.get("session_id")
+                self._maybe_voice_ready()
+            else:
+                # Somebody else moved. The session needs to know who is in the channel.
+                self._report("voice.participant", {
+                    "guild_id": data.get("guild_id"),
+                    "channel_id": data.get("channel_id"),
+                    "user_id": data.get("user_id"),
+                })
+
+            return
+
+        if kind == "VOICE_SERVER_UPDATE":
+            # The endpoint and token for the second websocket. Neither is reported anywhere: the
+            # token is a credential for this call.
+            self._voice_server = {
+                "endpoint": data.get("endpoint"),
+                "token": data.get("token"),
                 "guild_id": data.get("guild_id"),
-                "channel_id": data.get("channel_id"),
-                "user_id": data.get("user_id"),
-            })
+            }
+            self._maybe_voice_ready()
+            return
 
     def _on_message(self, data):
         author = data.get("author") or {}

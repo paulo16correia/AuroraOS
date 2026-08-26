@@ -12,7 +12,8 @@ and how much of it has actually been run.
 | Discord messaging and gateway | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in |
 | Discord against the real service | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
 | Discord voice — turn taking, governance | **VERIFIED** | **VERIFIED** | **VERIFIED** |
-| Discord voice — audio transport | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Discord voice — cipher and codec | **VERIFIED** — RFC vectors, real round trip | **VERIFIED** | **VERIFIED** |
+| Discord voice — against real Discord | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
 
 ## What each word means here
 
@@ -66,10 +67,14 @@ websocket, so the plugin performs a real RFC 6455 handshake and is disconnected 
 frames wrongly. It is still not Discord. **No credentials were available and nothing has been run
 against the real service**, so every row naming it says UNVERIFIED.
 
-Voice splits in two. The turn-taking rules and the governance around them are a state machine with
-no I/O and are verified. The audio transport — voice gateway v4, UDP, the AEAD cipher and Opus — is
-not implemented, needs native dependencies Python cannot supply, and is UNVERIFIED. See
-`docs/adr/0068`.
+Voice is implemented, including the transport: voice gateway v4, UDP discovery, RTP framing,
+`aead_xchacha20_poly1305_rtpsize` and Opus. The cipher is checked against nine RFC test vectors and
+a full packet round trip runs real PCM through the real encoder and back.
+
+What is unverified is the same thing as everywhere else on this page: **none of it has met
+Discord**. Voice also needs two native pieces Python cannot supply — `libopus`, which is required,
+and a local speech-to-text for listening. `discord.voice.status` reports which are present before
+anybody tries to use them. See `docs/adr/0068`.
 
 ## What would change this
 
