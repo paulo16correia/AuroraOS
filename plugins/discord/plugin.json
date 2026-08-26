@@ -1,0 +1,821 @@
+{
+  "plugin_id": "plugin/discord",
+  "version": "1.0.0",
+  "publisher": "aurora",
+  "executable": "discord_service.py",
+  "min_platform_version": 1,
+  "max_data_class": "PRIVATE",
+  "documentation_ref": "docs/guides/discord.md",
+  "required_permissions": [
+    "discord.read",
+    "discord.message.write",
+    "discord.reaction.write",
+    "discord.thread.write",
+    "discord.channel.admin"
+  ],
+  "event_subscriptions": [],
+  "network_endpoints": [
+    "discord.com"
+  ],
+  "service": {
+    "start_timeout_seconds": 20,
+    "max_consecutive_failures": 5
+  },
+  "required_secrets": [
+    {
+      "name": "bot_token",
+      "purpose": "Signs in as your Discord bot. Aurora can do anything this bot can do."
+    }
+  ],
+  "capabilities": [
+    {
+      "key": "discord.guilds.list",
+      "title": "List servers",
+      "description": "The servers this bot is a member of.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.guilds.get",
+      "title": "Server details",
+      "description": "Name, owner and settings of one server.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.channels.list",
+      "title": "List channels",
+      "description": "The channels in one server.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.channels.get",
+      "title": "Channel details",
+      "description": "Name, topic and type of one channel.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.threads.list",
+      "title": "List threads",
+      "description": "Active threads in one channel.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.list",
+      "title": "Read messages",
+      "description": "Recent messages in a channel. Other people's words.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "after": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.get",
+      "title": "Read one message",
+      "description": "One message by id.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.members.list",
+      "title": "List members",
+      "description": "Who is in a server. Needs the privileged members intent on the bot.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.users.get",
+      "title": "User details",
+      "description": "The public profile of one user.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.threads.get",
+      "title": "Thread details",
+      "description": "State of one thread, including whether it is archived or locked.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread_id"
+        ],
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.send",
+      "title": "Send a message",
+      "description": "Posts a message to a channel. Other people will see it.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "content"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.message.send"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.reply",
+      "title": "Reply to a message",
+      "description": "Posts a message as a reply to another.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id",
+          "content"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.message.send"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.edit",
+      "title": "Edit own message",
+      "description": "Changes a message this bot sent. Discord refuses anyone else's.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id",
+          "content"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.message.edit"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.messages.delete",
+      "title": "Delete own message",
+      "description": "Removes a message this bot sent. Cannot be undone.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.message.delete"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.reactions.add",
+      "title": "Add a reaction",
+      "description": "Reacts to a message as this bot.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "emoji": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.reaction.add"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.reactions.remove",
+      "title": "Remove own reaction",
+      "description": "Removes a reaction this bot added.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "message_id",
+          "emoji"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "emoji": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.reaction.remove"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.threads.create",
+      "title": "Start a thread",
+      "description": "Opens a thread on a message or in a channel.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id",
+          "name"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "message_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.thread.create"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 5,
+      "timeout_seconds": 15,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.channels.create",
+      "title": "Create a channel",
+      "description": "Adds a channel to a server. Reversible: the new channel's id is returned.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guild_id",
+          "name"
+        ],
+        "properties": {
+          "guild_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "voice"
+            ]
+          },
+          "parent_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.channel.create"
+      ],
+      "risk": "HIGH",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 2,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.channels.edit",
+      "title": "Edit a channel",
+      "description": "Renames a channel or changes its topic. Reversible: the previous values are returned.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.channel.edit"
+      ],
+      "risk": "HIGH",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 2,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "discord.threads.archive",
+      "title": "Archive a thread",
+      "description": "Closes a thread. Reversible: a thread can be unarchived.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "thread_id"
+        ],
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "pattern": "^[0-9]{15,25}$"
+          },
+          "locked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.thread.archive"
+      ],
+      "risk": "HIGH",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 5,
+      "timeout_seconds": 20,
+      "idempotent": true,
+      "audit_level": "FULL"
+    }
+  ]
+}

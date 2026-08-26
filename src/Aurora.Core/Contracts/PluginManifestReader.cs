@@ -119,7 +119,7 @@ public static class PluginManifestReader
     {
         "plugin_id", "version", "publisher", "executable", "min_platform_version",
         "max_data_class", "documentation_ref", "required_permissions", "event_subscriptions",
-        "network_endpoints", "capabilities",
+        "network_endpoints", "capabilities", "service", "required_secrets",
     };
 
     private static readonly HashSet<string> KnownCapability = new(StringComparer.Ordinal)
@@ -152,12 +152,35 @@ public static class PluginManifestReader
                 + $"or {Sensitivity.Secret}");
         }
 
-        if (file.NetworkEndpoints.Count > 0)
+        foreach (PluginSecretFile secret in file.RequiredSecrets)
         {
-            problems.Add(
-                "network_endpoints must be empty: Aurora denies plugins the network entirely, so "
-                + "there is no endpoint it could grant you. If your plugin needs the internet, it "
-                + "cannot run here.");
+            if (string.IsNullOrWhiteSpace(secret.Name))
+            {
+                problems.Add("every entry in required_secrets needs a name.");
+            }
+
+            if (string.IsNullOrWhiteSpace(secret.Purpose))
+            {
+                problems.Add(
+                    $"required_secrets['{secret.Name}'] needs a purpose: it is what a person reads "
+                    + "before deciding to hand you a credential.");
+            }
+        }
+
+        foreach (var endpoint in file.NetworkEndpoints)
+        {
+            // Named hosts only. The owner is being asked to agree to something, and "*.acme.com"
+            // is not something anybody can weigh (docs/adr/0067).
+            if (string.IsNullOrWhiteSpace(endpoint)
+                || endpoint.Contains('*', StringComparison.Ordinal)
+                || endpoint.Contains('/', StringComparison.Ordinal)
+                || endpoint.Contains(':', StringComparison.Ordinal))
+            {
+                problems.Add(
+                    $"network_endpoints['{endpoint}'] must be a plain host name like "
+                    + "'discord.com'. No wildcards, schemes, ports or paths: the owner is agreeing "
+                    + "to each host by name.");
+            }
         }
 
         if (file.Capabilities.Count == 0)
@@ -184,7 +207,18 @@ public static class PluginManifestReader
                 Signature: string.Empty, file.MinPlatformVersion,
                 capabilities, file.EventSubscriptions, file.RequiredPermissions,
                 file.MaxDataClass, file.NetworkEndpoints, file.DocumentationRef,
-                IntegrityHash: string.Empty, file.Executable),
+                IntegrityHash: string.Empty, file.Executable,
+                Service: file.Service is null
+                    ? null
+                    : new PluginService(
+                        file.Executable,
+                        TimeSpan.FromSeconds(Math.Clamp(file.Service.StartTimeoutSeconds, 1, 300)),
+                        Math.Clamp(file.Service.MaxConsecutiveFailures, 1, 100)),
+                RequiredSecrets:
+                [
+                    .. file.RequiredSecrets.Select(
+                        secret => new PluginSecretRequirement(secret.Name, secret.Purpose)),
+                ]),
             []);
     }
 

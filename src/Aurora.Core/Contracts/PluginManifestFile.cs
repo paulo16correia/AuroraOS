@@ -59,6 +59,44 @@ public sealed record PluginManifestFile
 
     [JsonPropertyName("capabilities")]
     public IReadOnlyList<PluginCapabilityFile> Capabilities { get; init; } = [];
+
+    /// <summary>Set when the plugin holds a connection rather than answering one call.</summary>
+    [JsonPropertyName("service")]
+    public PluginServiceFile? Service { get; init; }
+
+    /// <summary>Secrets the plugin cannot run without, by name. Values never appear here.</summary>
+    [JsonPropertyName("required_secrets")]
+    public IReadOnlyList<PluginSecretFile> RequiredSecrets { get; init; } = [];
+}
+
+/// <summary>A long-lived plugin process, as its author declares it (docs/adr/0067).</summary>
+public sealed record PluginServiceFile
+{
+    /// <summary>How long Aurora waits for the ready frame before giving up on the start.</summary>
+    [JsonPropertyName("start_timeout_seconds")]
+    public int StartTimeoutSeconds { get; init; } = 30;
+
+    /// <summary>Failed starts in a row before the plugin is held rather than started again.</summary>
+    [JsonPropertyName("max_consecutive_failures")]
+    public int MaxConsecutiveFailures { get; init; } = 5;
+}
+
+/// <summary>
+/// One secret the plugin needs, declared by name.
+/// </summary>
+/// <remarks>
+/// The name only. A manifest is read by a person deciding whether to install, and is stored beside
+/// the installation — putting a value here would write a credential into Aurora's database in
+/// plain text and into whatever the author committed it to first.
+/// </remarks>
+public sealed record PluginSecretFile
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>What a person reads before deciding to supply it.</summary>
+    [JsonPropertyName("purpose")]
+    public string Purpose { get; init; } = string.Empty;
 }
 
 /// <summary>One capability, as its author writes it.</summary>

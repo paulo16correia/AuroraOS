@@ -185,19 +185,52 @@ public sealed class PluginManifestTests
     }
 
     [Fact]
-    public void AManifestAskingForTheNetworkIsRefused()
+    public void AManifestNamesEachHostItReaches()
     {
-        PluginManifestRead read = Read(Good.Replace(
+        PluginManifestRead named = Read(Good.Replace(
             "\"required_permissions\": [\"notes.write\"],",
             "\"required_permissions\": [\"notes.write\"], \"network_endpoints\": [\"api.acme.com\"],",
             StringComparison.Ordinal));
 
-        // RFC 060 rule 1 asks a plugin to declare its network domains and rule 2 says it runs
-        // without the general network. Aurora resolves the two strictly: the sandbox denies the
-        // network, so a declared endpoint is a request it cannot grant rather than a limit it
-        // could enforce. Better to say so while somebody is still writing the file.
+        // Grantable since docs/adr/0067: a named host is something the owner can weigh.
+        Assert.True(named.Ok, string.Join("; ", named.Problems));
+
+        foreach (var vague in new[] { "*.acme.com", "https://acme.com", "acme.com/v1", "acme.com:443" })
+        {
+            PluginManifestRead read = Read(Good.Replace(
+                "\"required_permissions\": [\"notes.write\"],",
+                $"\"required_permissions\": [\"notes.write\"], \"network_endpoints\": [\"{vague}\"],",
+                StringComparison.Ordinal));
+
+            // A wildcard is not a name, and neither is a URL. Said while somebody is still writing
+            // the file rather than at install, when they are already committed.
+            Assert.False(read.Ok);
+            Assert.Contains(
+                read.Problems, p => p.Contains("plain host name", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
+    public void ASecretIsDeclaredByNameAndNeverByValue()
+    {
+        PluginManifestRead read = Read(Good.Replace(
+            "\"required_permissions\": [\"notes.write\"],",
+            "\"required_permissions\": [\"notes.write\"], "
+            + "\"required_secrets\": [{\"name\": \"bot_token\", \"purpose\": \"\"}],",
+            StringComparison.Ordinal));
+
+        // The purpose is what a person reads before handing over a credential. A secret that asks
+        // for one without saying what it is for is asking them to guess.
         Assert.False(read.Ok);
-        Assert.Contains(
-            read.Problems, p => p.Contains("denies plugins the network", StringComparison.Ordinal));
+        Assert.Contains(read.Problems, p => p.Contains("needs a purpose", StringComparison.Ordinal));
+
+        PluginManifestRead ok = Read(Good.Replace(
+            "\"required_permissions\": [\"notes.write\"],",
+            "\"required_permissions\": [\"notes.write\"], "
+            + "\"required_secrets\": [{\"name\": \"bot_token\", \"purpose\": \"to sign in as the bot\"}],",
+            StringComparison.Ordinal));
+
+        Assert.True(ok.Ok, string.Join("; ", ok.Problems));
+        Assert.Equal("bot_token", Assert.Single(ok.Manifest!.RequiredSecrets!).Name);
     }
 }
