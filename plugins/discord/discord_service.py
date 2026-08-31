@@ -712,6 +712,12 @@ def _watch_turns(state):
             if not audio:
                 continue
 
+            if voice_engines.is_silence(audio):
+                # Not asked at all. A recogniser handed near-silence answers with the most common
+                # phrase in its training data — "Thank you.", "Thanks for watching!" — and the only
+                # reliable way not to believe that is not to ask.
+                continue
+
             try:
                 transcript = voice_engines.transcribe(engine, _wav(audio))
             except Exception as unheard:
@@ -723,7 +729,9 @@ def _watch_turns(state):
                 })
                 continue
 
-            if not transcript.strip():
+            if not transcript.strip() or voice_engines.is_hallucination(transcript):
+                # It got through the energy gate and still came back as one of the things a
+                # recogniser says when it heard nothing. Answering it would be answering nobody.
                 continue
 
             decision = utterance_heard(

@@ -202,6 +202,43 @@ def readiness():
     }
 
 
+# What whisper says when there is nothing to hear. It does not return empty on silence — it
+# returns the most common thing in its training data, which for hours of subtitled video is
+# gratitude and sign-offs. Answering these is answering nobody.
+HALLUCINATIONS = {
+    "thank you.", "thanks for watching!", "thank you for watching!", "you", ".", "bye.",
+    "thanks for watching.", "please subscribe.", "[blank_audio]", "(silence)", "so",
+    "obrigado.", "obrigada.", "até à próxima.", "tchau.", "muito obrigado.",
+}
+
+
+def is_silence(pcm, threshold=350):
+    """Whether this is quiet enough that anything heard in it would be invented.
+
+    Cheaper and more honest than filtering the output: a recogniser handed near-silence produces
+    confident sentences, and the only reliable way to not believe them is to not ask.
+    """
+    if len(pcm) < 4:
+        return True
+
+    total = 0
+    count = 0
+
+    # Every hundredth sample. Enough to tell speech from a quiet room, and cheap enough to run on
+    # every utterance.
+    for at in range(0, len(pcm) - 1, 200):
+        sample = int.from_bytes(pcm[at:at + 2], "little", signed=True)
+        total += abs(sample)
+        count += 1
+
+    return count == 0 or (total / count) < threshold
+
+
+def is_hallucination(text):
+    """Whether this is what a recogniser says when it heard nothing."""
+    return text.strip().lower() in HALLUCINATIONS
+
+
 def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
