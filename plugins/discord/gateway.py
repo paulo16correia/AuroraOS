@@ -56,6 +56,15 @@ FATAL = {
 }
 
 
+def _fingerprint(value):
+    """Eight characters of a hash. Identifies a value without disclosing it."""
+    if not value:
+        return "MISSING"
+
+    import hashlib
+    return hashlib.sha256(value.encode()).hexdigest()[:8]
+
+
 class Gateway:
     """Holds the connection, in its own thread, and reports what arrives."""
 
@@ -86,6 +95,11 @@ class Gateway:
         self._voice_session = None
         self._voice_server = None
         self._voice_ready = threading.Event()
+
+        # What Discord said about voice, in order, without saying any of it. Comparing the session
+        # that was captured with the one that gets used is the only way to tell a stale credential
+        # from a rejected one.
+        self.voice_trail = []
 
         self.state = "disconnected"
         self.detail = None
@@ -145,6 +159,7 @@ class Gateway:
         self._voice_ready.clear()
         self._voice_session = None
         self._voice_server = None
+        self.voice_trail.append("asked(channel=%s)" % (channel_id or "none"))
 
         self._send(socket, {"op": 4, "d": {
             "guild_id": guild_id,
@@ -307,6 +322,7 @@ class Gateway:
     def _dispatch(self, kind, data):
         if kind == "READY":
             self._session = data.get("session_id")
+            self.voice_trail.append("ready(gateway_session=%s)" % _fingerprint(self._session))
             self._resume_url = data.get("resume_gateway_url")
             self._identity = data.get("user") or {}
             self.state = "connected"
@@ -329,6 +345,14 @@ class Gateway:
         if kind == "VOICE_STATE_UPDATE":
             if data.get("user_id") == (self._identity or {}).get("id"):
                 self._voice_session = data.get("session_id")
+
+                # A fingerprint, not the value. Enough to tell one session from another when the
+                # question is whether the one being used is the one that was captured.
+                self.voice_trail.append(
+                    "state(channel=%s session=%s)" % (
+                        data.get("channel_id") or "none",
+                        _fingerprint(self._voice_session)))
+
                 self._maybe_voice_ready()
             else:
                 # Somebody else moved. The session needs to know who is in the channel.
@@ -341,6 +365,11 @@ class Gateway:
             return
 
         if kind == "VOICE_SERVER_UPDATE":
+            self.voice_trail.append(
+                "server(endpoint=%s token=%s)" % (
+                    (data.get("endpoint") or "none").split(":")[0],
+                    _fingerprint(data.get("token"))))
+
             # The endpoint and token for the second websocket. Neither is reported anywhere: the
             # token is a credential for this call.
             self._voice_server = {

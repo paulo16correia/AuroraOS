@@ -523,6 +523,13 @@ def voice_join(state, args, nonce=None):
     state["voice_muted"] = False
     state["voice_listening"] = False
 
+    # Leave first, always. A failed attempt can leave the bot in the channel from Discord's point
+    # of view, and then joining again changes nothing — so no fresh VOICE_STATE_UPDATE arrives and
+    # the credentials from the previous attempt get reused. Discord answers that with close code
+    # 4006, "session is no longer valid", which is accurate and says nothing about the cause.
+    gateway.voice_state(args["guild_id"], None)
+    time.sleep(0.5)
+
     # Discord is told through the gateway, not the REST API: voice membership is gateway state.
     gateway.voice_state(args["guild_id"], args["channel_id"])
 
@@ -551,8 +558,9 @@ def voice_join(state, args, nonce=None):
         # cost an afternoon on the main gateway (docs/adr/0067).
         raise Refused(
             E_VOICE_UNAVAILABLE,
-            "the voice connection failed: %s: %s"
-            % (type(broken).__name__, str(broken)[:200])) from None
+            "%s | %s: %s" % (
+                " -> ".join(gateway.voice_trail[-6:]),
+                type(broken).__name__, str(broken)[:160])) from None
 
     state["voice_transport"] = transport
 

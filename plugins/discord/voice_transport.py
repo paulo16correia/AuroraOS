@@ -142,12 +142,13 @@ class VoiceTransport:
         # What it was doing when the time ran out, which is the whole diagnosis. "It timed out"
         # names the symptom and hides which of the four steps — websocket, identify, UDP discovery,
         # session description — never finished.
-        stalled = "%s (%s) after: %s" % (
-            self.state, self.detail or "no detail", " -> ".join(self.trail) or "nothing")
+        stalled = "%s | state=%s detail=%s" % (
+            " -> ".join(self.trail) or "nothing", self.state, self.detail or "none")
         self.stop()
 
-        raise TimeoutError(
-            "the voice connection did not become ready within %ds; it was %s" % (timeout, stalled))
+        # The trail first. The record that carries this is truncated, and what matters is where it
+        # stopped rather than the sentence around it.
+        raise TimeoutError("%s | not ready in %ds" % (stalled, timeout))
 
     def _step(self, name):
         self.state = name
@@ -175,7 +176,10 @@ class VoiceTransport:
                 "Discord has not said which voice server to use yet")
 
         host = self._endpoint.split(":")[0]
-        url = "wss://%s/?v=4" % host
+        # v8. Discord's voice gateway still advertises v4 and closes v4 sessions with 4006,
+        # "session is no longer valid" — which is true and says nothing about the version being
+        # the reason. v8 is what its own clients use.
+        url = "wss://%s/?v=8" % host
         self.trail.append("endpoint=%s" % host)
         self.state = "connecting"
 
@@ -184,22 +188,9 @@ class VoiceTransport:
         with self._sending:
             self._socket = socket_
 
-        # The shape of what was sent, never the values. A voice identify is refused when any of
-        # these is missing or stale, and "which one" is the only useful question afterwards.
-        self.trail.append(
-            "identify(server=%s user=%s session=%s token=%s)" % (
-                "set" if self._guild_id else "MISSING",
-                "set" if self._user_id else "MISSING",
-                "set" if self._session_id else "MISSING",
-                "set" if self._token else "MISSING"))
-
-        self._send({"op": IDENTIFY, "d": {
-            "server_id": self._guild_id,
-            "user_id": self._user_id,
-            "session_id": self._session_id,
-            "token": self._token,
-        }})
-
+        # Identify is sent when HELLO arrives, not before it. The main gateway tolerates being
+        # spoken to first; the voice gateway answers nothing at all, which looks exactly like a
+        # connection that opened and then died.
         interval = None
         last_beat = time.monotonic()
 
@@ -214,11 +205,29 @@ class VoiceTransport:
                     raise
                 raw = None
 
-            if raw is None and socket_._closed:
+            if raw is None and socket_.closed:
+                # Why, when it said. A voice close code is the only explanation Discord gives for
+                # refusing a session, and discarding it leaves "disconnected" — which is what
+                # happened rather than why.
+                if socket_.close_code:
+                    self.state = "failed"
+                    self.detail = "Discord closed the voice socket (%s)%s" % (
+                        socket_.close_code,
+                        ": " + socket_.close_reason if socket_.close_reason else "")
+                    self.trail.append("closed:%s" % socket_.close_code)
+                else:
+                    self.trail.append("closed:no-code")
+
                 return
 
             if raw:
-                interval = self._handle(json.loads(raw), interval) or interval
+                frame = json.loads(raw)
+
+                # Opcode numbers only. Which frames arrived, and in what order, is the whole
+                # question when a handshake stops halfway and says nothing about why.
+                self.trail.append("op%s" % frame.get("op"))
+
+                interval = self._handle(frame, interval) or interval
 
             if interval and (time.monotonic() - last_beat) * 1000 >= interval:
                 self._send({"op": HEARTBEAT, "d": int(time.time() * 1000)})
@@ -230,6 +239,23 @@ class VoiceTransport:
 
         if op == HELLO:
             self._step("identifying")
+
+            # The shape of what is sent, never the values. A voice identify is refused when any of
+            # these is missing or stale, and "which one" is the only useful question afterwards.
+            self.trail.append(
+                "identify(server=%s user=%s session=%s token=%s)" % (
+                    "set" if self._guild_id else "MISSING",
+                    "set" if self._user_id else "MISSING",
+                    "set" if self._session_id else "MISSING",
+                    "set" if self._token else "MISSING"))
+
+            self._send({"op": IDENTIFY, "d": {
+                "server_id": self._guild_id,
+                "user_id": self._user_id,
+                "session_id": self._session_id,
+                "token": self._token,
+            }})
+
             return data.get("heartbeat_interval", 13750)
 
         if op == READY:
