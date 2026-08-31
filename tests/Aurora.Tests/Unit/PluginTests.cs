@@ -683,4 +683,43 @@ public sealed class PluginTests
         command.Parameters.AddWithValue("@p", installation.PluginId);
         await command.ExecuteNonQueryAsync(Ct);
     }
+
+    [Fact]
+    public async Task EveryStateAPluginCanBeHeldInHasAWayOut()
+    {
+        using var db = new SqliteTestDb();
+        (SqlitePluginRegistry registry, ScriptedHost host, _) = Build(db);
+
+        PluginInstallation installed = await registry.InstallAsync(
+            Manifest(), ["notes.write"], "approval/1", Ct);
+
+        // Held the way it is held in production: by failing, repeatedly, until the circuit opens.
+        // Reaching in to set the status would test the release and not the thing that causes it.
+        host.Succeed = false;
+
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            await registry.InvokeAsync(Call(), Ct);
+        }
+
+        PluginInstallation held = (await registry.GetAsync("plugin/notes", Ct))!;
+
+        // A lifecycle with a state nobody can leave is a lifecycle that ends in somebody editing
+        // the database by hand.
+        Assert.Equal(InstallationStatus.Quarantined, held.Status);
+        Assert.False(InstallationStatus.CanRun(held.Status));
+
+        host.Succeed = true;
+
+        PluginInstallation released = await registry.ReleaseAsync(
+            installed.Id, "approval/2", "owner", Ct);
+
+        Assert.Equal(InstallationStatus.Installed, released.Status);
+
+        // And the count goes back to zero, so one later failure does not hold it again at once.
+        Assert.Equal(0, released.ConsecutiveFailures);
+
+        PluginResult ok = await registry.InvokeAsync(Call(), Ct);
+        Assert.True(ok.Ok, ok.Detail);
+    }
 }

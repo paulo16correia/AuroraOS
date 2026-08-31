@@ -178,10 +178,19 @@ class VoiceTransport:
             raise WebSocketError(
                 "Discord has not said which voice server to use yet")
 
-        host = self._endpoint.split(":")[0]
-        # v8. Discord's voice gateway still advertises v4 and closes v4 sessions with 4006,
-        # "session is no longer valid" — which is true and says nothing about the version being
-        # the reason. v8 is what its own clients use.
+        # The endpoint, port and all. Discord answers VOICE_SERVER_UPDATE with something like
+        # "c-mad01-b6770b7b.discord.media:2087", and that port is not decoration. Port 443 on the
+        # same host accepts a websocket handshake and is not the voice server for this session, so
+        # it takes the identify and refuses it with 4006 — "session is no longer valid", which is
+        # true, and points at the credentials rather than at the address they were sent to.
+        #
+        # Splitting the port off cost an afternoon of reading correct code. It was the first line
+        # of the reference implementation's log.
+        host = self._endpoint
+
+        if host.startswith("wss://"):
+            host = host[6:]
+
         url = "wss://%s/?v=8" % host
         self.trail.append("endpoint=%s" % host)
         self.state = "connecting"

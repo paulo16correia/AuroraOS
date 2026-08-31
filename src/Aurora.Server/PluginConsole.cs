@@ -37,6 +37,7 @@ public static class PluginConsole
             "install" => Install(argument, options),
             "list" => List(options),
             "disable" => Disable(argument, options),
+            "release" => Release(argument, options),
             "remove" => Remove(argument, options),
             _ => Help(),
         };
@@ -52,6 +53,7 @@ public static class PluginConsole
               install <directory>   verify, seal and install it; takes effect on restart
               list                  what is installed, and its state
               disable <plugin_id>   stop it running, without forgetting it
+              release <plugin_id>   let a held plugin run again, after you have looked
               remove <plugin_id>    end it for good and take back what it was granted
 
             A plugin is a folder holding a plugin.json and a program. Aurora runs the program,
@@ -278,6 +280,66 @@ public static class PluginConsole
             .GetAwaiter().GetResult();
 
         Console.WriteLine($"[Aurora] {pluginId} is disabled. It is not forgotten, and can be released.");
+        return true;
+    }
+
+    /// <summary>
+    /// Ends a quarantine, which is a decision somebody makes after looking.
+    /// </summary>
+    /// <remarks>
+    /// A plugin that fails enough times in a row is held by the circuit breaker, and until this
+    /// existed the only way back was the control panel — so an owner whose plugin was held had to
+    /// start a second server to release it. Install, disable and remove all lived here; this was
+    /// the one step in the lifecycle that did not.
+    /// </remarks>
+    private static bool Release(string? pluginId, AuroraServerOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(pluginId))
+        {
+            Console.WriteLine("[Aurora] Usage: plugin release <plugin_id>");
+            return true;
+        }
+
+        Registry registry = Open(options);
+
+        PluginInstallation? held =
+            registry.Plugins.GetAsync(pluginId, CancellationToken.None).GetAwaiter().GetResult();
+
+        if (held is null)
+        {
+            Console.WriteLine($"[Aurora] {pluginId} is not installed.");
+            return true;
+        }
+
+        if (held.Status != InstallationStatus.Quarantined)
+        {
+            Console.WriteLine($"[Aurora] {pluginId} is {held.Status}; there is no quarantine to end.");
+            return true;
+        }
+
+        Console.WriteLine($"""
+            [Aurora] {pluginId} is held: {held.QuarantineReason ?? "no reason recorded"}
+
+            A quarantine ends because somebody looked and decided, not because time passed. If you
+            have not found out why it was failing, releasing it will hold it again.
+            """);
+
+        Console.Write("[Aurora] Let it run again? [y/N] ");
+
+        if (!string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("[Aurora] Left held.");
+            return true;
+        }
+
+        PluginInstallation released = registry.Plugins.ReleaseAsync(
+            held.Id, $"console/{Environment.UserName}", $"console/{Environment.UserName}",
+            CancellationToken.None).GetAwaiter().GetResult();
+
+        Console.WriteLine(
+            $"[Aurora] {pluginId} is {released.Status}. Its failure count is back to zero, and its "
+            + "capabilities rejoin the catalogue when Aurora next starts.");
+
         return true;
     }
 
