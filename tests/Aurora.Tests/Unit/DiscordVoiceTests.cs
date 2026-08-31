@@ -94,7 +94,7 @@ public sealed class DiscordVoiceTests : IDisposable
     {
         // Real PCM through the real encoder, the real cipher and the real packet layout, and back
         // again. Anything wrong with the framing shows up here rather than as silence in a call.
-        RunPython("test_transport", 11);
+        RunPython("test_transport", 17);
     }
 
     [Fact]

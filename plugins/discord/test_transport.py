@@ -156,3 +156,62 @@ class RoundTrip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class HeaderLength(unittest.TestCase):
+    """What "rtpsize" actually measures."""
+
+    def test_a_plain_header_is_twelve_bytes(self):
+        packet = vt.rtp_header(1, 0, 99) + b"payload"
+        self.assertEqual(vt.rtp_header_length(packet), 12)
+
+    def test_contributing_sources_make_it_longer(self):
+        # Four bytes each, counted by the low nibble of the first byte.
+        packet = bytearray(vt.rtp_header(1, 0, 99) + bytes(8) + b"payload")
+        packet[0] = 0x82  # version 2, two CSRCs
+
+        self.assertEqual(vt.rtp_header_length(bytes(packet)), 12 + 8)
+
+    def test_an_extension_makes_it_longer_by_its_own_length(self):
+        # The extension bit, then a four-byte prefix whose second half counts 32-bit words.
+        packet = bytearray(vt.rtp_header(1, 0, 99))
+        packet[0] = 0x90  # version 2, extension present
+        packet += struct.pack(">HH", 0xBEDE, 3) + bytes(12) + b"payload"
+
+        self.assertEqual(vt.rtp_header_length(bytes(packet)), 12 + 4 + 12)
+
+    def test_a_packet_that_is_only_a_header_has_nothing_to_decrypt(self):
+        self.assertIsNone(vt.rtp_header_length(vt.rtp_header(1, 0, 99)))
+
+    def test_a_truncated_extension_is_refused_rather_than_read_past(self):
+        packet = bytearray(vt.rtp_header(1, 0, 99))
+        packet[0] = 0x90
+
+        self.assertIsNone(vt.rtp_header_length(bytes(packet) + b"\x00"))
+
+    def test_a_round_trip_survives_an_extension(self):
+        # The AAD is the whole header, extension included. Reading a fixed twelve bytes
+        # authenticates the wrong span and every packet fails — silently, because a failed tag
+        # looks exactly like a forged packet.
+        if not opus_codec.available():
+            self.skipTest("libopus is not installed")
+
+        key = crypto.random_key()
+        encoder = opus_codec.Encoder()
+
+        header = bytearray(vt.rtp_header(7, 960, 0x01020304))
+        header[0] = 0x90
+        header += struct.pack(">HH", 0xBEDE, 1) + bytes(4)
+        header = bytes(header)
+
+        nonce = vt.nonce_for(7)
+        sealed = crypto.encrypt(key, nonce, encoder.encode(tone()), header)
+
+        transport = vt.VoiceTransport(
+            "example.invalid:2087", "1", "2", "session", "token", channel_id="3")
+        transport._key = key
+
+        received = transport.receive_packet(header + sealed + nonce[:4])
+
+        self.assertIsNotNone(received)
+        self.assertEqual(received[0], 0x01020304)
+

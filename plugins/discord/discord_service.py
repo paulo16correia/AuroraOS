@@ -477,8 +477,10 @@ def voice_status(state, args):
     session = state.get("voice")
 
     window = conversation_window(state)
+    transport = state.get("voice_transport")
 
     return {
+        "audio": transport.counters() if transport else None,
         "in_call": session is not None,
         "session": session.snapshot() if session else None,
         "muted": bool(state.get("voice_muted", False)),

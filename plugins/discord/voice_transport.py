@@ -56,6 +56,30 @@ RTP_HEADER_BYTES = 12
 FRAME_INTERVAL = opus_codec.FRAME_MS / 1000.0
 
 
+def rtp_header_length(packet):
+    """How much of this packet is header, which is what "rtpsize" means.
+
+    The twelve-byte fixed header is a floor, not the answer. Contributing sources add four bytes
+    each, and an extension adds a four-byte prefix plus its own length in words. The AAD for
+    `aead_xchacha20_poly1305_rtpsize` is exactly this run of bytes, so treating it as always twelve
+    authenticates the wrong thing and every packet fails to decrypt — silently, because a failed
+    tag looks the same as a forged packet.
+    """
+    if len(packet) < RTP_HEADER_BYTES:
+        return None
+
+    length = RTP_HEADER_BYTES + 4 * (packet[0] & 0x0F)
+
+    if packet[0] & 0x10:
+        if len(packet) < length + 4:
+            return None
+
+        (words,) = struct.unpack_from(">H", packet, length + 2)
+        length += 4 + 4 * words
+
+    return length if len(packet) > length else None
+
+
 def rtp_header(sequence, timestamp, ssrc):
     """The twelve bytes in front of every packet, and the bytes the cipher authenticates."""
     return struct.pack(
@@ -142,6 +166,16 @@ class VoiceTransport:
         # what people say is not something to do by default for being in the room.
         self._listening = threading.Event()
         self._receiver = None
+
+        # What actually arrived, counted. "Aurora heard nothing" has three different causes —
+        # no packets, packets it cannot attribute, packets it cannot decrypt — and they need
+        # different fixes. Without counting them they look identical from outside.
+        self.received = 0
+        self.malformed = 0
+        self.unauthenticated = 0
+        self.unattributed = 0
+        self.undecryptable = 0
+        self.decoded = 0
 
         self.state = "disconnected"
         self.detail = None
@@ -572,6 +606,19 @@ class VoiceTransport:
 
     # ---- listening ----
 
+    def counters(self):
+        """What arrived and what became of it."""
+        return {
+            "received": self.received,
+            "malformed": self.malformed,
+            "unauthenticated": self.unauthenticated,
+            "unattributed": self.unattributed,
+            "undecryptable": self.undecryptable,
+            "decoded": self.decoded,
+            "speakers": len(self._speakers),
+            "e2ee_ready": bool(self._dave is not None and self._dave.ready),
+        }
+
     def speaker_of(self, ssrc):
         """Who this stream belongs to, as the voice gateway reported it."""
         return self._speakers.get(ssrc)
@@ -612,6 +659,8 @@ class VoiceTransport:
                         and "timed out" not in str(quiet):
                     return
                 continue
+
+            self.received += 1
 
             try:
                 heard = self.receive_packet(packet)
@@ -677,17 +726,25 @@ class VoiceTransport:
         if len(packet) < RTP_HEADER_BYTES + 4:
             return None
 
-        header = packet[:RTP_HEADER_BYTES]
-        (ssrc,) = struct.unpack(">I", header[8:12])
+        length = rtp_header_length(packet)
+
+        if length is None:
+            self.malformed += 1
+            return None
+
+        header = packet[:length]
+        (ssrc,) = struct.unpack_from(">I", packet, 8)
 
         nonce = packet[-4:] + bytes(20)
-        body = packet[RTP_HEADER_BYTES:-4]
+        body = packet[length:-4]
 
         try:
             opus_packet = crypto.decrypt(self._key, nonce, body, header)
         except ValueError:
-            # A packet that does not authenticate is one somebody else wrote. Dropped silently:
-            # there is nothing to report and nothing to be done about it.
+            # A packet that does not authenticate is one somebody else wrote, or one this client
+            # framed wrongly. Counted, because those two look identical from here and only the
+            # count tells them apart: a handful is the internet, all of them is a bug.
+            self.unauthenticated += 1
             return None
 
         if self._dave is not None and self._dave_version > 0 and self._dave.ready:
@@ -697,6 +754,7 @@ class VoiceTransport:
                 # Audio from a stream nobody has claimed. It cannot be decrypted, because the group
                 # key is per-member, and it must not be guessed at: attributing somebody's words to
                 # the wrong person is worse than losing them.
+                self.unattributed += 1
                 return None
 
             try:
@@ -705,6 +763,7 @@ class VoiceTransport:
                 # fault and is not one.
                 opus_packet = self._dave.decrypt(int(speaker), 0, opus_packet)
             except Exception:
+                self.undecryptable += 1
                 return None
 
         if ssrc not in self._decoders:
@@ -713,6 +772,8 @@ class VoiceTransport:
             self._decoders[ssrc] = opus_codec.Decoder()
 
         try:
-            return ssrc, self._decoders[ssrc].decode(opus_packet)
+            pcm = self._decoders[ssrc].decode(opus_packet)
+            self.decoded += 1
+            return ssrc, pcm
         except RuntimeError:
             return None
