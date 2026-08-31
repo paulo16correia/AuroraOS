@@ -697,9 +697,11 @@ def _watch_turns(state):
             try:
                 transcript = voice_engines.transcribe(engine, _wav(audio))
             except Exception as unheard:
+                # The message. A recogniser that cannot run and one that heard nothing produce the
+                # same exception type and need entirely different fixes.
                 report("voice.not_understood", {
                     "speaker_id": speaker,
-                    "reason": type(unheard).__name__,
+                    "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
                 })
                 continue
 

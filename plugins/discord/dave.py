@@ -93,6 +93,11 @@ def session(version, user_id, channel_id):
     return library.DaveSession(version, int(user_id), int(channel_id))
 
 
+def audio_media_type():
+    """The enum value for audio. Not the integer zero, which the library refuses."""
+    return _find().MediaType.audio
+
+
 def proposals_operation(append):
     """Discord sends a byte saying whether a proposal set adds members or removes them."""
     library = _find()

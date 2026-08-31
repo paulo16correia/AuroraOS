@@ -28,6 +28,29 @@ STT_ENGINES = [
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
+# Where a whisper.cpp model is likely to be. It is a separate download from the program, and the
+# program's default path is relative to wherever it was built — which is never where a package
+# manager put it. A recogniser with no model fails on every utterance and says only that it
+# exited non-zero.
+MODEL_SEARCH = [
+    # Beside the plugin, first and for the same reason its libraries are: the sandbox lets a
+    # plugin read its own directory and nothing else of the owner's. A model in a home cache is
+    # one the plugin cannot open — correctly. What a plugin needs to run ships with it.
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "models"),
+
+    os.path.expanduser("~/.cache/whisper"),
+    os.path.expanduser("~/Library/Application Support/Aurora/models"),
+    "/opt/homebrew/share/whisper.cpp/models",
+    "/usr/local/share/whisper.cpp/models",
+]
+
+# Multilingual first. An English-only model transcribes Portuguese into confident nonsense rather
+# than failing, which is the worse of the two.
+MODEL_NAMES = [
+    "ggml-large-v3-turbo.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin",
+    "ggml-base.en.bin", "ggml-tiny.bin",
+]
+
 # Local text-to-speech. `say` ships with macOS and speaks without a network.
 TTS_ENGINES = [
     ("piper", ["--model", "{model}", "--output_file", "{output}"]),
@@ -49,12 +72,37 @@ def find_opus():
     return opus_codec.library() if opus_codec.available() else None
 
 
+def find_model():
+    """A whisper model file, or None. Separate from the program and separately absent."""
+    for directory in MODEL_SEARCH:
+        for name in MODEL_NAMES:
+            candidate = os.path.join(directory, name)
+
+            if os.path.exists(candidate):
+                return candidate
+
+    return None
+
+
 def find_stt():
-    """A local speech-to-text program, or None."""
+    """A local speech-to-text program with a model to run, or None.
+
+    Both, because either alone recognises nothing. whisper.cpp with no model exits non-zero on
+    every utterance, which reads as speech that could not be understood rather than as a file that
+    was never downloaded.
+    """
     for name, arguments in STT_ENGINES:
         found = shutil.which(name)
-        if found:
-            return {"name": name, "path": found, "arguments": arguments}
+
+        if not found:
+            continue
+
+        model = find_model()
+
+        if "{model}" in " ".join(arguments) and model is None:
+            return None
+
+        return {"name": name, "path": found, "arguments": arguments, "model": model}
 
     return None
 
@@ -113,7 +161,13 @@ def readiness():
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
     if not stt:
-        missing.append("a local speech-to-text program (whisper.cpp)")
+        if shutil.which("whisper-cli") and not find_model():
+            missing.append(
+                "a whisper model file — the program is installed but has nothing to run; "
+                "put a ggml-*.bin in the plugin's models/ directory, where the sandbox can "
+                "reach it")
+        else:
+            missing.append("a local speech-to-text program (whisper.cpp)")
     if not tts:
         missing.append("a local text-to-speech program (piper, or `say` on macOS)")
 
@@ -151,7 +205,8 @@ def transcribe(engine, audio_bytes, model=None, timeout=60):
             handle.write(audio_bytes)
 
         arguments = [
-            argument.replace("{input}", source).replace("{model}", model or "")
+            argument.replace("{input}", source)
+                    .replace("{model}", model or engine.get("model") or "")
             for argument in engine["arguments"]
         ]
 
@@ -159,7 +214,13 @@ def transcribe(engine, audio_bytes, model=None, timeout=60):
             [engine["path"], *arguments], capture_output=True, timeout=timeout, check=False)
 
         if finished.returncode != 0:
-            raise RuntimeError("%s exited %d" % (engine["name"], finished.returncode))
+            # What it said, not only that it failed. "exited 1" is true of a missing model, a
+            # corrupt file and an unsupported sample rate alike, and they need different fixes.
+            complaint = (finished.stderr or finished.stdout or b"").decode(errors="replace")
+
+            raise RuntimeError(
+                "%s exited %d: %s" % (
+                    engine["name"], finished.returncode, complaint.strip()[-200:] or "no output"))
 
         transcript = source + ".txt"
 

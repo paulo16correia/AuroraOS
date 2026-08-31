@@ -187,6 +187,13 @@ class VoiceTransport:
         self._listening = threading.Event()
         self._receiver = None
 
+        # Keeps the UDP path open. Without it the mapping this end of the connection depends on
+        # falls closed after a few seconds of not sending, and Discord's audio arrives at a router
+        # that no longer knows where to put it — while RTCP keeps coming, so the socket looks
+        # perfectly alive and no packet of speech ever appears.
+        self._keepalive = None
+        self._keepalive_counter = 0
+
         # What actually arrived, counted. "Aurora heard nothing" has three different causes —
         # no packets, packets it cannot attribute, packets it cannot decrypt — and they need
         # different fixes. Without counting them they look identical from outside.
@@ -203,6 +210,7 @@ class VoiceTransport:
         # Kept because "every packet fails to authenticate" has several causes and the framing is
         # the one that can be read directly.
         self.first_header = None
+        self.undecryptable_reason = None
 
         self.state = "disconnected"
         self.detail = None
@@ -418,6 +426,7 @@ class VoiceTransport:
         if op == SESSION_DESCRIPTION:
             self._key = bytes(data["secret_key"])
             self._encoder = opus_codec.Encoder()
+            self._start_keepalive()
 
             self._dave_version = data.get("dave_protocol_version", 0) or 0
 
@@ -646,7 +655,34 @@ class VoiceTransport:
             "speakers": len(self._speakers),
             "e2ee_ready": bool(self._dave is not None and self._dave.ready),
             "first_header": self.first_header,
+            "undecryptable_reason": self.undecryptable_reason,
         }
+
+    def _start_keepalive(self):
+        if self._keepalive and self._keepalive.is_alive():
+            return
+
+        self._keepalive = threading.Thread(target=self._keepalive_loop, daemon=True)
+        self._keepalive.start()
+
+    def _keepalive_loop(self):
+        """Sends a counter to the voice server every few seconds, for ever.
+
+        Eight bytes that mean nothing. Their only job is to be traffic: a UDP mapping that sees
+        nothing outbound stops forwarding what comes back, and the failure is silent on both sides.
+        """
+        while not self._stop.is_set():
+            udp, server = self._udp, self._server
+
+            if udp is not None and server is not None:
+                try:
+                    udp.sendto(self._keepalive_counter.to_bytes(8, "big"), server)
+                    self._keepalive_counter = (self._keepalive_counter + 1) % (1 << 63)
+                except OSError:
+                    # The socket went away; the session will notice on its own terms.
+                    return
+
+            self._stop.wait(5)
 
     def speaker_of(self, ssrc):
         """Who this stream belongs to, as the voice gateway reported it."""
@@ -808,9 +844,18 @@ class VoiceTransport:
                 # Encrypted twice: once for the transport, which the step above undid, and once for
                 # the group. Without this the bytes decode into noise, which sounds like a codec
                 # fault and is not one.
-                opus_packet = self._dave.decrypt(int(speaker), 0, opus_packet)
-            except Exception:
+                opus_packet = self._dave.decrypt(
+                    int(speaker), dave.audio_media_type(), opus_packet)
+            except Exception as refused:
                 self.undecryptable += 1
+
+                # The first one, kept. Three hundred packets failing identically is one fault, and
+                # the count alone cannot say which — a wrong argument type and a group key this
+                # client is not in look the same from here.
+                if self.undecryptable_reason is None:
+                    self.undecryptable_reason = "%s: %s" % (
+                        type(refused).__name__, str(refused)[:120])
+
                 return None
 
         if ssrc not in self._decoders:
