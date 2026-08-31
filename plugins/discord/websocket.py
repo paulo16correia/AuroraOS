@@ -121,11 +121,22 @@ class WebSocket:
 
     def send(self, text):
         """Sends one text frame, masked, as a client must."""
+        self._send_frame(TEXT, text.encode())
+
+    def send_bytes(self, payload):
+        """Sends one binary frame.
+
+        Needed because not every protocol is text. Discord's end-to-end voice encryption carries
+        its key material as binary frames, and a client that only speaks text cannot take part in
+        it at all.
+        """
+        self._send_frame(BINARY, bytes(payload))
+
+    def _send_frame(self, opcode, payload):
         if self._closed:
             raise WebSocketError("the connection is closed")
 
-        payload = text.encode()
-        header = bytearray([0x80 | TEXT])
+        header = bytearray([0x80 | opcode])
         length = len(payload)
 
         # The mask bit is set on every client frame. A server is required to fail the connection
@@ -185,8 +196,14 @@ class WebSocket:
             if opcode == PONG:
                 continue
 
-            if opcode in (TEXT, BINARY):
+            if opcode == TEXT:
                 return payload.decode(errors="replace")
+
+            if opcode == BINARY:
+                # Returned as bytes, so a caller can tell one from the other. Decoding binary as
+                # text loses the bytes that are not characters, which for key material is all of
+                # them.
+                return payload
 
     def _send_control(self, opcode, payload=b""):
         mask = os.urandom(4)

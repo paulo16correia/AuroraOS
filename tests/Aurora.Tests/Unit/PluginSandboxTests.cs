@@ -424,7 +424,7 @@ public sealed class PluginSandboxTests
         }
 
         (string root, string script) = await PluginAsync(
-            "if /usr/bin/python3 -c \"import socket;socket.gethostbyname('localhost')\" 2>/dev/null; "
+            "if /usr/bin/python3 -c \"import socket;socket.gethostbyname('example.com')\" 2>/dev/null; "
             + "then printf '{\"dns\":\"works\"}'; else printf '{\"dns\":\"blocked\"}'; fi");
 
         try
@@ -477,6 +477,84 @@ public sealed class PluginSandboxTests
         }
         finally
         {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task APluginGrantedTheNetworkCanHearTheAnswerAndNotOnlyAsk()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        // A local echo, so the test needs nothing outside this machine.
+        using var echo = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(
+            System.Net.IPAddress.Loopback, 0));
+
+        var port = ((System.Net.IPEndPoint)echo.Client.LocalEndPoint!).Port;
+        using var stopping = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+
+        Task echoing = Task.Run(async () =>
+        {
+            try
+            {
+                System.Net.Sockets.UdpReceiveResult heard = await echo.ReceiveAsync(stopping.Token);
+                await echo.SendAsync(heard.Buffer, heard.Buffer.Length, heard.RemoteEndPoint);
+            }
+            catch (Exception ending)
+                when (ending is OperationCanceledException or ObjectDisposedException)
+            {
+                // The test finished first.
+            }
+        });
+
+        // Both files in one directory, because that is the only one the sandbox lets a plugin
+        // read. A probe written anywhere else is denied for the right reason and looks like the
+        // wrong one.
+        var root = TestTemp.Folder("udp-reply");
+        var probe = Path.Combine(root, "probe.py");
+        var script = Path.Combine(root, "run.sh");
+
+        await File.WriteAllTextAsync(
+            probe,
+            "import socket\n"
+            + "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+            + "s.settimeout(5)\n"
+            + "try:\n"
+            + $"    s.sendto(b'ping', ('127.0.0.1', {port}))\n"
+            + "    s.recvfrom(64)\n"
+            + "    print('{\"reply\": \"heard\"}')\n"
+            + "except Exception:\n"
+            + "    print('{\"reply\": \"blocked\"}')\n",
+            Ct);
+
+        await File.WriteAllTextAsync(
+            script, $"#!/bin/sh\ncat > /dev/null\n/usr/bin/python3 {probe}\n", Ct);
+
+        File.SetUnixFileMode(
+            script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        try
+        {
+            var host = new SubprocessPluginHost(root, new MacOsSandbox(), allowUnconfined: false);
+
+            PluginManifest granted = Manifest(script) with { NetworkEndpoints = ["example.com"] };
+
+            PluginResult result = await host.InvokeAsync(
+                granted, Call() with { NetworkGranted = true }, Ct);
+
+            // Outbound alone lets the request out and denies the reply, which surfaces as EPERM
+            // from recvfrom and reads like a broken socket rather than a missing rule. Found by
+            // Discord's voice handshake, whose very first step is a request and a reply over UDP.
+            Assert.True(result.Ok, result.Detail);
+            Assert.Contains("heard", result.OutputJson!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            await stopping.CancelAsync();
+            await echoing;
             TryDelete(root);
         }
     }

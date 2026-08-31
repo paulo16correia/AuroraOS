@@ -21,3 +21,4 @@ desktop.ini
 dist/
 node_modules/
 obj/
+plugins/discord/vendor/

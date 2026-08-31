@@ -91,12 +91,22 @@ def readiness():
     Aurora join a call should be able to find out first, and an error in the middle of a
     conversation is a bad way to learn that a codec is missing.
     """
+    import dave
+
     opus = find_opus()
     stt = find_stt()
     tts = find_tts()
     transport = has_transport()
+    e2ee = dave.available()
 
     missing = []
+
+    if not e2ee:
+        # Not always fatal: Discord requires it only where a server has it enabled, and answers
+        # 4017 when it does. Reported either way, because "the call was refused" is a bad way to
+        # find out a library is missing.
+        missing.append(
+            "the davey library for end-to-end encrypted voice (required by some servers)")
     if not transport:
         missing.append(
             "the voice audio transport, which is not implemented (see docs/adr/0068)")
@@ -112,6 +122,7 @@ def readiness():
         "can_listen": bool(opus and stt and transport),
         "can_speak": bool(opus and tts and transport),
         "transport": transport,
+        "e2ee": e2ee,
         "opus": opus,
         "stt": stt["name"] if stt else None,
         "tts": tts["name"] if tts else None,

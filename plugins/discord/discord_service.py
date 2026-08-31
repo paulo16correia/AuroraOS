@@ -555,7 +555,8 @@ def voice_join(state, args, nonce=None):
         try:
             transport = VoiceTransport(
                 credentials["endpoint"], args["guild_id"], credentials["user_id"],
-                credentials["session_id"], credentials["token"])
+                credentials["session_id"], credentials["token"],
+                channel_id=args["channel_id"])
 
             transport.start(timeout=20)
             break
@@ -577,11 +578,12 @@ def voice_join(state, args, nonce=None):
         # The message, not only the type. The voice token lives in the SELECT_PROTOCOL payload and
         # never reaches a socket exception — reporting the class name alone is the precaution that
         # cost an afternoon on the main gateway (docs/adr/0067).
+        # The error first. Whatever carries this is truncated somewhere, and the trail is the part
+        # that can be reconstructed from the events; the exception is not.
         raise Refused(
             E_VOICE_UNAVAILABLE,
-            "%s | %s: %s" % (
-                " -> ".join(gateway.voice_trail[-6:]),
-                type(broken).__name__, str(broken)[:160])) from None
+            "%s | after %s" % (
+                str(broken)[:300], " -> ".join(gateway.voice_trail[-3:]))) from None
 
     state["voice_transport"] = transport
 

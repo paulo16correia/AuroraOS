@@ -17,6 +17,7 @@ import threading
 import time
 
 import crypto
+import dave
 import gateway
 import opus_codec
 from websocket import WebSocket, WebSocketError
@@ -32,6 +33,18 @@ RESUME = 7
 HELLO = 8
 RESUMED = 9
 CLIENT_DISCONNECT = 13
+
+# Discord's end-to-end encryption. The transitions are JSON; the key material is binary.
+DAVE_PREPARE_TRANSITION = 21
+DAVE_EXECUTE_TRANSITION = 22
+DAVE_TRANSITION_READY = 23
+DAVE_PREPARE_EPOCH = 24
+MLS_EXTERNAL_SENDER = 25
+MLS_KEY_PACKAGE = 26
+MLS_PROPOSALS = 27
+MLS_COMMIT_WELCOME = 28
+MLS_ANNOUNCE_COMMIT_TRANSITION = 29
+MLS_WELCOME = 30
 
 MODE = "aead_xchacha20_poly1305_rtpsize"
 
@@ -83,13 +96,15 @@ def nonce_for(counter):
 class VoiceTransport:
     """One voice connection: the second websocket, the UDP socket, and the audio going out."""
 
-    def __init__(self, endpoint, guild_id, user_id, session_id, token, on_audio=None):
+    def __init__(self, endpoint, guild_id, user_id, session_id, token, on_audio=None,
+                 channel_id=None):
         self._endpoint = endpoint
         self._guild_id = guild_id
         self._user_id = user_id
         self._session_id = session_id
         self._token = token
         self._on_audio = on_audio
+        self._channel_id = channel_id or guild_id
 
         self._socket = None
         self._udp = None
@@ -109,6 +124,12 @@ class VoiceTransport:
 
         self._encoder = None
         self._decoders = {}
+
+        # The end-to-end session, when the call is encrypted. None means the audio is protected by
+        # the transport key alone, which is what Discord allows where DAVE is not required.
+        self._dave = None
+        self._dave_version = 0
+        self._dave_pending = {}
         self._playing = threading.Event()
         self._current_speech = None
 
@@ -139,7 +160,13 @@ class VoiceTransport:
             if self.state == "ready":
                 return True
             if self.state == "failed":
-                raise WebSocketError(self.detail or "the voice connection failed")
+                # The trail here too. It was only on the timeout path, so a connection that failed
+                # outright reported the error with no account of where it had got to — which is
+                # the half that says which step to look at.
+                raise WebSocketError(
+                    "%s | after %s" % (
+                        self.detail or "the voice connection failed",
+                        " -> ".join(self.trail[-3:]) or "nothing"))
             time.sleep(0.05)
 
         # What it was doing when the time ran out, which is the whole diagnosis. "It timed out"
@@ -165,9 +192,16 @@ class VoiceTransport:
         except Exception as broken:
             self.state = "failed"
 
-            # The message. The voice token travels in the SELECT_PROTOCOL payload, not in socket
-            # errors, so withholding this hides the cause and protects nothing.
-            self.detail = "%s: %s" % (type(broken).__name__, str(broken)[:200])
+            # The message and the line it came from. The voice token travels in the SELECT_PROTOCOL
+            # payload, not in socket errors, so withholding either hides the cause and protects
+            # nothing — and a bare exception type in a four-step handshake says almost nothing
+            # about which step raised it.
+            import traceback
+
+            where = traceback.extract_tb(broken.__traceback__)
+            spot = "%s:%d" % (where[-1].name, where[-1].lineno) if where else "unknown"
+
+            self.detail = "%s at %s: %s" % (type(broken).__name__, spot, str(broken)[:160])
         finally:
             self._teardown()
 
@@ -221,7 +255,11 @@ class VoiceTransport:
             # Discord's end-to-end voice encryption. Zero means "I do not implement it", which is
             # what its own client sends when the optional library is absent — and the field being
             # absent entirely is not the same statement.
-            "max_dave_protocol_version": 0,
+            # What this machine can actually do, asked of the library rather than asserted. Zero
+            # is honest and Discord may refuse it with 4017 where a server requires end-to-end
+            # encryption; claiming a version without a working library would be worse, because the
+            # call would be established and the audio would not be what the people in it were told.
+            "max_dave_protocol_version": dave.protocol_version(),
         }})
 
         interval = None
@@ -253,12 +291,24 @@ class VoiceTransport:
 
                 return
 
+            if isinstance(raw, (bytes, bytearray)):
+                # Binary, which on this socket is only ever MLS key material. Told apart by type
+                # rather than by inspecting the bytes: a websocket says which it sent, and
+                # guessing would mean deciding whether a key package happens to look like JSON.
+                self.trail.append("bin%s" % (raw[2] if len(raw) > 2 else "?"))
+                self._handle_binary(raw)
+                raw = None
+
             if raw:
                 frame = json.loads(raw)
 
                 # Opcode numbers only. Which frames arrived, and in what order, is the whole
                 # question when a handshake stops halfway and says nothing about why.
                 self.trail.append("op%s" % frame.get("op"))
+
+                # v8 numbers the frames it wants acknowledged, and the heartbeat carries the last
+                # one back. A heartbeat without it is not an answer to anything.
+                self._seq_ack = frame.get("seq", self._seq_ack)
 
                 interval = self._handle(frame, interval) or interval
 
@@ -297,7 +347,39 @@ class VoiceTransport:
         if op == SESSION_DESCRIPTION:
             self._key = bytes(data["secret_key"])
             self._encoder = opus_codec.Encoder()
+
+            self._dave_version = data.get("dave_protocol_version", 0) or 0
+
+            if self._dave_version > 0:
+                self._begin_dave()
+                # Not ready yet: the group key is agreed over the frames that follow, and speaking
+                # before it exists would send audio nobody in the call can decrypt.
+                self._step("agreeing the group key")
+                return interval
+
             self._step("ready")
+            return interval
+
+        if op == DAVE_PREPARE_TRANSITION:
+            self._dave_pending[data["transition_id"]] = data["protocol_version"]
+
+            if data["transition_id"] == 0:
+                self._execute_transition(0)
+            else:
+                self._send({"op": DAVE_TRANSITION_READY,
+                            "d": {"transition_id": data["transition_id"]}})
+
+            return interval
+
+        if op == DAVE_EXECUTE_TRANSITION:
+            self._execute_transition(data["transition_id"])
+            return interval
+
+        if op == DAVE_PREPARE_EPOCH:
+            if data.get("epoch") == 1:
+                self._dave_version = data["protocol_version"]
+                self._begin_dave()
+
             return interval
 
         return interval
@@ -316,6 +398,86 @@ class VoiceTransport:
             "protocol": "udp",
             "data": {"address": address, "port": port, "mode": MODE},
         }})
+
+    # ---- end-to-end encryption ----
+
+    def _begin_dave(self):
+        """Starts an MLS session and offers this client's key package to the group."""
+        self._dave = dave.session(self._dave_version, self._user_id, self._channel_id)
+        self._send_binary(MLS_KEY_PACKAGE, self._dave.get_serialized_key_package())
+        self.trail.append("dave%d" % self._dave_version)
+
+    def _execute_transition(self, transition_id):
+        if transition_id not in self._dave_pending:
+            return
+
+        self._dave_version = self._dave_pending.pop(transition_id)
+
+        if self._dave_version == 0 and self._dave is not None:
+            # Downgraded by the group. The session stays, passing frames through unencrypted,
+            # because Discord expects a client to keep up rather than drop out.
+            self._dave.set_passthrough_mode(True, 10)
+
+        self._check_ready()
+
+    def _check_ready(self):
+        """Ready once the group key exists, or once there is no group key to wait for."""
+        if self.state == "ready":
+            return
+
+        if self._dave_version == 0 or (self._dave is not None and self._dave.ready):
+            self._step("ready")
+
+    def _handle_binary(self, message):
+        """One MLS frame: two bytes of sequence, one of opcode, then key material."""
+        if len(message) < 3 or self._dave is None:
+            return
+
+        self._seq_ack = struct.unpack_from(">H", message, 0)[0]
+        op = message[2]
+
+        try:
+            if op == MLS_EXTERNAL_SENDER:
+                self._dave.set_external_sender(message[3:])
+
+            elif op == MLS_PROPOSALS:
+                result = self._dave.process_proposals(
+                    dave.proposals_operation(append=message[3] == 0), message[4:])
+
+                if dave.is_commit_welcome(result):
+                    self._send_binary(
+                        MLS_COMMIT_WELCOME,
+                        result.commit + result.welcome if result.welcome else result.commit)
+
+            elif op == MLS_ANNOUNCE_COMMIT_TRANSITION:
+                transition_id = struct.unpack_from(">H", message, 3)[0]
+                self._dave.process_commit(message[5:])
+                self._after_transition(transition_id)
+
+            elif op == MLS_WELCOME:
+                transition_id = struct.unpack_from(">H", message, 3)[0]
+                self._dave.process_welcome(message[5:])
+                self._after_transition(transition_id)
+        except Exception as rejected:
+            # A commit this client cannot process means its view of the group is wrong. Starting
+            # the session again is the recovery the protocol offers; carrying on would mean
+            # encrypting to a group that has moved on without us.
+            self.trail.append("dave-recover:%s" % type(rejected).__name__)
+            self._begin_dave()
+            return
+
+        self._check_ready()
+
+    def _after_transition(self, transition_id):
+        if transition_id != 0:
+            self._dave_pending[transition_id] = self._dave_version
+            self._send({"op": DAVE_TRANSITION_READY, "d": {"transition_id": transition_id}})
+
+    def _send_binary(self, opcode, payload):
+        with self._sending:
+            if self._socket is None:
+                raise WebSocketError("the voice websocket is closed")
+            self._socket.send_bytes(bytes([opcode]) + payload)
 
     def _send(self, payload):
         with self._sending:

@@ -75,7 +75,9 @@ public sealed class SubprocessPluginHost : IPluginHost
         Directory.CreateDirectory(workingDirectory);
 
         SandboxPlan plan = _sandbox.Plan(
-            new SandboxRequest(manifest.PluginId, manifest.Executable, workingDirectory));
+            new SandboxRequest(
+                manifest.PluginId, manifest.Executable, workingDirectory,
+                invocation.NetworkGranted));
 
         if (plan.Level == SandboxLevel.Process && !_allowUnconfined)
         {

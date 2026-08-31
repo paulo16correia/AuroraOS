@@ -100,6 +100,16 @@ public sealed class MacOsSandbox : IPluginSandbox
             // Named as one literal rather than allowing unix sockets generally, so this grants
             // the plugin name resolution and not a channel to every other daemon on the machine.
             profile.Append("(allow network-outbound (literal \"/private/var/run/mDNSResponder\"))");
+
+            // And the answers. Outbound covers sending; a reply arriving on a socket this plugin
+            // opened is inbound, and denying it means a plugin can send a request and never hear
+            // the response — which surfaces as EPERM from recvfrom and reads like the socket being
+            // broken rather than a rule being missing.
+            //
+            // Narrowed to UDP on this process's own sockets: enough for a request-and-reply
+            // protocol, and not a licence to listen for connections. A plugin still cannot accept
+            // anything.
+            profile.Append("(allow network-inbound (local udp))");
         }
 
         return profile.ToString();
