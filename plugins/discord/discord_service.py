@@ -729,17 +729,27 @@ def _wav(pcm):
     fail — it transcribes, confidently, into words nobody said. That is worse than an error, and it
     is what "Araratasmovir." was.
 
-    Averaging the channels and taking every third frame is a crude resample and the right one here:
-    speech is a narrow band well under the Nyquist limit of 16kHz, and the recogniser's own
-    front-end is doing far more violence to the signal than this.
+    Every third frame is not a resample, it is decimation, and the difference matters. The source
+    carries content up to 24kHz; throwing away two samples in three folds everything above 8kHz
+    back into the speech band as noise. Whisper answered that with repetition loops and by
+    detecting Polish — the sound of a signal that resembles no language at all.
+
+    Averaging each group of three first is a box filter: crude, one line, and it removes the
+    aliasing this was suffering from. An earlier comment here argued the filter was unnecessary
+    because speech is narrow-band. That was the wrong question — what matters is what the *source*
+    contains, not what the speech does.
     """
     frames = len(pcm) // 4
     mono = bytearray()
 
-    for frame in range(0, frames, 3):
-        at = frame * 4
-        left, right = struct.unpack_from("<hh", pcm, at)
-        mono += struct.pack("<h", (left + right) // 2)
+    for frame in range(0, frames - 2, 3):
+        total = 0
+
+        for offset in range(3):
+            left, right = struct.unpack_from("<hh", pcm, (frame + offset) * 4)
+            total += (left + right) // 2
+
+        mono += struct.pack("<h", max(-32768, min(32767, total // 3)))
 
     channels, rate, bits = 1, 16000, 16
     block = channels * bits // 8
