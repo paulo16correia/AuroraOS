@@ -76,6 +76,10 @@ class VoiceSession:
         if user_id != self.own_user_id:
             self._participants.add(user_id)
 
+    def speaker_for(self, ssrc):
+        """Who this audio stream belongs to, or None if nobody has claimed it."""
+        return self._speakers.get(ssrc)
+
     @property
     def participants(self):
         return sorted(self._participants)

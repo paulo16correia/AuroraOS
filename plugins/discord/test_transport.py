@@ -85,9 +85,15 @@ class RoundTrip(unittest.TestCase):
     """PCM, out through the real layers, and back."""
 
     def _transport(self, key):
-        transport = vt.VoiceTransport.__new__(vt.VoiceTransport)
+        """A real transport with a key, rather than an object with two fields set on it.
+
+        Reaching inside made this test break every time the class grew a field, which is a test
+        that tracks the implementation instead of the behaviour.
+        """
+        transport = vt.VoiceTransport(
+            "example.invalid:2087", "1", "2", "session", "token", channel_id="3")
+
         transport._key = key
-        transport._decoders = {}
         return transport
 
     @unittest.skipUnless(opus_codec.available(), "libopus is not installed")

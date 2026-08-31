@@ -130,8 +130,18 @@ class VoiceTransport:
         self._dave = None
         self._dave_version = 0
         self._dave_pending = {}
+
+        # ssrc -> user id, learned from the voice gateway's SPEAKING frames. End-to-end decryption
+        # needs to know whose audio a packet is: the group key is per-member, and a packet that
+        # cannot be attributed cannot be decrypted.
+        self._speakers = {}
         self._playing = threading.Event()
         self._current_speech = None
+
+        # The listening half. Started only when somebody asks Aurora to listen, because receiving
+        # what people say is not something to do by default for being in the room.
+        self._listening = threading.Event()
+        self._receiver = None
 
         self.state = "disconnected"
         self.detail = None
@@ -360,6 +370,14 @@ class VoiceTransport:
             self._step("ready")
             return interval
 
+        if op == SPEAKING:
+            # Discord says which stream belongs to whom. Everything downstream — attribution,
+            # end-to-end decryption, and not mistaking one person for another — rests on this.
+            if data.get("ssrc") and data.get("user_id"):
+                self._speakers[data["ssrc"]] = data["user_id"]
+
+            return interval
+
         if op == DAVE_PREPARE_TRANSITION:
             self._dave_pending[data["transition_id"]] = data["protocol_version"]
 
@@ -552,6 +570,67 @@ class VoiceTransport:
         self._sequence = (self._sequence + 1) & 0xFFFF
         self._timestamp = (self._timestamp + opus_codec.SAMPLES_PER_FRAME) & 0xFFFFFFFF
 
+    # ---- listening ----
+
+    def speaker_of(self, ssrc):
+        """Who this stream belongs to, as the voice gateway reported it."""
+        return self._speakers.get(ssrc)
+
+    def listen(self, on_audio):
+        """Starts reading what participants say. `on_audio(ssrc, pcm, at_ms)` per packet."""
+        if self._receiver and self._receiver.is_alive():
+            self._on_audio = on_audio
+            return
+
+        self._on_audio = on_audio
+        self._listening.set()
+        self._receiver = threading.Thread(target=self._receive_loop, daemon=True)
+        self._receiver.start()
+
+    def deafen(self):
+        """Stops reading. The socket stays open, because Aurora is still in the call."""
+        self._listening.clear()
+
+    def _receive_loop(self):
+        """Reads the audio Discord sends, decrypts it, decodes it, and hands it on.
+
+        Its own thread because audio arrives every twenty milliseconds whether or not anything is
+        ready for it, and a socket nobody drains fills its buffer and starts dropping — which
+        sounds like a bad connection rather than like a program that was busy.
+        """
+        while self._listening.is_set() and not self._stop.is_set():
+            udp = self._udp
+
+            if udp is None:
+                return
+
+            try:
+                udp.settimeout(0.5)
+                packet, _ = udp.recvfrom(4096)
+            except (TimeoutError, OSError) as quiet:
+                if isinstance(quiet, OSError) and not isinstance(quiet, TimeoutError) \
+                        and "timed out" not in str(quiet):
+                    return
+                continue
+
+            try:
+                heard = self.receive_packet(packet)
+            except Exception:
+                # One bad packet is one bad packet. Twenty milliseconds of somebody's sentence is
+                # not worth ending the session over.
+                continue
+
+            if heard is None or self._on_audio is None:
+                continue
+
+            ssrc, pcm = heard
+
+            try:
+                self._on_audio(ssrc, pcm, int(time.monotonic() * 1000))
+            except Exception:
+                # Whatever is downstream failing must not stop the audio arriving.
+                continue
+
     def stop(self):
         """Cuts off whatever is playing. Safe to call when nothing is."""
         self._playing.clear()
@@ -559,6 +638,7 @@ class VoiceTransport:
     def close(self):
         self._stop.set()
         self._playing.clear()
+        self._listening.clear()
         self._teardown()
 
     def _teardown(self):
@@ -609,6 +689,23 @@ class VoiceTransport:
             # A packet that does not authenticate is one somebody else wrote. Dropped silently:
             # there is nothing to report and nothing to be done about it.
             return None
+
+        if self._dave is not None and self._dave_version > 0 and self._dave.ready:
+            speaker = self._speakers.get(ssrc)
+
+            if speaker is None:
+                # Audio from a stream nobody has claimed. It cannot be decrypted, because the group
+                # key is per-member, and it must not be guessed at: attributing somebody's words to
+                # the wrong person is worse than losing them.
+                return None
+
+            try:
+                # Encrypted twice: once for the transport, which the step above undid, and once for
+                # the group. Without this the bytes decode into noise, which sounds like a codec
+                # fault and is not one.
+                opus_packet = self._dave.decrypt(int(speaker), 0, opus_packet)
+            except Exception:
+                return None
 
         if ssrc not in self._decoders:
             # One decoder per speaker, because Opus carries state between frames and mixing two

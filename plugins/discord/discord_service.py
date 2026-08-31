@@ -614,18 +614,121 @@ def voice_leave(state, args, nonce=None):
 
 def voice_listen(state, args, nonce=None):
     session = state.get("voice")
+    transport = state.get("voice_transport")
 
-    if session is None:
+    if session is None or transport is None:
         raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
 
-    if args["enabled"]:
-        ready = voice_engines.readiness()
+    if not args["enabled"]:
+        transport.deafen()
+        state["voice_listening"] = False
+        state.pop("voice_audio", None)
+        return {"listening": False}
 
-        if not ready["can_listen"]:
-            raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
+    ready = voice_engines.readiness()
 
-    state["voice_listening"] = bool(args["enabled"])
-    return {"listening": state["voice_listening"]}
+    if not ready["can_listen"]:
+        raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
+
+    # One buffer per speaker, holding only what they are saying right now. Cleared when the turn
+    # ends, because a recording of somebody's conversation is not something to keep.
+    heard = {}
+    state["voice_audio"] = heard
+
+    def on_audio(ssrc, pcm, at_ms):
+        # Whoever the voice gateway said this stream belongs to. Told to the session here rather
+        # than plumbed through two objects: the transport learns it, the session needs it.
+        speaker_id = transport.speaker_of(ssrc)
+
+        if speaker_id is not None and session.speaker_for(ssrc) is None:
+            session.identify_speaker(ssrc, speaker_id)
+
+        for action, detail in session.audio(ssrc, at_ms):
+            if action == "speaker_started":
+                heard[detail["user_id"]] = bytearray()
+
+        speaker = session.speaker_for(ssrc)
+
+        if speaker is not None and speaker in heard:
+            heard[speaker].extend(pcm)
+
+    transport.listen(on_audio)
+
+    # A second thread does nothing but notice silence. A turn ends because somebody stopped
+    # talking, and nothing arrives to tell you that.
+    if not state.get("voice_turns"):
+        state["voice_turns"] = True
+        threading.Thread(target=_watch_turns, args=(state,), daemon=True).start()
+
+    state["voice_listening"] = True
+    return {"listening": True}
+
+
+def _watch_turns(state):
+    """Ends turns on silence and turns each one into a transcript.
+
+    Separate from the audio thread on purpose: recognition takes as long as it takes, and doing it
+    where the packets arrive would stop draining the socket while somebody is still speaking.
+    """
+    engine = voice_engines.find_stt()
+
+    while state.get("voice_listening"):
+        time.sleep(0.25)
+
+        session = state.get("voice")
+        heard = state.get("voice_audio")
+
+        if session is None or heard is None:
+            continue
+
+        for action, detail in session.tick(int(time.monotonic() * 1000)):
+            if action != "utterance_ended":
+                heard.pop(detail.get("user_id"), None)
+                continue
+
+            speaker = detail["user_id"]
+            audio = bytes(heard.pop(speaker, b""))
+
+            if not audio:
+                continue
+
+            try:
+                transcript = voice_engines.transcribe(engine, _wav(audio))
+            except Exception as unheard:
+                report("voice.not_understood", {
+                    "speaker_id": speaker,
+                    "reason": type(unheard).__name__,
+                })
+                continue
+
+            if not transcript.strip():
+                continue
+
+            decision = utterance_heard(
+                state, speaker, transcript, int(time.monotonic() * 1000))
+
+            # The raw audio is gone by here. What leaves this function is words, and only because
+            # somebody asked Aurora to listen.
+            if decision["speak"] and conversation_window(state) is not None:
+                time.sleep((decision.get("delay_ms") or 0) / 1000.0)
+                report("voice.wants_to_answer", {
+                    "speaker_id": speaker,
+                    "transcript": transcript,
+                    "reason": decision["reason"],
+                })
+
+
+def _wav(pcm):
+    """Wraps raw 48kHz stereo PCM in the header the speech programs expect."""
+    import struct as _struct
+
+    channels, rate, bits = 2, 48000, 16
+    block = channels * bits // 8
+
+    return (
+        b"RIFF" + _struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt "
+        + _struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
+        + b"data" + _struct.pack("<I", len(pcm)) + pcm)
 
 
 def voice_speak(state, args, nonce=None):
