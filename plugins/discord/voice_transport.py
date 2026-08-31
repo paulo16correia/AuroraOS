@@ -204,6 +204,7 @@ class VoiceTransport:
         self.unattributed = 0
         self.undecryptable = 0
         self.decoded = 0
+        self.silence = 0
 
         # The first packet's header, as hex. Header bytes only — version, payload type, sequence,
         # timestamp and ssrc — which say how the packet is framed and nothing about what was said.
@@ -652,6 +653,7 @@ class VoiceTransport:
             "unattributed": self.unattributed,
             "undecryptable": self.undecryptable,
             "decoded": self.decoded,
+            "silence": self.silence,
             "speakers": len(self._speakers),
             "e2ee_ready": bool(self._dave is not None and self._dave.ready),
             "first_header": self.first_header,
@@ -862,6 +864,16 @@ class VoiceTransport:
             # One decoder per speaker, because Opus carries state between frames and mixing two
             # people through one decoder produces artefacts that sound like a bad connection.
             self._decoders[ssrc] = opus_codec.Decoder()
+
+        if opus_packet == opus_codec.silence():
+            # Discord's clients transmit silence between utterances, continuously, whether anybody
+            # is talking or not. Treating those as speech means somebody is always speaking: Aurora
+            # is cut off mid-sentence by a room saying nothing, and every buffer fills with the
+            # audio equivalent of a blank page.
+            #
+            # This module has emitted these since it was written and never recognised one arriving.
+            self.silence += 1
+            return None
 
         try:
             pcm = self._decoders[ssrc].decode(opus_packet)

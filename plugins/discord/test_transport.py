@@ -250,3 +250,42 @@ class ControlPackets(unittest.TestCase):
     def test_a_runt_is_not_mistaken_for_either(self):
         self.assertFalse(vt.is_rtcp(b"\x80"))
 
+
+class Silence(unittest.TestCase):
+    """The frames a room sends when nobody is talking."""
+
+    @unittest.skipUnless(opus_codec.available(), "libopus is not installed")
+    def test_a_silence_frame_is_not_somebody_speaking(self):
+        key = crypto.random_key()
+
+        header = vt.rtp_header(1, 0, 0x01020304)
+        nonce = vt.nonce_for(1)
+        packet = header + crypto.encrypt(key, nonce, opus_codec.silence(), header) + nonce[:4]
+
+        transport = vt.VoiceTransport(
+            "example.invalid:2087", "1", "2", "session", "token", channel_id="3")
+        transport._key = key
+
+        # Discord's clients transmit these continuously between utterances. Treating them as
+        # speech means somebody is always speaking, which cuts Aurora off mid-sentence and fills
+        # every buffer with the audio equivalent of a blank page.
+        self.assertIsNone(transport.receive_packet(packet))
+        self.assertEqual(transport.silence, 1)
+        self.assertEqual(transport.decoded, 0)
+
+    @unittest.skipUnless(opus_codec.available(), "libopus is not installed")
+    def test_real_audio_still_gets_through(self):
+        key = crypto.random_key()
+        encoder = opus_codec.Encoder()
+
+        header = vt.rtp_header(2, 960, 0x01020304)
+        nonce = vt.nonce_for(2)
+        packet = header + crypto.encrypt(key, nonce, encoder.encode(tone()), header) + nonce[:4]
+
+        transport = vt.VoiceTransport(
+            "example.invalid:2087", "1", "2", "session", "token", channel_id="3")
+        transport._key = key
+
+        self.assertIsNotNone(transport.receive_packet(packet))
+        self.assertEqual(transport.silence, 0)
+
