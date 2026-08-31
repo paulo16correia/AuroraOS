@@ -114,9 +114,14 @@ internal sealed class ServiceProcess : IAsyncDisposable
         start.Environment.Clear();
         start.Environment["AURORA_PLUGIN_ID"] = _manifest.PluginId;
         start.Environment["AURORA_MODE"] = "service";
+        // The system directories, plus where package managers put things. A plugin that needs a
+        // local program — speech recognition, a codec tool — finds it here or not at all, and
+        // "not at all" reads as the feature being unavailable rather than as a path being short.
+        // Still a fixed list rather than the owner's own PATH, which can name a directory
+        // anybody can write to.
         start.Environment["PATH"] = OperatingSystem.IsWindows()
             ? "C:\\Windows\\System32"
-            : "/usr/bin:/bin";
+            : "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin";
 
         try
         {

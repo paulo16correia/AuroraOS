@@ -88,10 +88,18 @@ public sealed class MacOsSandbox : IPluginSandbox
         if (network)
         {
             profile.Append("(allow network-outbound (remote tcp))");
-
-            // Resolving a name needs the resolver, which is a local unix socket, and UDP 53.
             profile.Append("(allow network-outbound (remote udp))");
             profile.Append("(allow system-socket)");
+
+            // And the resolver, which on macOS is neither TCP nor UDP: name lookups go to
+            // mDNSResponder over a unix socket. Without this a plugin granted the network can
+            // open a connection to an address and cannot find out what any address is, which
+            // surfaces as gaierror and looks like the network being down rather than a rule
+            // being missing.
+            //
+            // Named as one literal rather than allowing unix sockets generally, so this grants
+            // the plugin name resolution and not a channel to every other daemon on the machine.
+            profile.Append("(allow network-outbound (literal \"/private/var/run/mDNSResponder\"))");
         }
 
         return profile.ToString();

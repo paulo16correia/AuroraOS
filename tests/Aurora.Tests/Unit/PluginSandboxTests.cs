@@ -414,4 +414,70 @@ public sealed class PluginSandboxTests
         Assert.Contains("/usr/bin/bwrap", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Environment.GetEnvironmentVariable(\"PATH\")", source, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task APluginGrantedTheNetworkCanResolveANameAndNotOnlyReachAnAddress()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        (string root, string script) = await PluginAsync(
+            "if /usr/bin/python3 -c \"import socket;socket.gethostbyname('localhost')\" 2>/dev/null; "
+            + "then printf '{\"dns\":\"works\"}'; else printf '{\"dns\":\"blocked\"}'; fi");
+
+        try
+        {
+            var host = new SubprocessPluginHost(root, new MacOsSandbox(), allowUnconfined: false);
+
+            PluginManifest granted = Manifest(script) with { NetworkEndpoints = ["example.com"] };
+
+            PluginResult result = await host.InvokeAsync(
+                granted,
+                Call() with { NetworkGranted = true },
+                Ct);
+
+            // On macOS a name lookup is neither TCP nor UDP — it goes to mDNSResponder over a unix
+            // socket. Allowing outbound TCP and nothing else gives a plugin the ability to connect
+            // to an address while being unable to discover any, which surfaces as gaierror and
+            // reads like the network being down rather than a rule being missing. Found by
+            // connecting the Discord plugin to the real gateway (docs/adr/0067).
+            Assert.True(result.Ok, result.Detail);
+            Assert.Contains("works", result.OutputJson!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task APluginWithoutTheGrantStillCannotResolveAnything()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        (string root, string script) = await PluginAsync(
+            "if /usr/bin/python3 -c \"import socket;socket.gethostbyname('example.com')\" 2>/dev/null; "
+            + "then printf '{\"dns\":\"works\"}'; else printf '{\"dns\":\"blocked\"}'; fi");
+
+        try
+        {
+            var host = new SubprocessPluginHost(root, new MacOsSandbox(), allowUnconfined: false);
+
+            // The default. Nothing about adding the resolver rule may leak it to a plugin the
+            // owner never granted the network to.
+            PluginResult result = await host.InvokeAsync(Manifest(script), Call(), Ct);
+
+            Assert.True(result.Ok, result.Detail);
+            Assert.Contains("blocked", result.OutputJson!, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
 }
