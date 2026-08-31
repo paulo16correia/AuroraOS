@@ -626,6 +626,17 @@ class VoiceTransport:
                 pass
 
     def _send_frame(self, opus_packet):
+        if self._dave is not None and self._dave_version > 0 and self._dave.ready:
+            # End-to-end, before the transport layer. Everybody else in the call decrypts with the
+            # group key, and audio that skipped this arrives as noise they cannot read — while
+            # Discord, which only handles the transport, accepts the stream and lights the ring
+            # that says Aurora is speaking.
+            #
+            # That is what "the bot went green and said nothing" was: the receive path had been
+            # decrypting with the group key since DAVE was added, and the send path never
+            # encrypted with it. One direction written, the other assumed.
+            opus_packet = self._dave.encrypt_opus(opus_packet)
+
         header = rtp_header(self._sequence, self._timestamp, self._ssrc)
 
         self._nonce_counter += 1
