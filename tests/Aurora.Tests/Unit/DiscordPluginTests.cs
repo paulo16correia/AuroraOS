@@ -28,6 +28,8 @@ public sealed class DiscordPluginTests : IDisposable
     public void Dispose() => _discord.Dispose();
 
     /// <summary>Copies the real plugin somewhere it can be run, pointed at the fake.</summary>
+    private string _executable = string.Empty;
+
     private string PluginRoot()
     {
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
@@ -51,6 +53,7 @@ public sealed class DiscordPluginTests : IDisposable
         }
 
         var executable = Path.Combine(directory, "discord_service.py");
+        _executable = executable;
 
         if (!OperatingSystem.IsWindows())
         {
@@ -71,7 +74,7 @@ public sealed class DiscordPluginTests : IDisposable
     }
 
     /// <summary>The real manifest, with the host swapped for the stand-in's.</summary>
-    private static PluginManifest Manifest(params string[] endpoints)
+    private PluginManifest Manifest(params string[] endpoints)
     {
         var repository = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -88,6 +91,8 @@ public sealed class DiscordPluginTests : IDisposable
 
         return read.Manifest! with
         {
+            Executable = _executable,
+            Service = read.Manifest!.Service! with { Executable = _executable },
             NetworkEndpoints = endpoints.Length > 0 ? endpoints : ["127.0.0.1"],
         };
     }

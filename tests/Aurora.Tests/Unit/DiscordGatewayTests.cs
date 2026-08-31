@@ -74,6 +74,8 @@ public sealed class DiscordGatewayTests : IDisposable
         return directory!;
     }
 
+    private string _executable = string.Empty;
+
     private string PluginRoot()
     {
         var root = TestTemp.Folder("discord-gw");
@@ -87,10 +89,12 @@ public sealed class DiscordGatewayTests : IDisposable
             File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
         }
 
+        _executable = Path.Combine(directory, "discord_service.py");
+
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(
-                Path.Combine(directory, "discord_service.py"),
+                _executable,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
@@ -101,7 +105,7 @@ public sealed class DiscordGatewayTests : IDisposable
         return root;
     }
 
-    private static PluginManifest Manifest()
+    private PluginManifest Manifest()
     {
         var json = File.ReadAllText(
             Path.Combine(Repository().FullName, "plugins", "discord", "plugin.json"));
@@ -109,7 +113,9 @@ public sealed class DiscordGatewayTests : IDisposable
         PluginManifestRead read = PluginManifestReader.Read(json, []);
         Assert.True(read.Ok, string.Join("; ", read.Problems));
 
-        return read.Manifest! with { NetworkEndpoints = ["127.0.0.1"] };
+        return read.Manifest! with {
+            Executable = _executable,
+            Service = read.Manifest!.Service! with { Executable = _executable }, NetworkEndpoints = ["127.0.0.1"] };
     }
 
     private ServicePluginHost Host(Observations observations) =>

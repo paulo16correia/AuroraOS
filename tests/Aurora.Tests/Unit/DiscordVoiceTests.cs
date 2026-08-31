@@ -24,6 +24,9 @@ public sealed class DiscordVoiceTests : IDisposable
 
     private readonly FakeDiscord _discord = new();
 
+    /// <summary>Where the copy of the plugin was put — what install seals into the manifest.</summary>
+    private string _executable = string.Empty;
+
     public void Dispose() => _discord.Dispose();
 
     private static DirectoryInfo Repository()
@@ -201,10 +204,12 @@ public sealed class DiscordVoiceTests : IDisposable
             File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
         }
 
+        _executable = Path.Combine(directory, "discord_service.py");
+
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(
-                Path.Combine(directory, "discord_service.py"),
+                _executable,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
@@ -215,6 +220,8 @@ public sealed class DiscordVoiceTests : IDisposable
         var json = File.ReadAllText(Path.Combine(PluginSource(), "plugin.json"));
         PluginManifest manifest = PluginManifestReader.Read(json, []).Manifest! with
         {
+            Executable = _executable,
+            Service = PluginManifestReader.Read(json, []).Manifest!.Service! with { Executable = _executable },
             NetworkEndpoints = ["127.0.0.1"],
         };
 
@@ -264,10 +271,12 @@ public sealed class DiscordVoiceTests : IDisposable
             File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
         }
 
+        _executable = Path.Combine(directory, "discord_service.py");
+
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(
-                Path.Combine(directory, "discord_service.py"),
+                _executable,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
@@ -278,6 +287,8 @@ public sealed class DiscordVoiceTests : IDisposable
         var json = File.ReadAllText(Path.Combine(PluginSource(), "plugin.json"));
         PluginManifest manifest = PluginManifestReader.Read(json, []).Manifest! with
         {
+            Executable = _executable,
+            Service = PluginManifestReader.Read(json, []).Manifest!.Service! with { Executable = _executable },
             NetworkEndpoints = ["127.0.0.1"],
         };
 
@@ -325,10 +336,12 @@ public sealed class DiscordVoiceTests : IDisposable
             File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
         }
 
+        _executable = Path.Combine(directory, "discord_service.py");
+
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(
-                Path.Combine(directory, "discord_service.py"),
+                _executable,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
@@ -339,6 +352,8 @@ public sealed class DiscordVoiceTests : IDisposable
         var json = File.ReadAllText(Path.Combine(PluginSource(), "plugin.json"));
         PluginManifest manifest = PluginManifestReader.Read(json, []).Manifest! with
         {
+            Executable = _executable,
+            Service = PluginManifestReader.Read(json, []).Manifest!.Service! with { Executable = _executable },
             NetworkEndpoints = ["127.0.0.1"],
         };
 

@@ -224,9 +224,25 @@ public sealed class ServicePluginHost
             secrets[required.Name] = value;
         }
 
-        var directory = Path.Combine(_root, Slug(manifest.PluginId));
-        var executable = Path.Combine(directory, declared.Executable);
-        var working = Path.Combine(directory, "work");
+        // The manifest's executable, resolved at install and sealed into it — the same path the
+        // one-shot host runs. Composing one from the plugin root instead invents a layout that
+        // `plugin install` does not create, so the file is never there and every call fails with
+        // the process refusing to start.
+        if (string.IsNullOrWhiteSpace(manifest.Executable))
+        {
+            var missing = new PluginServiceState(
+                manifest.PluginId, PluginServiceStatus.Failed, failures,
+                "the manifest names nothing to run");
+
+            _running[manifest.PluginId] = ServiceProcess.NeverStarted(missing);
+            return missing;
+        }
+
+        var executable = manifest.Executable;
+
+        // Its own directory under the plugin root, the one place it may write, exactly as a
+        // one-shot plugin gets.
+        var working = Path.Combine(_root, manifest.PluginId);
         Directory.CreateDirectory(working);
 
         SandboxPlan plan = _sandbox.Plan(
@@ -300,6 +316,4 @@ public sealed class ServicePluginHost
         _starting.Clear();
     }
 
-    private static string Slug(string pluginId) =>
-        pluginId.Replace('/', '-').Replace('\\', '-');
 }

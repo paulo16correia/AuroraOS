@@ -88,11 +88,17 @@ public sealed class ServicePluginTests
                     "kind": "result", "id": frame["id"], "ok": True, "output": {}}), flush=True)
         """;
 
-    private static async Task<string> RootAsync(string pluginId, string body)
+    /// <summary>Where a plugin's files live and where Aurora lets it work.</summary>
+    private sealed record Installed(string Root, string Executable);
+
+    private static async Task<Installed> RootAsync(string pluginId, string body)
     {
         var root = TestTemp.Folder("svc");
-        var directory = Path.Combine(root, pluginId.Replace('/', '-'));
-        Directory.CreateDirectory(Path.Combine(directory, "work"));
+
+        // Where the plugin's files actually live, which is wherever its author put them — the
+        // manifest carries the path, sealed at install. Not under the plugin root: that is only
+        // the working directory Aurora hands it.
+        var directory = TestTemp.Folder("svc-files");
 
         // A real executable, because that is what a plugin is: the sandbox launches a program,
         // not an interpreter Aurora chose on the plugin's behalf.
@@ -105,10 +111,11 @@ public sealed class ServicePluginTests
                 script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
 
-        return root;
+        return new Installed(root, script);
     }
 
     private static PluginManifest Manifest(
+        string executable,
         string pluginId = "plugin/svc", string[]? effects = null, int timeoutSeconds = 3) =>
         new(
             pluginId, "1.0.0", "acme", "", MinPlatformVersion: 1,
@@ -122,8 +129,8 @@ public sealed class ServicePluginTests
             EventSubscriptions: [], RequiredPermissions: [],
             MaxDataClass: Sensitivity.Private, NetworkEndpoints: [],
             DocumentationRef: "docs", IntegrityHash: "",
-            Service: new PluginService(
-                "service.py", TimeSpan.FromSeconds(10)),
+            Executable: executable,
+            Service: new PluginService(executable, TimeSpan.FromSeconds(10)),
             RequiredSecrets: [new PluginSecretRequirement("token", "the bot token")]);
 
     private sealed class Secrets : IPluginSecretSource
@@ -166,11 +173,11 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AServiceStartsOnceAndAnswersManyCalls()
     {
-        var root = await RootAsync("plugin/svc", Answers);
+        Installed installed = await RootAsync("plugin/svc", Answers);
         var observations = new Observations();
-        await using ServicePluginHost host = Host(root, observations);
+        await using ServicePluginHost host = Host(installed.Root, observations);
 
-        PluginManifest manifest = Manifest();
+        PluginManifest manifest = Manifest(installed.Executable);
 
         PluginResult first = await host.InvokeAsync(manifest, Call("""{"n":1}"""), Ct);
         PluginResult second = await host.InvokeAsync(manifest, Call("""{"n":2}"""), Ct);
@@ -193,10 +200,10 @@ public sealed class ServicePluginTests
     {
         // The answering plugin prints a non-JSON line before every result. An interpreter warning
         // or a forgotten print is normal, and must not desynchronise the stream.
-        var root = await RootAsync("plugin/svc", Answers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Answers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
-        PluginResult result = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult result = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
 
         Assert.True(result.Ok, result.Detail);
     }
@@ -204,11 +211,11 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task WhatAServiceReportsArrivesAsAnObservation()
     {
-        var root = await RootAsync("plugin/svc", Answers);
+        Installed installed = await RootAsync("plugin/svc", Answers);
         var observations = new Observations();
-        await using ServicePluginHost host = Host(root, observations);
+        await using ServicePluginHost host = Host(installed.Root, observations);
 
-        await host.InvokeAsync(Manifest(), Call(), Ct);
+        await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
 
         // The plugin volunteered this; nothing asked for it.
         PluginObservation reported = Assert.Single(observations.Seen);
@@ -222,10 +229,10 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task TheSecretReachesThePluginAndNothingElse()
     {
-        var root = await RootAsync("plugin/svc", Answers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Answers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
-        PluginResult result = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult result = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
 
         Assert.True(result.Ok, result.Detail);
 
@@ -242,11 +249,11 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AServiceWhoseSecretIsMissingIsNeverStarted()
     {
-        var root = await RootAsync("plugin/svc", Answers);
+        Installed installed = await RootAsync("plugin/svc", Answers);
         await using ServicePluginHost host = Host(
-            root, new Observations(), new Secrets { Value = null });
+            installed.Root, new Observations(), new Secrets { Value = null });
 
-        PluginResult refused = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult refused = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
 
         Assert.False(refused.Ok);
         Assert.Equal(PluginRefusal.ServiceUnavailable, refused.Refusal);
@@ -262,11 +269,11 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AWriteThatGetsNoAnswerIsUnknownRatherThanFailed()
     {
-        var root = await RootAsync("plugin/svc", NeverAnswers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", NeverAnswers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
         PluginResult result = await host.InvokeAsync(
-            Manifest(effects: ["discord.message.send"], timeoutSeconds: 2), Call(), Ct);
+            Manifest(installed.Executable, effects: ["discord.message.send"], timeoutSeconds: 2), Call(), Ct);
 
         Assert.False(result.Ok);
 
@@ -278,12 +285,12 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AReadThatGetsNoAnswerIsSimplyFailed()
     {
-        var root = await RootAsync("plugin/svc", NeverAnswers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", NeverAnswers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
         // Nothing happened and asking again is free, so there is nothing ambiguous about it.
         PluginResult result = await host.InvokeAsync(
-            Manifest(effects: [], timeoutSeconds: 2), Call(), Ct);
+            Manifest(installed.Executable, effects: [], timeoutSeconds: 2), Call(), Ct);
 
         Assert.False(result.Ok);
         Assert.Equal("timed_out", result.Refusal);
@@ -292,11 +299,11 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task APluginMaySayItDoesNotKnow()
     {
-        var root = await RootAsync("plugin/svc", Unsure);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Unsure);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
         PluginResult result = await host.InvokeAsync(
-            Manifest(effects: ["discord.message.send"]), Call(), Ct);
+            Manifest(installed.Executable, effects: ["discord.message.send"]), Call(), Ct);
 
         // Refusing to hear this would push authors towards guessing, and a guess here is a
         // duplicate message or a lost one.
@@ -310,10 +317,10 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task StoppingAServiceEndsTheProcess()
     {
-        var root = await RootAsync("plugin/svc", Answers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Answers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
-        await host.InvokeAsync(Manifest(), Call(), Ct);
+        await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
         Assert.Single(host.Running());
 
         await host.StopAsync("plugin/svc", Ct);
@@ -324,10 +331,10 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task APluginWithNoServiceIsNotAServicePlugin()
     {
-        var root = await RootAsync("plugin/svc", Answers);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Answers);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
-        PluginManifest oneShot = Manifest() with { Service = null };
+        PluginManifest oneShot = Manifest(installed.Executable) with { Service = null };
 
         // The two hosts are not interchangeable and saying so is better than starting nothing and
         // timing out.
@@ -338,15 +345,15 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task APluginThatWritesToStderrIsNotStuckBehindIt()
     {
-        var root = await RootAsync("plugin/svc", Noisy);
-        await using ServicePluginHost host = Host(root, new Observations());
+        Installed installed = await RootAsync("plugin/svc", Noisy);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
         // stderr is redirected, so if nothing drains it the pipe fills at about 64KB and the
         // plugin blocks in the middle of a write it will never finish. From Aurora's side that
         // looks exactly like a plugin that stopped answering, which is the worst kind of bug:
         // it only happens to plugins that log, and only once they have logged enough.
         PluginResult result = await host.InvokeAsync(
-            Manifest(timeoutSeconds: 10), Call(), Ct);
+            Manifest(installed.Executable, timeoutSeconds: 10), Call(), Ct);
 
         Assert.True(result.Ok, result.Detail);
     }
@@ -356,28 +363,29 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AServiceThatWillNotStartIsNotStartedAgainOnEveryCall()
     {
-        // No script at the declared path, which is what a broken install looks like.
+        // The manifest names a program that is not there, which is what a broken install looks
+        // like from the host's side.
         var root = TestTemp.Folder("svc-missing");
-        Directory.CreateDirectory(Path.Combine(root, "plugin-svc", "work"));
+        PluginManifest manifest = Manifest(Path.Combine(root, "not-installed.py"));
 
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
         await using ServicePluginHost host = Host(root, new Observations(), clock: clock);
 
-        PluginResult first = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult first = await host.InvokeAsync(manifest, Call(), Ct);
         Assert.False(first.Ok);
         Assert.Equal(PluginRefusal.ServiceUnavailable, first.Refusal);
 
         // The second call inside the backoff window does not spawn anything. Without this a
         // service that dies on startup is restarted once per call, which turns a broken plugin
         // into a process storm and buries the real failure under its own retries.
-        PluginResult second = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult second = await host.InvokeAsync(manifest, Call(), Ct);
 
         Assert.False(second.Ok);
         Assert.Contains("before starting again", second.Detail, StringComparison.Ordinal);
 
         // And past the window it is willing to try once more.
         clock.UtcNow = clock.UtcNow.AddMinutes(1);
-        PluginResult third = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult third = await host.InvokeAsync(manifest, Call(), Ct);
 
         Assert.DoesNotContain("before starting again", third.Detail, StringComparison.Ordinal);
     }
@@ -385,13 +393,13 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task FixingWhatWasBrokenTakesEffectOnTheNextCall()
     {
-        var root = await RootAsync("plugin/svc", Answers);
+        Installed installed = await RootAsync("plugin/svc", Answers);
         var clock = new TestClock(DateTimeOffset.UnixEpoch);
         var secrets = new Secrets { Value = null };
 
-        await using ServicePluginHost host = Host(root, new Observations(), secrets, clock);
+        await using ServicePluginHost host = Host(installed.Root, new Observations(), secrets, clock);
 
-        PluginResult refused = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult refused = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
         Assert.False(refused.Ok);
         Assert.Contains(PluginRefusal.SecretMissing, refused.Detail, StringComparison.Ordinal);
 
@@ -400,8 +408,8 @@ public sealed class ServicePluginTests
         // wait out a backoff for having fixed the problem is punishing the fix.
         await host.StopAsync("plugin/svc", Ct);
 
-        await using ServicePluginHost restarted = Host(root, new Observations(), clock: clock);
-        PluginResult ok = await restarted.InvokeAsync(Manifest(), Call(), Ct);
+        await using ServicePluginHost restarted = Host(installed.Root, new Observations(), clock: clock);
+        PluginResult ok = await restarted.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
 
         Assert.True(ok.Ok, ok.Detail);
     }
@@ -409,7 +417,7 @@ public sealed class ServicePluginTests
     [Fact]
     public async Task AnAnswerInTheWrongShapeRefusesOneCallRatherThanTheConnection()
     {
-        var root = await RootAsync("plugin/svc", """
+        Installed installed = await RootAsync("plugin/svc", """
             import json, sys
             calls = []
             for line in sys.stdin:
@@ -428,14 +436,14 @@ public sealed class ServicePluginTests
                             "output": {"second": True}}), flush=True)
             """);
 
-        await using ServicePluginHost host = Host(root, new Observations());
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
 
-        PluginResult wrong = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult wrong = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
         Assert.False(wrong.Ok);
 
         // The connection survives. A plugin being wrong should cost one call, not every other call
         // in flight over the socket it was holding.
-        PluginResult after = await host.InvokeAsync(Manifest(), Call(), Ct);
+        PluginResult after = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
         Assert.True(after.Ok, after.Detail);
         Assert.Contains("second", after.OutputJson!, StringComparison.Ordinal);
     }
