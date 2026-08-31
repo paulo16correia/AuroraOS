@@ -513,4 +513,40 @@ public sealed class ServicePluginTests
         public Task ReceiveAsync(PluginObservation observation, CancellationToken ct) =>
             throw new InvalidOperationException("the contract refused this event");
     }
+
+    [Fact]
+    public async Task WhatTheInvocationWasGrantedReachesTheSandbox()
+    {
+        Installed installed = await RootAsync("plugin/svc", Answers);
+        var sandbox = new RecordingSandbox();
+
+        await using ServicePluginHost host = new(
+            installed.Root, sandbox, new Secrets(), new Observations(),
+            new TestClock(DateTimeOffset.UnixEpoch), allowUnconfined: true);
+
+        await host.InvokeAsync(
+            Manifest(installed.Executable),
+            Call() with { NetworkGranted = true, GpuGranted = true },
+            Ct);
+
+        // Stored, asked for, refused when absent — and then not passed to the thing that enforces
+        // it. Both grants were wired through the contracts and neither reached the sandbox from
+        // this host, so a plugin the owner had granted the GPU still crashed on Metal. Nothing
+        // failed to compile and no test noticed, because every test of the profile built a request
+        // by hand.
+        Assert.NotNull(sandbox.Last);
+        Assert.True(sandbox.Last!.NetworkGranted, "the network grant did not reach the sandbox");
+        Assert.True(sandbox.Last!.GpuGranted, "the GPU grant did not reach the sandbox");
+    }
+
+    private sealed class RecordingSandbox : IPluginSandbox
+    {
+        public SandboxRequest? Last { get; private set; }
+
+        public SandboxPlan Plan(SandboxRequest request)
+        {
+            Last = request;
+            return new UnconfinedSandbox("recording what it was asked").Plan(request);
+        }
+    }
 }

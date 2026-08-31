@@ -87,8 +87,8 @@ public sealed class ServicePluginHost
 
         var stopwatch = Stopwatch.StartNew();
 
-        PluginServiceState state =
-            await EnsureRunningAsync(manifest, invocation.NetworkGranted, ct).ConfigureAwait(false);
+        PluginServiceState state = await EnsureRunningAsync(
+            manifest, invocation.NetworkGranted, invocation.GpuGranted, ct).ConfigureAwait(false);
 
         if (state.Status != PluginServiceStatus.Ready
             || !_running.TryGetValue(manifest.PluginId, out ServiceProcess? service))
@@ -123,8 +123,12 @@ public sealed class ServicePluginHost
 
     // ---- supervising ----
 
+    public Task<PluginServiceState> EnsureRunningAsync(
+        PluginManifest manifest, bool networkGranted, CancellationToken ct) =>
+        EnsureRunningAsync(manifest, networkGranted, gpuGranted: false, ct);
+
     public async Task<PluginServiceState> EnsureRunningAsync(
-        PluginManifest manifest, bool networkGranted, CancellationToken ct)
+        PluginManifest manifest, bool networkGranted, bool gpuGranted, CancellationToken ct)
     {
         if (manifest.Service is null)
         {
@@ -175,8 +179,8 @@ public sealed class ServicePluginHost
                 await existing.DisposeAsync().ConfigureAwait(false);
             }
 
-            PluginServiceState started =
-                await StartAsync(manifest, networkGranted, failures, ct).ConfigureAwait(false);
+            PluginServiceState started = await StartAsync(
+                manifest, networkGranted, gpuGranted, failures, ct).ConfigureAwait(false);
 
             if (started.Status == PluginServiceStatus.Ready)
             {
@@ -196,7 +200,8 @@ public sealed class ServicePluginHost
     }
 
     private async Task<PluginServiceState> StartAsync(
-        PluginManifest manifest, bool networkGranted, int failures, CancellationToken ct)
+        PluginManifest manifest, bool networkGranted, bool gpuGranted, int failures,
+        CancellationToken ct)
     {
         PluginService declared = manifest.Service!;
 
@@ -246,7 +251,8 @@ public sealed class ServicePluginHost
         Directory.CreateDirectory(working);
 
         SandboxPlan plan = _sandbox.Plan(
-            new SandboxRequest(manifest.PluginId, executable, working, networkGranted));
+            new SandboxRequest(
+                manifest.PluginId, executable, working, networkGranted, gpuGranted));
 
         if (plan.Level != SandboxLevel.Confined && !_allowUnconfined)
         {
