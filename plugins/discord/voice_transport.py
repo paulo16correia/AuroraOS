@@ -53,31 +53,51 @@ RTP_VERSION_FLAGS = 0x80
 RTP_PAYLOAD_TYPE = 0x78
 RTP_HEADER_BYTES = 12
 
+# RTCP payload types: sender report through application-defined. The same socket carries these,
+# and they are not audio — a receiver report decrypted as speech is a packet that never
+# authenticates, which looks exactly like a broken cipher.
+RTCP_TYPES = range(200, 205)
+
 FRAME_INTERVAL = opus_codec.FRAME_MS / 1000.0
 
 
-def rtp_header_length(packet):
-    """How much of this packet is header, which is what "rtpsize" means.
+def is_rtcp(packet):
+    """Whether this datagram is a control report rather than audio.
 
-    The twelve-byte fixed header is a floor, not the answer. Contributing sources add four bytes
-    each, and an extension adds a four-byte prefix plus its own length in words. The AAD for
-    `aead_xchacha20_poly1305_rtpsize` is exactly this run of bytes, so treating it as always twelve
-    authenticates the wrong thing and every packet fails to decrypt — silently, because a failed
-    tag looks the same as a forged packet.
+    Both arrive on the one socket. Telling them apart is the payload type byte, which for RTCP is
+    200 to 204 and for Discord's audio is 120 — a range chosen so the two can share a port, and
+    which is no use at all to a reader that does not check it.
+    """
+    return len(packet) > 1 and packet[1] in RTCP_TYPES
+
+
+def rtp_layout(packet):
+    """How an rtpsize packet is divided: what is authenticated, and what is skipped after.
+
+    Returns (aad_length, extension_bytes), or None if the packet is too short to be either.
+
+    The division is not the obvious one, and getting it wrong fails every packet with no clue why.
+    The authenticated span is the twelve-byte header, any contributing sources, and — when the
+    extension bit is set — only the extension's four-byte *prefix*. The extension's body is
+    encrypted along with the audio and skipped after decrypting, the way SRTP lays a packet out.
+    Putting the whole extension in the authenticated span instead authenticates eight bytes that
+    the sender encrypted, and the tag never matches.
     """
     if len(packet) < RTP_HEADER_BYTES:
         return None
 
-    length = RTP_HEADER_BYTES + 4 * (packet[0] & 0x0F)
+    aad = RTP_HEADER_BYTES + 4 * (packet[0] & 0x0F)
+    extension = 0
 
     if packet[0] & 0x10:
-        if len(packet) < length + 4:
+        if len(packet) < aad + 4:
             return None
 
-        (words,) = struct.unpack_from(">H", packet, length + 2)
-        length += 4 + 4 * words
+        (words,) = struct.unpack_from(">H", packet, aad + 2)
+        aad += 4
+        extension = 4 * words
 
-    return length if len(packet) > length else None
+    return (aad, extension) if len(packet) > aad else None
 
 
 def rtp_header(sequence, timestamp, ssrc):
@@ -171,11 +191,18 @@ class VoiceTransport:
         # no packets, packets it cannot attribute, packets it cannot decrypt — and they need
         # different fixes. Without counting them they look identical from outside.
         self.received = 0
+        self.control = 0
         self.malformed = 0
         self.unauthenticated = 0
         self.unattributed = 0
         self.undecryptable = 0
         self.decoded = 0
+
+        # The first packet's header, as hex. Header bytes only — version, payload type, sequence,
+        # timestamp and ssrc — which say how the packet is framed and nothing about what was said.
+        # Kept because "every packet fails to authenticate" has several causes and the framing is
+        # the one that can be read directly.
+        self.first_header = None
 
         self.state = "disconnected"
         self.detail = None
@@ -610,6 +637,7 @@ class VoiceTransport:
         """What arrived and what became of it."""
         return {
             "received": self.received,
+            "control": self.control,
             "malformed": self.malformed,
             "unauthenticated": self.unauthenticated,
             "unattributed": self.unattributed,
@@ -617,6 +645,7 @@ class VoiceTransport:
             "decoded": self.decoded,
             "speakers": len(self._speakers),
             "e2ee_ready": bool(self._dave is not None and self._dave.ready),
+            "first_header": self.first_header,
         }
 
     def speaker_of(self, ssrc):
@@ -661,6 +690,18 @@ class VoiceTransport:
                 continue
 
             self.received += 1
+
+            if is_rtcp(packet):
+                # Timing and loss statistics. Aurora has no use for them and they are not audio.
+                self.control += 1
+                continue
+
+            if self.first_header is None:
+                self.first_header = {
+                    "bytes": packet[:16].hex(),
+                    "length": len(packet),
+                    "layout": rtp_layout(packet),
+                }
 
             try:
                 heard = self.receive_packet(packet)
@@ -726,20 +767,26 @@ class VoiceTransport:
         if len(packet) < RTP_HEADER_BYTES + 4:
             return None
 
-        length = rtp_header_length(packet)
+        layout = rtp_layout(packet)
 
-        if length is None:
+        if layout is None:
             self.malformed += 1
             return None
 
-        header = packet[:length]
+        aad_length, extension_bytes = layout
+
+        header = packet[:aad_length]
         (ssrc,) = struct.unpack_from(">I", packet, 8)
 
         nonce = packet[-4:] + bytes(20)
-        body = packet[length:-4]
+        body = packet[aad_length:-4]
 
         try:
             opus_packet = crypto.decrypt(self._key, nonce, body, header)
+
+            # The extension's body was inside the ciphertext. Skipped now that it is readable —
+            # Aurora has no use for the header extensions, and the audio starts after them.
+            opus_packet = opus_packet[extension_bytes:]
         except ValueError:
             # A packet that does not authenticate is one somebody else wrote, or one this client
             # framed wrongly. Counted, because those two look identical from here and only the

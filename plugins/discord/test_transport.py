@@ -157,61 +157,96 @@ class RoundTrip(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
-class HeaderLength(unittest.TestCase):
-    """What "rtpsize" actually measures."""
+class Layout(unittest.TestCase):
+    """How an rtpsize packet divides, which is not the obvious way."""
 
-    def test_a_plain_header_is_twelve_bytes(self):
+    def test_a_plain_packet_authenticates_its_twelve_byte_header(self):
         packet = vt.rtp_header(1, 0, 99) + b"payload"
-        self.assertEqual(vt.rtp_header_length(packet), 12)
+        self.assertEqual(vt.rtp_layout(packet), (12, 0))
 
-    def test_contributing_sources_make_it_longer(self):
-        # Four bytes each, counted by the low nibble of the first byte.
+    def test_contributing_sources_join_the_authenticated_span(self):
         packet = bytearray(vt.rtp_header(1, 0, 99) + bytes(8) + b"payload")
         packet[0] = 0x82  # version 2, two CSRCs
 
-        self.assertEqual(vt.rtp_header_length(bytes(packet)), 12 + 8)
+        self.assertEqual(vt.rtp_layout(bytes(packet)), (12 + 8, 0))
 
-    def test_an_extension_makes_it_longer_by_its_own_length(self):
-        # The extension bit, then a four-byte prefix whose second half counts 32-bit words.
+    def test_only_the_extension_prefix_is_authenticated(self):
         packet = bytearray(vt.rtp_header(1, 0, 99))
-        packet[0] = 0x90  # version 2, extension present
+        packet[0] = 0x90
         packet += struct.pack(">HH", 0xBEDE, 3) + bytes(12) + b"payload"
 
-        self.assertEqual(vt.rtp_header_length(bytes(packet)), 12 + 4 + 12)
+        # Sixteen bytes authenticated — the header and the four-byte prefix — and twelve bytes of
+        # extension body inside the ciphertext, skipped after decrypting. Authenticating the body
+        # too fails every packet, because the sender encrypted it.
+        self.assertEqual(vt.rtp_layout(bytes(packet)), (16, 12))
 
     def test_a_packet_that_is_only_a_header_has_nothing_to_decrypt(self):
-        self.assertIsNone(vt.rtp_header_length(vt.rtp_header(1, 0, 99)))
+        self.assertIsNone(vt.rtp_layout(vt.rtp_header(1, 0, 99)))
 
     def test_a_truncated_extension_is_refused_rather_than_read_past(self):
         packet = bytearray(vt.rtp_header(1, 0, 99))
         packet[0] = 0x90
 
-        self.assertIsNone(vt.rtp_header_length(bytes(packet) + b"\x00"))
+        self.assertIsNone(vt.rtp_layout(bytes(packet) + b"\x00"))
 
-    def test_a_round_trip_survives_an_extension(self):
-        # The AAD is the whole header, extension included. Reading a fixed twelve bytes
-        # authenticates the wrong span and every packet fails — silently, because a failed tag
-        # looks exactly like a forged packet.
+    def test_a_round_trip_survives_an_extension_laid_out_as_discord_lays_it(self):
+        """Built the way Discord builds one, which is the only version worth testing.
+
+        The extension body is inside the ciphertext, not in front of it. A test that encrypts the
+        obvious way would pass against an implementation that decrypts the obvious way, and both
+        would be wrong together.
+        """
         if not opus_codec.available():
             self.skipTest("libopus is not installed")
 
         key = crypto.random_key()
         encoder = opus_codec.Encoder()
 
-        header = bytearray(vt.rtp_header(7, 960, 0x01020304))
-        header[0] = 0x90
-        header += struct.pack(">HH", 0xBEDE, 1) + bytes(4)
-        header = bytes(header)
+        # Authenticated: the header and the extension's four-byte prefix.
+        aad = bytearray(vt.rtp_header(7, 960, 0x01020304))
+        aad[0] = 0x90
+        aad += struct.pack(">HH", 0xBEDE, 1)
+        aad = bytes(aad)
+
+        # Encrypted: the extension body, then the audio.
+        extension_body = b"\x00\x01\x02\x03"
+        plaintext = extension_body + encoder.encode(tone())
 
         nonce = vt.nonce_for(7)
-        sealed = crypto.encrypt(key, nonce, encoder.encode(tone()), header)
+        sealed = crypto.encrypt(key, nonce, plaintext, aad)
 
         transport = vt.VoiceTransport(
             "example.invalid:2087", "1", "2", "session", "token", channel_id="3")
         transport._key = key
 
-        received = transport.receive_packet(header + sealed + nonce[:4])
+        received = transport.receive_packet(aad + sealed + nonce[:4])
 
         self.assertIsNotNone(received)
-        self.assertEqual(received[0], 0x01020304)
+        ssrc, decoded = received
+
+        self.assertEqual(ssrc, 0x01020304)
+        self.assertEqual(len(decoded), opus_codec.BYTES_PER_FRAME)
+
+
+class ControlPackets(unittest.TestCase):
+    """The same socket carries reports that are not audio."""
+
+    def test_a_receiver_report_is_recognised_as_control(self):
+        # Version 2, one report block, payload type 201. Discord sends these alongside the audio.
+        packet = bytes([0x81, 0xC9]) + struct.pack(">H", 7) + bytes(48)
+
+        self.assertTrue(vt.is_rtcp(packet))
+
+    def test_every_control_type_is_recognised(self):
+        for kind in range(200, 205):
+            self.assertTrue(vt.is_rtcp(bytes([0x80, kind]) + bytes(20)), kind)
+
+    def test_audio_is_not_mistaken_for_control(self):
+        # Discord's audio payload type is 120, chosen so the two can share a port. A reader that
+        # does not check ends up decrypting receiver reports as speech, which never authenticate
+        # and look exactly like a broken cipher.
+        self.assertFalse(vt.is_rtcp(vt.rtp_header(1, 0, 99) + b"audio"))
+
+    def test_a_runt_is_not_mistaken_for_either(self):
+        self.assertFalse(vt.is_rtcp(b"\x80"))
 
