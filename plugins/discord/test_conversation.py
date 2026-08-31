@@ -38,11 +38,47 @@ class BeingAddressed(unittest.TestCase):
         self.assertEqual(answer["reason"], "addressed")
         self.assertTrue(answer["named"])
 
-    def test_a_name_inside_another_word_is_a_coincidence(self):
+    def test_a_misheard_name_still_counts(self):
         c = group()
-        # "aurorae" is a word. Treating it as being addressed is the kind of thing that makes
-        # something feel like it is listening for its name rather than to the conversation.
-        self.assertFalse(c.heard(PAULO, "we saw the aurorae last night", 10000)["named"])
+
+        # A name is the word speech recognition gets wrong most — a proper noun, usually absent
+        # from the vocabulary. "Aurora" came back as "aurra" from a real call. Requiring it exactly
+        # means the one word that must be recognised is the one least likely to be.
+        for misheard in ("aurra", "auroa", "aurorra", "auror"):
+            self.assertTrue(c.heard(PAULO, "%s, tudo bem?" % misheard, 10000)["named"], misheard)
+
+    def test_a_word_that_merely_resembles_the_name_does_not_count(self):
+        c = group()
+
+        # One edit, not two. At two edits a six-letter name starts matching ordinary words, and
+        # something that answers to whatever rhymes with its name is worse than something slightly
+        # deaf.
+        for other in ("agora", "aurora boreal is nice", "amora", "aurea"):
+            heard = c.heard(PAULO, other, 10000)
+            if other.startswith("aurora"):
+                continue
+            self.assertFalse(heard["named"], other)
+
+    def test_a_name_buried_inside_a_longer_word_is_a_coincidence(self):
+        c = group()
+
+        # Whole words only. A name inside a longer one is not an address.
+        self.assertFalse(c.heard(PAULO, "the auroraborealis display", 10000)["named"])
+
+    def test_the_tolerance_costs_the_occasional_false_positive(self):
+        """Stated rather than hidden, because it is a trade and both sides are real.
+
+        One edit of tolerance means real words a letter away from the name count as an address.
+        "Aurorae" is the plural of aurora and would get an answer it did not ask for.
+
+        The other side is worse. Without tolerance the first real thing anybody said in a call —
+        "Aurora, estás a ouvir?" — came back from the recogniser as "Aura a hora" and went
+        unanswered, because the one word that had to be recognised is the one a speech model is
+        least equipped to get right. Answering once when nobody asked is a smaller failure than
+        never answering when they did.
+        """
+        c = group()
+        self.assertTrue(c.heard(PAULO, "we saw the aurorae last night", 10000)["named"])
 
     def test_two_people_and_a_question_is_for_aurora(self):
         c = room()

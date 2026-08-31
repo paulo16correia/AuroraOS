@@ -38,6 +38,28 @@ OPEN_TO_THE_ROOM = re.compile(
     r"^(does anyone|has anyone|can anyone|anybody|alguém|alguem|does someone)\b", re.I)
 
 
+def _within_one_edit(word, name):
+    """Whether one insertion, deletion or substitution turns one into the other."""
+    if abs(len(word) - len(name)) > 1:
+        return False
+
+    if word == name:
+        return True
+
+    shorter, longer = sorted((word, name), key=len)
+    at = 0
+
+    while at < len(shorter) and shorter[at] == longer[at]:
+        at += 1
+
+    if len(shorter) == len(longer):
+        # A substitution: everything after the first difference must match.
+        return shorter[at + 1:] == longer[at + 1:]
+
+    # An insertion or deletion: the rest of the shorter word matches from one further along.
+    return shorter[at:] == longer[at + 1:]
+
+
 class Conversation:
     """What Aurora knows about the room, and what it decides to do about it."""
 
@@ -165,11 +187,30 @@ class Conversation:
     # ---- what it knows about the room ----
 
     def _named_in(self, lowered):
+        """Whether Aurora was named, allowing for the recogniser mishearing it.
+
+        A name is the word speech recognition gets wrong most: it is a proper noun, usually absent
+        from the language model's vocabulary, and it arrives mangled. "Aurora" came back as "Aura"
+        in a real call. Matching it exactly means the one word that must be recognised is the one
+        least likely to be.
+
+        So a near miss counts — one edit on a name of five letters or more. Not two: at two edits
+        a six-letter name starts matching ordinary words, and something that answers to words that
+        merely rhyme with its name is worse than something slightly deaf.
+        """
         if not self.own_name:
             return False
 
-        # Whole word only: a name inside another word is a coincidence, not an address.
-        return re.search(r"\b%s\b" % re.escape(self.own_name), lowered) is not None
+        if re.search(r"\b%s\b" % re.escape(self.own_name), lowered) is not None:
+            return True
+
+        if len(self.own_name) < 5:
+            # Too short for a tolerance that would not match half the dictionary.
+            return False
+
+        return any(
+            _within_one_edit(word, self.own_name)
+            for word in re.findall(r"[^\W\d_]+", lowered, re.UNICODE))
 
     @staticmethod
     def _is_backchannel(lowered):
