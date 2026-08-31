@@ -384,4 +384,30 @@ public sealed class DiscordVoiceTests : IDisposable
             capabilities["can_join"]!.GetValue<bool>() && capabilities["stt"] is not null,
             capabilities["can_listen"]!.GetValue<bool>());
     }
+
+    [Fact]
+    public void ReplyingIsATurnInsideAnApprovalAndNotASecondDoorAroundOne()
+    {
+        var json = File.ReadAllText(Path.Combine(PluginSource(), "plugin.json"));
+        PluginManifest manifest = PluginManifestReader.Read(json, []).Manifest!;
+
+        PluginCapability reply = manifest.Capabilities.Single(c => c.Key == "discord.voice.reply");
+        PluginCapability converse =
+            manifest.Capabilities.Single(c => c.Key == "discord.voice.converse");
+
+        // It asks, like every other write. Aurora's consent gate opens a session only for
+        // capabilities with no effects — "approving a read opens the session that will cover the
+        // next ones; approving a write opens nothing" — so a turn in a conversation costs an
+        // explicit decision exactly like a single sentence does. Whether a bounded window should
+        // change that is a question about the consent model and not one to answer here.
+        Assert.True(reply.ApprovalRequired);
+        Assert.NotEmpty(reply.Effects);
+        Assert.True(converse.ApprovalRequired);
+        Assert.Equal(RiskLevel.High, converse.Risk);
+
+        // And the window is bounded by its own schema, whatever the turns inside it cost.
+        var schema = converse.InputSchema.ToString();
+        Assert.Contains("60", schema, StringComparison.Ordinal);
+        Assert.Contains("50", schema, StringComparison.Ordinal);
+    }
 }

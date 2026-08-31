@@ -1235,6 +1235,45 @@
       "timeout_seconds": 5,
       "idempotent": true,
       "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.reply",
+      "title": "Take a turn in the conversation",
+      "description": "Says something inside a conversation window the owner already opened, spending one of its utterances. Not a second way to speak without asking: converse is the approval, this is a turn within it, and it is refused when no window is open.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "invited": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "discord.voice.speak"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 60,
+      "idempotent": false,
+      "audit_level": "FULL"
     }
   ],
   "requires_gpu": true

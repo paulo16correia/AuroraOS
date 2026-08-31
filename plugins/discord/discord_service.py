@@ -1267,7 +1267,19 @@ GATEWAY_READS = {
     "discord.voice.pending": voice_pending,
 }
 
+def voice_reply(state, args, nonce=None):
+    """One turn inside a window the owner opened.
+
+    Not a second door to speaking without asking. `converse` is the approval — bounded in minutes
+    and utterances, endable by leaving, stopping or muting, none of which ask anybody — and this
+    is a turn within it. With no window open it refuses, which is what keeps the approval meaning
+    something.
+    """
+    return speak_in_conversation(state, args["text"], invited=args.get("invited", True))
+
+
 GATEWAY_WRITES = {
+    "discord.voice.reply": voice_reply,
     "discord.voice.converse": voice_converse,
     "discord.gateway.connect": gateway_connect,
     "discord.gateway.disconnect": gateway_disconnect,
