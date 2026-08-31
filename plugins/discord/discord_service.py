@@ -466,6 +466,24 @@ E_VOICE_UNAVAILABLE = "voice_unavailable"
 E_NOT_IN_CALL = "not_in_a_call"
 
 
+def voice_pending(state, args):
+    """What Aurora decided to answer and has not answered.
+
+    Aurora has no language model, deliberately: understanding belongs to the client that speaks to
+    it (RFC 045, docs/adr/0051). So the loop cannot close inside this process — what closes it is
+    something with language reading this, deciding what to say, and calling speak.
+
+    Read-only and cheap, because whatever is holding the conversation will ask often.
+    """
+    waiting = state.get("voice_pending") or []
+
+    return {
+        "waiting": list(waiting),
+        "conversing": conversation_window(state) is not None,
+        "utterances_left": (conversation_window(state) or {}).get("remaining", 0),
+    }
+
+
 def voice_status(state, args):
     """What Aurora is doing in voice, and what this machine can do at all.
 
@@ -715,6 +733,21 @@ def _watch_turns(state):
             # somebody asked Aurora to listen.
             if decision["speak"] and conversation_window(state) is not None:
                 time.sleep((decision.get("delay_ms") or 0) / 1000.0)
+
+                waiting = state.setdefault("voice_pending", [])
+
+                # Only the most recent few. A conversation that got ahead of whoever is answering
+                # is one where the old lines are no longer worth saying — answering a question
+                # from a minute ago is worse than having missed it.
+                waiting.append({
+                    "speaker_id": speaker,
+                    "transcript": transcript,
+                    "reason": decision["reason"],
+                    "at_ms": int(time.monotonic() * 1000),
+                })
+
+                del waiting[:-3]
+
                 report("voice.wants_to_answer", {
                     "speaker_id": speaker,
                     "transcript": transcript,
@@ -867,6 +900,10 @@ def speak_in_conversation(state, text, invited):
         # Somebody has the floor. Not queued: by the time they finish, what Aurora was going to
         # say may no longer be the right thing to say.
         raise Refused("floor_taken", "somebody is speaking; Aurora does not talk over people")
+
+    # Answered. Cleared before the audio plays rather than after, so a long sentence does not leave
+    # the same line waiting and get answered twice.
+    state["voice_pending"] = []
 
     window["remaining"] -= 1
 
@@ -1132,6 +1169,7 @@ def report(kind, payload):
 GATEWAY_READS = {
     "discord.gateway.status": gateway_status,
     "discord.voice.status": voice_status,
+    "discord.voice.pending": voice_pending,
 }
 
 GATEWAY_WRITES = {

@@ -146,7 +146,7 @@ public sealed class DiscordPluginTests : IDisposable
         PluginManifest manifest = Manifest();
 
         Assert.Equal("plugin/discord", manifest.PluginId);
-        Assert.Equal(33, manifest.Capabilities.Count);
+        Assert.Equal(34, manifest.Capabilities.Count);
         Assert.NotNull(manifest.Service);
         Assert.Equal("bot_token", Assert.Single(manifest.RequiredSecrets!).Name);
 
@@ -188,7 +188,7 @@ public sealed class DiscordPluginTests : IDisposable
                 "discord.channels.get", "discord.channels.list", "discord.gateway.status",
                 "discord.guilds.get", "discord.guilds.list", "discord.threads.list",
                 "discord.voice.leave", "discord.voice.list_channels", "discord.voice.mute",
-                "discord.voice.status", "discord.voice.stop",
+                "discord.voice.pending", "discord.voice.status", "discord.voice.stop",
             ],
             automatic);
     }

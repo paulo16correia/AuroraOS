@@ -1210,6 +1210,31 @@
       "timeout_seconds": 20,
       "idempotent": true,
       "audit_level": "FULL"
+    },
+    {
+      "key": "discord.voice.pending",
+      "title": "What is waiting for an answer",
+      "description": "The utterances Aurora heard, decided it should answer, and has not answered yet. Reading them is how whatever holds language finds out there is something to say \u2014 Aurora has no model of its own and is not supposed to.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 120,
+      "timeout_seconds": 5,
+      "idempotent": true,
+      "audit_level": "FULL"
     }
   ],
   "requires_gpu": true
