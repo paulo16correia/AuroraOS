@@ -102,6 +102,9 @@ class VoiceTransport:
 
         self._sequence = 0
         self._timestamp = 0
+
+        # What v8 wants echoed back in every heartbeat. Minus one until Discord numbers something.
+        self._seq_ack = -1
         self._nonce_counter = 0
 
         self._encoder = None
@@ -191,6 +194,27 @@ class VoiceTransport:
         # Identify is sent when HELLO arrives, not before it. The main gateway tolerates being
         # spoken to first; the voice gateway answers nothing at all, which looks exactly like a
         # connection that opened and then died.
+        # Identify at once, before HELLO. This is what Discord's own client does, and the voice
+        # gateway is not the main one: it answers a connection that waits with silence.
+        self.trail.append(
+            "identify(server=%s user=%s session=%s token=%s)" % (
+                "set" if self._guild_id else "MISSING",
+                "set" if self._user_id else "MISSING",
+                "set" if self._session_id else "MISSING",
+                "set" if self._token else "MISSING"))
+
+        self._send({"op": IDENTIFY, "d": {
+            "server_id": str(self._guild_id),
+            "user_id": str(self._user_id),
+            "session_id": self._session_id,
+            "token": self._token,
+
+            # Discord's end-to-end voice encryption. Zero means "I do not implement it", which is
+            # what its own client sends when the optional library is absent — and the field being
+            # absent entirely is not the same statement.
+            "max_dave_protocol_version": 0,
+        }})
+
         interval = None
         last_beat = time.monotonic()
 
@@ -230,7 +254,10 @@ class VoiceTransport:
                 interval = self._handle(frame, interval) or interval
 
             if interval and (time.monotonic() - last_beat) * 1000 >= interval:
-                self._send({"op": HEARTBEAT, "d": int(time.time() * 1000)})
+                self._send({"op": HEARTBEAT, "d": {
+                    "t": int(time.time() * 1000),
+                    "seq_ack": self._seq_ack,
+                }})
                 last_beat = time.monotonic()
 
     def _handle(self, frame, interval):
@@ -238,25 +265,12 @@ class VoiceTransport:
         data = frame.get("d") or {}
 
         if op == HELLO:
-            self._step("identifying")
+            self._step("heartbeating")
 
-            # The shape of what is sent, never the values. A voice identify is refused when any of
-            # these is missing or stale, and "which one" is the only useful question afterwards.
-            self.trail.append(
-                "identify(server=%s user=%s session=%s token=%s)" % (
-                    "set" if self._guild_id else "MISSING",
-                    "set" if self._user_id else "MISSING",
-                    "set" if self._session_id else "MISSING",
-                    "set" if self._token else "MISSING"))
-
-            self._send({"op": IDENTIFY, "d": {
-                "server_id": self._guild_id,
-                "user_id": self._user_id,
-                "session_id": self._session_id,
-                "token": self._token,
-            }})
-
-            return data.get("heartbeat_interval", 13750)
+            # Capped at five seconds, whatever Discord names. Its own client does the same, and a
+            # voice socket that heartbeats only every thirteen seconds is one Discord stops
+            # considering live.
+            return min(data.get("heartbeat_interval", 13750), 5000)
 
         if op == READY:
             self._step("discovering the address")

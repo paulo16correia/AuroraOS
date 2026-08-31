@@ -523,35 +523,56 @@ def voice_join(state, args, nonce=None):
     state["voice_muted"] = False
     state["voice_listening"] = False
 
-    # Leave first, always. A failed attempt can leave the bot in the channel from Discord's point
-    # of view, and then joining again changes nothing — so no fresh VOICE_STATE_UPDATE arrives and
-    # the credentials from the previous attempt get reused. Discord answers that with close code
-    # 4006, "session is no longer valid", which is accurate and says nothing about the cause.
-    gateway.voice_state(args["guild_id"], None)
-    time.sleep(0.5)
-
+    # One voice state change and no more. Leaving first looked like hygiene and is a second state
+    # change racing the first: Discord answers the events out of order and the credentials that
+    # arrive belong to a state that has already been superseded. Discord's own client sends one
+    # (docs/adr/0068).
+    #
     # Discord is told through the gateway, not the REST API: voice membership is gateway state.
     gateway.voice_state(args["guild_id"], args["channel_id"])
 
-    credentials = gateway.await_voice_credentials(timeout=10)
+    # Discord refuses voice sessions that look perfectly valid, and its own client treats that as
+    # ordinary: it attempts the handshake five times, leaving and rejoining between tries, with a
+    # growing wait. That is not a workaround bolted on — it is what the protocol turns out to
+    # require, and one attempt is the thing that was wrong (docs/adr/0068).
+    attempts = []
+    transport = None
 
-    if credentials is None:
-        state.pop("voice", None)
-        raise Refused(
-            E_NETWORK,
-            "Discord did not send the voice server details; Aurora is not in the channel")
+    for attempt in range(5):
+        if attempt:
+            # Leave and ask again, exactly as the reference does between tries. A retry that keeps
+            # the old voice state is a retry of the same rejected session.
+            gateway.voice_state(args["guild_id"], None)
+            time.sleep(1 + attempt * 2)
+            gateway.voice_state(args["guild_id"], args["channel_id"])
 
-    try:
-        transport = VoiceTransport(
-            credentials["endpoint"], args["guild_id"], credentials["user_id"],
-            credentials["session_id"], credentials["token"])
+        credentials = gateway.await_voice_credentials(timeout=10)
 
-        transport.start(timeout=20)
-    except Exception as broken:
-        # Leaving again, so a failed join never leaves Aurora sitting in the channel unable to
-        # hear or be heard.
-        state.pop("voice", None)
-        gateway.voice_state(args["guild_id"], None)
+        if credentials is None:
+            attempts.append("no credentials")
+            continue
+
+        try:
+            transport = VoiceTransport(
+                credentials["endpoint"], args["guild_id"], credentials["user_id"],
+                credentials["session_id"], credentials["token"])
+
+            transport.start(timeout=20)
+            break
+        except Exception as retryable:
+            attempts.append("%s: %s" % (type(retryable).__name__, str(retryable)[:90]))
+            transport = None
+
+    if transport is None:
+        broken = RuntimeError("; ".join(attempts[-3:]) or "no attempt was made")
+
+        try:
+            # Leaving again, so a failed join never leaves Aurora sitting in the channel unable to
+            # hear or be heard.
+            state.pop("voice", None)
+            gateway.voice_state(args["guild_id"], None)
+        except Exception:
+            pass
 
         # The message, not only the type. The voice token lives in the SELECT_PROTOCOL payload and
         # never reaches a socket exception — reporting the class name alone is the precaution that
