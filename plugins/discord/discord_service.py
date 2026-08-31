@@ -68,6 +68,22 @@ class Unknown(Exception):
         self.detail = detail
 
 
+def _setting(name, default=None):
+    """One value from the config beside this file, or the default.
+
+    Settings live here rather than in the manifest because they are the owner's taste rather than
+    the plugin's contract: which voice to speak with changes nothing about what the plugin may do,
+    and a manifest is a thing somebody reviewed before agreeing to it.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    try:
+        with open(os.path.join(here, "config.json"), "r") as handle:
+            return (json.load(handle) or {}).get(name) or default
+    except (OSError, ValueError):
+        return default
+
+
 def api_base(allowed):
     """Where to send requests, checked against the hosts the manifest declared.
 
@@ -922,7 +938,9 @@ def speak_in_conversation(state, text, invited):
 
     window["remaining"] -= 1
 
-    audio = voice_engines.synthesise(voice_engines.find_tts(), text)
+    audio = voice_engines.synthesise(
+        voice_engines.find_tts(), text, voice=_setting("tts_voice"))
+
     frames = transport.play(_pcm_from_wav(audio), speech)
     completed = session.finished_speaking(speech)
 

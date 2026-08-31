@@ -72,7 +72,10 @@ TTS_ENGINES = [
     # LEI16, not LEF32. `say` writes 32-bit float however it is asked, so the conversion happens
     # in the reader either way — but asking for what is wanted costs nothing and says what is
     # expected.
-    ("say", ["-o", "{output}", "--data-format=LEI16@48000", "{text}"]),
+    #
+    # The voice is a setting because it is a matter of taste and of who is listening. The default
+    # is whatever the machine speaks with; a name in config.json overrides it.
+    ("say", ["-o", "{output}", "--data-format=LEI16@48000", "{voice}", "{text}"]),
     ("espeak-ng", ["-w", "{output}", "{text}"]),
 ]
 
@@ -296,7 +299,37 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True):
         shutil.rmtree(directory, ignore_errors=True)
 
 
-def synthesise(engine, text, model=None, timeout=60):
+def voices():
+    """The voices this machine can speak with, as `say` reports them."""
+    import subprocess
+
+    found = shutil.which("say")
+
+    if not found:
+        return []
+
+    listed = subprocess.run([found, "-v", "?"], capture_output=True, timeout=20)
+
+    # `say -v ?` writes "Name  lang_REGION  # sample", and a name may carry a parenthesised
+    # qualifier — "Eddy (Português (Brasil))" — so the language is found by shape rather than by
+    # position. Splitting on whitespace and taking the second field finds half the voices.
+    import re
+
+    found_voices = []
+
+    for line in listed.stdout.decode(errors="replace").splitlines():
+        match = re.match(r"^(.+?)\s+([a-z]{2}_[A-Z]{2})\s", line)
+
+        if match:
+            found_voices.append({
+                "name": match.group(1).split(" (")[0].strip(),
+                "language": match.group(2),
+            })
+
+    return found_voices
+
+
+def synthesise(engine, text, model=None, timeout=60, voice=None):
     """Turns text into audio, locally. Returns the bytes and leaves nothing behind."""
     if engine is None:
         raise RuntimeError("no local text-to-speech program is installed")
@@ -308,8 +341,12 @@ def synthesise(engine, text, model=None, timeout=60):
         arguments = [
             argument.replace("{output}", target).replace("{model}", model or "")
                     .replace("{text}", text)
+                    .replace("{voice}", "-v" + voice if voice else "")
             for argument in engine["arguments"]
         ]
+
+        # An empty placeholder is not an empty argument. `say ""` reads the empty string aloud.
+        arguments = [a for a in arguments if a]
 
         command = [engine["path"], *arguments]
         stdin = text.encode() if engine["name"] == "piper" else None
