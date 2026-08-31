@@ -121,6 +121,22 @@ public sealed class FakeDiscord : IDisposable
             return;
         }
 
+        // Discord publishes its gateway address rather than it being derivable from the API host,
+        // so the stand-in publishes its own. Without this the plugin would have to guess, and
+        // guessing is what produced a 404 against the real service.
+        if (context.Request.Url?.AbsolutePath.EndsWith("/gateway/bot", StringComparison.Ordinal) == true)
+        {
+            var published = Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(new { url = $"ws://127.0.0.1:{Port}", shards = 1 }));
+
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/json";
+            context.Response.ContentLength64 = published.Length;
+            await context.Response.OutputStream.WriteAsync(published);
+            context.Response.Close();
+            return;
+        }
+
         var path = context.Request.Url!.AbsolutePath.Replace("/api/v10", "", StringComparison.Ordinal);
         using var reader = new StreamReader(context.Request.InputStream);
         var body = await reader.ReadToEndAsync();

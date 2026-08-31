@@ -856,10 +856,16 @@ def gateway_connect(state, args, nonce=None):
     and starts receiving what people write. That is a change other people can see, so it is not
     something Aurora does because it felt like listening.
     """
+    api = state.get("api")
+
+    if api is None:
+        raise Refused(E_NO_CREDENTIALS, "no bot token was supplied")
+
     gateway = state.get("gateway")
 
     if gateway is None:
-        raise Refused(E_NO_CREDENTIALS, "no bot token was supplied")
+        gateway = Gateway(state["token"], gateway_url(api), report)
+        state["gateway"] = gateway
 
     gateway.start()
 
@@ -887,7 +893,18 @@ def gateway_disconnect(state, args, nonce=None):
 
 def gateway_status(state, args):
     gateway = state.get("gateway")
-    return gateway.status() if gateway else {"state": "disconnected", "detail": "no credentials"}
+
+    if gateway is not None:
+        return gateway.status()
+
+    # Not built yet, which is not the same as having no credentials — the gateway is created when
+    # somebody connects, because being visible in Discord is an effect and waits for its approval.
+    return {
+        "state": "disconnected",
+        "detail": "not connected"
+                  if state.get("api") is not None
+                  else "no bot token was supplied",
+    }
 
 
 READS = {
@@ -987,11 +1004,20 @@ def handle(state, frame):
     raise Refused(E_UNSUPPORTED, "this plugin does not offer '%s'" % capability)
 
 
-def gateway_url(base):
-    """Where the Gateway lives, derived from the API base so a stand-in works unchanged."""
-    parts = urllib.parse.urlparse(base)
-    scheme = "wss" if parts.scheme == "https" else "ws"
-    return "%s://%s/gateway" % (scheme, parts.netloc)
+def gateway_url(api):
+    """Where the Gateway lives, asked rather than assumed.
+
+    Discord publishes this at /gateway/bot and it is not derivable from the API host — the API is
+    discord.com and the gateway is somewhere else entirely. Guessing produced a 404 on the upgrade,
+    which reads as the endpoint being wrong rather than as the URL never having been looked up.
+    """
+    answer = api.request("GET", "/gateway/bot")
+    url = (answer or {}).get("url")
+
+    if not url:
+        raise Refused(E_DISCORD, "Discord did not say where its gateway is")
+
+    return url
 
 
 def main():
@@ -1015,10 +1041,13 @@ def main():
                 try:
                     base = api_base(frame.get("endpoints") or [])
                     state["api"] = Discord(token, base)
+                    state["token"] = token
 
                     # Built, not started. Being visible in Discord is an effect, and an effect
-                    # waits for the capability that declares it.
-                    state["gateway"] = Gateway(token, gateway_url(base), report)
+                    # waits for the capability that declares it. The gateway's address is looked
+                    # up when connecting, not now: this is startup, and a failed lookup here would
+                    # stop the plugin answering read-only calls that need no gateway at all.
+                    state["gateway"] = None
                     say({"kind": "ready"})
                 except Refused as misconfigured:
                     say({"kind": "ready", "degraded": True, "reason": misconfigured.code})

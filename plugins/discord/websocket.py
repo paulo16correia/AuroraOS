@@ -34,7 +34,7 @@ class WebSocketError(Exception):
 class WebSocket:
     """One connection. Not thread-safe for sending; the caller holds a lock."""
 
-    def __init__(self, url, timeout=30):
+    def __init__(self, url, timeout=30, headers=None):
         parts = urllib.parse.urlparse(url)
         secure = parts.scheme in ("wss", "https")
         host = parts.hostname
@@ -56,7 +56,19 @@ class WebSocket:
         self._buffer = b""
         self._closed = False
 
+        # Why the peer closed, when it said. Kept because a close code is often the only
+        # explanation a service gives: Discord answers "your token is wrong" and "you asked for
+        # intents you were not granted" this way and no other.
+        self.close_code = None
+        self.close_reason = None
+
         key = base64.b64encode(os.urandom(16)).decode()
+
+        # Extra headers matter more than they look. Services behind a CDN reject an upgrade with
+        # no User-Agent, and the refusal arrives as a closed socket rather than as an explanation.
+        extra = "".join(
+            "%s: %s\r\n" % (name, value) for name, value in (headers or {}).items())
+
         request = (
             "GET %s HTTP/1.1\r\n"
             "Host: %s\r\n"
@@ -64,7 +76,8 @@ class WebSocket:
             "Connection: Upgrade\r\n"
             "Sec-WebSocket-Key: %s\r\n"
             "Sec-WebSocket-Version: 13\r\n"
-            "\r\n" % (path, host, key)
+            "%s"
+            "\r\n" % (path, host, key, extra)
         )
         raw.sendall(request.encode())
 
@@ -100,6 +113,11 @@ class WebSocket:
 
         taken, self._buffer = self._buffer[:count], self._buffer[count:]
         return taken
+
+    @property
+    def closed(self):
+        """Whether this connection is finished with. Cheap to ask, unlike touching the socket."""
+        return self._closed
 
     def send(self, text):
         """Sends one text frame, masked, as a client must."""
@@ -153,6 +171,11 @@ class WebSocket:
 
             if opcode == CLOSE:
                 self._closed = True
+
+                if len(payload) >= 2:
+                    self.close_code = struct.unpack("!H", payload[:2])[0]
+                    self.close_reason = payload[2:].decode(errors="replace")[:200]
+
                 return None
 
             if opcode == PING:

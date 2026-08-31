@@ -17,6 +17,13 @@ import time
 
 from websocket import WebSocket, WebSocketError
 
+USER_AGENT = "DiscordBot (https://github.com/paulo16correia/AuroraOS, 1.0.0)"
+
+# Discord requires this on every connection it accepts, the websocket included. Without it the
+# upgrade is refused by the CDN in front of the gateway, and what reaches the caller is a closed
+# socket rather than a reason.
+HEADERS = {"User-Agent": USER_AGENT}
+
 # What Discord will send us. MESSAGE_CONTENT is privileged: a bot that has not been granted it in
 # the developer portal receives empty content, which is worth saying out loud rather than looking
 # like everybody suddenly sending blank messages.
@@ -36,8 +43,17 @@ INVALID_SESSION = 9
 HELLO = 10
 HEARTBEAT_ACK = 11
 
-# Closures Discord will never accept a reconnect for. Retrying these is a loop that cannot end.
-FATAL = {4004, 4010, 4011, 4012, 4013, 4014}
+# Closures Discord will never accept a reconnect for. Retrying these is a loop that cannot end,
+# and the reason is always something a person has to change rather than something that heals.
+FATAL = {
+    4004: "the bot token was rejected",
+    4010: "the shard configuration is wrong",
+    4011: "this bot is in too many servers for one connection",
+    4012: "the gateway version is not supported",
+    4013: "the intents asked for are not valid",
+    4014: "the bot has not been granted the privileged intents it asked for "
+          "(enable Message Content in the Discord developer portal)",
+}
 
 
 class Gateway:
@@ -155,12 +171,16 @@ class Gateway:
             try:
                 self._connect_once()
                 attempt = 0
-            except WebSocketError as broken:
-                self.detail = str(broken)[:200]
-            except OSError as broken:
-                self.detail = "%s" % type(broken).__name__
+            except (WebSocketError, OSError) as broken:
+                # The message, not only the type. These come from the socket and the TLS layer and
+                # say things like "connection reset" — the token never reaches them, because it
+                # travels inside the IDENTIFY payload and nowhere else. Reporting only the class
+                # name turned every network problem into the word "OSError", which is indis-
+                # tinguishable from every other network problem and cost an afternoon.
+                self.detail = "%s: %s" % (type(broken).__name__, str(broken)[:200])
             except Exception as unexpected:
-                # The type only: the message could carry anything, including a URL with a token.
+                # Anything else is unfamiliar, so only the type: an exception nobody anticipated
+                # is exactly the one whose message might carry something it should not.
                 self.detail = "unexpected %s" % type(unexpected).__name__
 
             if self._stop.is_set():
@@ -180,7 +200,7 @@ class Gateway:
         url = (self._resume_url if resuming else self._url) + "?v=10&encoding=json"
 
         self.state = "connecting"
-        socket = WebSocket(url, timeout=30)
+        socket = WebSocket(url, timeout=30, headers=HEADERS)
 
         with self._sending:
             self._socket = socket
@@ -190,6 +210,13 @@ class Gateway:
 
         try:
             while not self._stop.is_set():
+                # Discord can end a connection mid-loop: opcode 7 asks for a reconnect and opcode 9
+                # invalidates the session, and both are handled by closing. Touching the socket
+                # after that raises EBADF, which surfaces as a network error and hides the ordinary
+                # thing that actually happened.
+                if socket.closed:
+                    return
+
                 # A read deadline shorter than the heartbeat, so the loop comes back often enough
                 # to send one on time even when the channel is silent.
                 socket._socket.settimeout(5)
@@ -202,12 +229,27 @@ class Gateway:
                             raise
                     raw = None
 
-                if raw is None and socket._closed:
+                if raw is None and socket.closed:
+                    code = socket.close_code
+
+                    if code in FATAL:
+                        # Nothing about waiting makes this better. Said plainly and left alone,
+                        # because a bot retrying a rejected token for ever is how an account
+                        # earns a longer ban than the mistake deserved.
+                        self.state = "failed"
+                        self.detail = "Discord closed the connection (%s): %s" % (code, FATAL[code])
+                        self._stop.set()
+                    elif code:
+                        self.detail = "Discord closed the connection (%s)" % code
+
                     return
 
                 if raw:
                     frame = json.loads(raw)
                     interval = self._handle(socket, frame, interval, resuming) or interval
+
+                    if socket.closed:
+                        return
 
                 if interval and (time.monotonic() - last_beat) * 1000 >= interval:
                     self._send(socket, {"op": HEARTBEAT, "d": self._sequence})

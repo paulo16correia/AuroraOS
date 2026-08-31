@@ -17,6 +17,7 @@ import threading
 import time
 
 import crypto
+import gateway
 import opus_codec
 from websocket import WebSocket, WebSocketError
 
@@ -151,7 +152,7 @@ class VoiceTransport:
         url = "wss://%s?v=4" % self._endpoint.split(":")[0]
         self.state = "connecting"
 
-        socket_ = WebSocket(url, timeout=20)
+        socket_ = WebSocket(url, timeout=20, headers=gateway.HEADERS)
 
         with self._sending:
             self._socket = socket_
