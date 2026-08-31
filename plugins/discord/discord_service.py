@@ -933,26 +933,88 @@ def speak_in_conversation(state, text, invited):
 
 
 def _pcm_from_wav(audio):
-    """The samples out of a WAV, without a dependency to read one.
+    """Reads a WAV into the 48kHz stereo 16-bit samples Opus needs, whatever it started as.
 
-    The local speech programs write WAV files. Opus wants raw 48kHz stereo 16-bit samples, and the
-    difference is a header this skips past.
+    The format is read from the file rather than assumed, because assuming it was wrong. macOS's
+    `say` writes 32-bit float mono however it is asked; handing those bytes to an encoder expecting
+    16-bit stereo produces packets of the right length carrying noise. Discord accepted them, the
+    counters said frames were sent, and nobody heard anything.
+
+    That is the third failure in this integration of the same kind: not an error, a plausible
+    result. There is nothing in "172 frames sent" to say the frames were meaningless.
     """
     if audio[:4] != b"RIFF":
         return audio
 
+    channels = rate = bits = 0
+    fmt = 1
+    data = b""
     at = 12
 
+    # Every chunk, in order. `say` puts JUNK and FLLR padding before and after the format, and a
+    # reader that assumes fmt comes first and data comes second finds neither.
     while at + 8 <= len(audio):
-        chunk = audio[at:at + 4]
-        (size,) = struct.unpack("<I", audio[at + 4:at + 8])
+        name = audio[at:at + 4]
+        (size,) = struct.unpack_from("<I", audio, at + 4)
 
-        if chunk == b"data":
-            return audio[at + 8:at + 8 + size]
+        if name == b"fmt " and size >= 16:
+            fmt, channels, rate, _, _, bits = struct.unpack_from("<HHIIHH", audio, at + 8)
+        elif name == b"data":
+            data = audio[at + 8:at + 8 + size]
 
         at += 8 + size + (size % 2)
 
-    return audio
+    if not data or not channels or not rate:
+        return audio
+
+    # Whatever the samples are, as signed 16-bit.
+    if fmt == 3 and bits == 32:
+        count = len(data) // 4
+        samples = [
+            max(-32768, min(32767, int(value * 32767)))
+            for (value,) in struct.iter_unpack("<f", data[:count * 4])
+        ]
+    elif bits == 16:
+        samples = [value for (value,) in struct.iter_unpack("<h", data[:len(data) // 2 * 2])]
+    else:
+        # An encoding this does not know. Better to say so than to send noise that looks like
+        # speech from every angle except the listener's.
+        raise Refused(
+            E_VOICE_UNAVAILABLE,
+            "the speech program produced %d-bit format %d, which this does not read" % (bits, fmt))
+
+    # One channel per ear. Opus is configured for stereo because Discord is.
+    if channels == 1:
+        samples = [s for value in samples for s in (value, value)]
+    elif channels > 2:
+        samples = [
+            s for frame in range(len(samples) // channels)
+            for s in (samples[frame * channels], samples[frame * channels + 1])
+        ]
+
+    # And at the rate Discord carries. Repeating or dropping whole frames is crude and audible on
+    # a large ratio; from 22kHz or 24kHz, which is what these programs produce, it is speech.
+    if rate != opus_rate():
+        ratio = opus_rate() / rate
+        stereo = len(samples) // 2
+        resampled = []
+
+        for out in range(int(stereo * ratio)):
+            source = min(stereo - 1, int(out / ratio))
+            resampled.append(samples[source * 2])
+            resampled.append(samples[source * 2 + 1])
+
+        samples = resampled
+
+    return struct.pack("<%dh" % len(samples), *samples)
+
+
+def opus_rate():
+    """The sample rate Discord's voice carries, and the only one Opus is set up for here."""
+    import opus_codec
+
+    return opus_codec.SAMPLE_RATE
+
 
 
 def voice_converse(state, args, nonce=None):

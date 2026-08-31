@@ -69,7 +69,10 @@ MODEL_NAMES = [
 # Local text-to-speech. `say` ships with macOS and speaks without a network.
 TTS_ENGINES = [
     ("piper", ["--model", "{model}", "--output_file", "{output}"]),
-    ("say", ["-o", "{output}", "--data-format=LEF32@48000", "{text}"]),
+    # LEI16, not LEF32. `say` writes 32-bit float however it is asked, so the conversion happens
+    # in the reader either way — but asking for what is wanted costs nothing and says what is
+    # expected.
+    ("say", ["-o", "{output}", "--data-format=LEI16@48000", "{text}"]),
     ("espeak-ng", ["-w", "{output}", "{text}"]),
 ]
 
