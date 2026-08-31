@@ -723,16 +723,31 @@ def _watch_turns(state):
 
 
 def _wav(pcm):
-    """Wraps raw 48kHz stereo PCM in the header the speech programs expect."""
-    import struct as _struct
+    """Turns Discord's audio into what a speech recogniser expects.
 
-    channels, rate, bits = 2, 48000, 16
+    Discord carries 48kHz stereo; whisper.cpp wants 16kHz mono. Handing it the wrong rate does not
+    fail — it transcribes, confidently, into words nobody said. That is worse than an error, and it
+    is what "Araratasmovir." was.
+
+    Averaging the channels and taking every third frame is a crude resample and the right one here:
+    speech is a narrow band well under the Nyquist limit of 16kHz, and the recogniser's own
+    front-end is doing far more violence to the signal than this.
+    """
+    frames = len(pcm) // 4
+    mono = bytearray()
+
+    for frame in range(0, frames, 3):
+        at = frame * 4
+        left, right = struct.unpack_from("<hh", pcm, at)
+        mono += struct.pack("<h", (left + right) // 2)
+
+    channels, rate, bits = 1, 16000, 16
     block = channels * bits // 8
 
     return (
-        b"RIFF" + _struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt "
-        + _struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
-        + b"data" + _struct.pack("<I", len(pcm)) + pcm)
+        b"RIFF" + struct.pack("<I", 36 + len(mono)) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
+        + b"data" + struct.pack("<I", len(mono)) + bytes(mono))
 
 
 def voice_speak(state, args, nonce=None):
