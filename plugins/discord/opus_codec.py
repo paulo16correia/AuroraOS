@@ -10,6 +10,7 @@ Discord's parameters are fixed and not negotiable: 48kHz, stereo, 20 millisecond
 
 import ctypes
 import ctypes.util
+import os
 
 SAMPLE_RATE = 48000
 CHANNELS = 2
@@ -36,10 +37,27 @@ class OpusUnavailable(RuntimeError):
     """libopus is not installed. Said plainly, with what to do about it."""
 
 
-def _load():
-    found = ctypes.util.find_library("opus")
+# Where package managers put it. The dynamic loader does not search these — /opt/homebrew/lib is
+# not a standard path on macOS — so a library that is plainly present on disk still fails to open
+# when asked for by name alone.
+SEARCH = ["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib", "/usr/lib/x86_64-linux-gnu"]
 
-    for candidate in [found, "libopus.so.0", "libopus.0.dylib", "libopus.dylib", "opus.dll"]:
+NAMES = ["libopus.so.0", "libopus.0.dylib", "libopus.dylib", "libopus.so", "opus.dll"]
+
+
+def _load():
+    """Opens libopus, or returns None.
+
+    Opening it rather than looking for the file, because those are different questions and
+    answering the easy one is how a readiness report comes to say a codec is available while
+    every call that needs it fails.
+    """
+    candidates = [ctypes.util.find_library("opus"), *NAMES]
+
+    for directory in SEARCH:
+        candidates.extend(os.path.join(directory, name) for name in NAMES)
+
+    for candidate in candidates:
         if not candidate:
             continue
         try:
@@ -54,7 +72,13 @@ _OPUS = _load()
 
 
 def available():
+    """Whether Opus can be used — loaded, not merely present on disk."""
     return _OPUS is not None
+
+
+def library():
+    """The file that was actually opened, for a readiness report to name."""
+    return getattr(_OPUS, "_name", None) if _OPUS is not None else None
 
 
 def _declare():

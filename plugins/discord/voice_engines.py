@@ -37,24 +37,16 @@ TTS_ENGINES = [
 
 
 def find_opus():
-    """The Opus library, or None.
+    """The Opus library, if it can actually be opened.
 
-    Discord's voice protocol carries Opus and nothing else, and Opus is a codec — not something
-    that can be implemented in a plugin. Without it Aurora can join a voice channel and hear
-    nothing intelligible, which is worse than refusing, so the capability refuses.
+    Asks the codec module rather than looking for the file, because those are different questions.
+    A library can sit plainly on disk and still fail to load — the dynamic loader does not search
+    /opt/homebrew/lib — and answering the easy question is how this reported voice as ready while
+    every join failed with the codec missing.
     """
-    for directory in OPUS_SEARCH:
-        for name in OPUS_LIBRARIES:
-            candidate = os.path.join(directory, name)
-            if os.path.exists(candidate):
-                return candidate
+    import opus_codec
 
-    for name in OPUS_LIBRARIES:
-        found = shutil.which(name)
-        if found:
-            return found
-
-    return None
+    return opus_codec.library() if opus_codec.available() else None
 
 
 def find_stt():

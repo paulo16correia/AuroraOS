@@ -546,9 +546,13 @@ def voice_join(state, args, nonce=None):
         state.pop("voice", None)
         gateway.voice_state(args["guild_id"], None)
 
+        # The message, not only the type. The voice token lives in the SELECT_PROTOCOL payload and
+        # never reaches a socket exception — reporting the class name alone is the precaution that
+        # cost an afternoon on the main gateway (docs/adr/0067).
         raise Refused(
             E_VOICE_UNAVAILABLE,
-            "the voice connection failed: %s" % type(broken).__name__) from None
+            "the voice connection failed: %s: %s"
+            % (type(broken).__name__, str(broken)[:200])) from None
 
     state["voice_transport"] = transport
 

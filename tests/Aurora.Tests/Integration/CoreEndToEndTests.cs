@@ -312,10 +312,17 @@ public sealed class CoreEndToEndTests : IClassFixture<AuroraAppFactory>
         using HttpClient http = Client();
         JsonElement audit = await ReadAsync(http, "/v1/audit?limit=50");
 
-        Assert.Contains(
-            audit.GetProperty("data").EnumerateArray(),
-            r => r.GetProperty("action_id").GetString() == "files.read_sandbox"
+        JsonElement record = audit.GetProperty("data").EnumerateArray()
+            .First(r => r.GetProperty("action_id").GetString() == "files.read_sandbox"
                 && r.GetProperty("outcome").GetString() == "failed");
+
+        // With why. The caller is told only that it failed — a message written by a capability
+        // could name a path a probing caller would learn from — but the record has to answer the
+        // question afterwards, and a bare "failed" answers nothing. Found when a plugin failed on
+        // a live instance and there was no way to discover the reason.
+        var reason = record.TryGetProperty("reason", out JsonElement why) ? why.GetString() : null;
+
+        Assert.False(string.IsNullOrWhiteSpace(reason), "a failed call recorded no reason");
     }
 
     // ---- 1, the other half: a mission gives a goal a reason to exist ----
@@ -382,4 +389,5 @@ public sealed class CoreEndToEndTests : IClassFixture<AuroraAppFactory>
             active.MissionRef is not null || active.AdHocReviewAtUtc is not null,
             "an active goal is under a mission or marked ad hoc with a review date");
     }
+
 }

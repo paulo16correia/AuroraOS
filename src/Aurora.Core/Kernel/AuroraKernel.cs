@@ -312,11 +312,20 @@ public sealed class AuroraKernel
                 principal, actionId, resolution.InputHash, resolved, key, reserved, facts).ConfigureAwait(false);
             throw;
         }
-        catch (Exception)
+        catch (Exception failure)
         {
+            // The reason goes in the audit and not in the answer. The caller is told only that it
+            // failed — a message written by a capability could carry a path, a hostname or
+            // something a probing caller would learn from. The record is local, and without it a
+            // failure is undiagnosable afterwards, which RFC 09 asks the audit to answer.
+            AuditFacts failed = facts with
+            {
+                Reason = $"{failure.GetType().Name}: {Truncate(failure.Message)}",
+            };
+
             return await TerminalAsync(
                 principal, actionId, resolution.InputHash, "failed", key, reserved, IdempotencyState.Failed,
-                facts,
+                failed,
                 new ExecuteResponse(ExecuteStatus.Failed, resolved, authorization.Consent,
                     Error: new ExecuteError(ErrorCodes.ExecutionFailed, "Execution failed."))).ConfigureAwait(false);
         }
@@ -647,6 +656,10 @@ public sealed class AuroraKernel
         Principal principal, string actionId, string inputHash, string outcome, AuditFacts facts) =>
         new(principal.ClientId, principal.OsUser, actionId, inputHash, outcome,
             facts.Risk, facts.Via, facts.Decision, facts.PolicyIds, facts.Reason);
+
+    /// <summary>Keeps one capability's message from filling the record it is written into.</summary>
+    private static string Truncate(string message) =>
+        message.Length <= 500 ? message : message[..500];
 
     private static ExecuteResponse Invalid(string code, string message, IReadOnlyList<string>? details = null) =>
         new(ExecuteStatus.Invalid, Error: new ExecuteError(code, message, details));

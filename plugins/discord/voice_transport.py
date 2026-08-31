@@ -112,6 +112,10 @@ class VoiceTransport:
         self.state = "disconnected"
         self.detail = None
 
+        # What it did, in order. A voice connection is four handshakes in a row and knowing which
+        # one it reached is the difference between a diagnosis and a guess.
+        self.trail = []
+
         self._thread = None
 
     # ---- connecting ----
@@ -135,27 +139,59 @@ class VoiceTransport:
                 raise WebSocketError(self.detail or "the voice connection failed")
             time.sleep(0.05)
 
+        # What it was doing when the time ran out, which is the whole diagnosis. "It timed out"
+        # names the symptom and hides which of the four steps — websocket, identify, UDP discovery,
+        # session description — never finished.
+        stalled = "%s (%s) after: %s" % (
+            self.state, self.detail or "no detail", " -> ".join(self.trail) or "nothing")
         self.stop()
-        raise TimeoutError("the voice connection did not become ready within %ds" % timeout)
+
+        raise TimeoutError(
+            "the voice connection did not become ready within %ds; it was %s" % (timeout, stalled))
+
+    def _step(self, name):
+        self.state = name
+        self.trail.append(name)
 
     def _run(self):
         try:
+            self._step("starting")
             self._connect()
+            self.trail.append("connect returned")
         except Exception as broken:
             self.state = "failed"
-            # The type and a short reason. A voice endpoint URL carries a session token.
-            self.detail = "%s" % type(broken).__name__
+
+            # The message. The voice token travels in the SELECT_PROTOCOL payload, not in socket
+            # errors, so withholding this hides the cause and protects nothing.
+            self.detail = "%s: %s" % (type(broken).__name__, str(broken)[:200])
         finally:
             self._teardown()
 
     def _connect(self):
-        url = "wss://%s?v=4" % self._endpoint.split(":")[0]
+        if not self._endpoint:
+            # Discord sends a null endpoint while it is moving the voice server. Connecting to
+            # "wss://None" produces a DNS error that reads like the network being broken.
+            raise WebSocketError(
+                "Discord has not said which voice server to use yet")
+
+        host = self._endpoint.split(":")[0]
+        url = "wss://%s/?v=4" % host
+        self.trail.append("endpoint=%s" % host)
         self.state = "connecting"
 
         socket_ = WebSocket(url, timeout=20, headers=gateway.HEADERS)
 
         with self._sending:
             self._socket = socket_
+
+        # The shape of what was sent, never the values. A voice identify is refused when any of
+        # these is missing or stale, and "which one" is the only useful question afterwards.
+        self.trail.append(
+            "identify(server=%s user=%s session=%s token=%s)" % (
+                "set" if self._guild_id else "MISSING",
+                "set" if self._user_id else "MISSING",
+                "set" if self._session_id else "MISSING",
+                "set" if self._token else "MISSING"))
 
         self._send({"op": IDENTIFY, "d": {
             "server_id": self._guild_id,
@@ -193,9 +229,11 @@ class VoiceTransport:
         data = frame.get("d") or {}
 
         if op == HELLO:
+            self._step("identifying")
             return data.get("heartbeat_interval", 13750)
 
         if op == READY:
+            self._step("discovering the address")
             self._ssrc = data["ssrc"]
             self._server = (data["ip"], data["port"])
 
@@ -204,12 +242,13 @@ class VoiceTransport:
                     "Discord did not offer %s; this build encrypts nothing else" % MODE)
 
             self._open_udp()
+            self._step("waiting for the session key")
             return interval
 
         if op == SESSION_DESCRIPTION:
             self._key = bytes(data["secret_key"])
             self._encoder = opus_codec.Encoder()
-            self.state = "ready"
+            self._step("ready")
             return interval
 
         return interval
