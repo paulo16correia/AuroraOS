@@ -30,6 +30,15 @@ public sealed class SessionAwareConsentGateTests
     private static readonly CapabilityDescriptor HighRead =
         Capability("secrets.read", RiskLevel.High, approvalRequired: true);
 
+    /// <summary>A capability that asks, in its own words, to cover repeated calls to one write.</summary>
+    private static readonly CapabilityDescriptor Opener =
+        Capability("voice.converse", RiskLevel.High, approvalRequired: true, "voice.speak") with
+        {
+            Reversible = true,
+            OpensWindow = new SessionWindow(
+                ["files.write_sandbox"], MaxActions: 3, Lifetime: TimeSpan.FromMinutes(10)),
+        };
+
     private sealed class Harness : IDisposable
     {
         public SqliteTestDb Db { get; } = new();
@@ -105,8 +114,9 @@ public sealed class SessionAwareConsentGateTests
         var write = await h.Gate.EvaluateAsync(
             MediumWrite, NoInput, "scope-write", Caller, CancellationToken.None);
 
-        // The owner's rule: reuse is for reads. A write always costs its own decision, bound to
-        // its own input, or a single approval would become standing authority to keep writing.
+        // The owner's rule: an unnamed session is for reads. A write costs its own decision, bound
+        // to its own input, unless some capability opened a window naming it — and approving a read
+        // never does that.
         Assert.False(write.Granted);
         Assert.Equal(ConsentDecision.RequiresApproval, write.Info.Decision);
         Assert.Equal("approval", write.Info.Via);
@@ -163,6 +173,82 @@ public sealed class SessionAwareConsentGateTests
 
         Assert.False(after.Granted);
         Assert.Equal(ConsentDecision.RequiresApproval, after.Info.Decision);
+    }
+
+    [Fact]
+    public async Task ApprovingAWindow_CoversTheWriteItNamed()
+    {
+        using var h = new Harness();
+
+        var opened = await h.ApproveAndRetryAsync(Opener, "scope-open");
+        Assert.True(opened.Granted);
+        Assert.NotNull(opened.Info.SessionId);
+
+        // The write the window named, with no second prompt — which is the whole point of asking
+        // about it once, in words, instead of once per sentence.
+        var write = await h.Gate.EvaluateAsync(
+            MediumWrite, NoInput, "scope-write", Caller, CancellationToken.None);
+
+        Assert.True(write.Granted);
+        Assert.Equal("session", write.Info.Via);
+        Assert.Equal(opened.Info.SessionId, write.Info.SessionId);
+    }
+
+    [Fact]
+    public async Task AWindowCoversNothingItDidNotName()
+    {
+        using var h = new Harness();
+        await h.ApproveAndRetryAsync(Opener, "scope-open");
+
+        // Another write at the same risk, from the same caller, while the window is live. The
+        // window named one action; everything else costs what it always cost.
+        var other = await h.Gate.EvaluateAsync(
+            Capability("vault.write", RiskLevel.Medium, approvalRequired: true, "vault.write"),
+            NoInput, "scope-other", Caller, CancellationToken.None);
+
+        Assert.False(other.Granted);
+        Assert.Equal(ConsentDecision.RequiresApproval, other.Info.Decision);
+
+        // Not even a read: a window opened for speaking is not a window for reading either, or
+        // "covers what it named" would quietly mean "covers that and more".
+        var read = await h.Gate.EvaluateAsync(
+            MediumRead, NoInput, "scope-read", Caller, CancellationToken.None);
+
+        Assert.False(read.Granted);
+    }
+
+    [Fact]
+    public async Task AWindowIsSpentByItsBudget()
+    {
+        using var h = new Harness();
+        await h.ApproveAndRetryAsync(Opener, "scope-open");
+
+        for (var i = 0; i < 3; i++)
+        {
+            var used = await h.Gate.EvaluateAsync(
+                MediumWrite, NoInput, $"scope-{i}", Caller, CancellationToken.None);
+            Assert.True(used.Granted);
+        }
+
+        var fourth = await h.Gate.EvaluateAsync(
+            MediumWrite, NoInput, "scope-4", Caller, CancellationToken.None);
+
+        Assert.False(fourth.Granted);
+        Assert.Equal(ConsentDecision.RequiresApproval, fourth.Info.Decision);
+    }
+
+    [Fact]
+    public async Task RevokingEndsTheWindowLikeAnyOtherSession()
+    {
+        using var h = new Harness();
+        await h.ApproveAndRetryAsync(Opener, "scope-open");
+
+        await h.Sessions.RevokeAllAsync(CancellationToken.None);
+
+        var after = await h.Gate.EvaluateAsync(
+            MediumWrite, NoInput, "scope-write", Caller, CancellationToken.None);
+
+        Assert.False(after.Granted);
     }
 
     [Fact]

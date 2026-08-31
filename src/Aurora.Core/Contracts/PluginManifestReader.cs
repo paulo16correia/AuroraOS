@@ -126,7 +126,7 @@ public static class PluginManifestReader
     {
         "key", "title", "description", "input_schema", "output_schema", "effects", "risk",
         "approval_required", "reversible", "rate_limit_per_minute", "timeout_seconds",
-        "idempotent", "audit_level",
+        "idempotent", "audit_level", "opens_window_for",
     };
 
     private static PluginManifestRead Check(
@@ -195,6 +195,8 @@ public static class PluginManifestReader
         {
             capabilities.Add(ReadCapability(capability, existingActionIds, seen, problems));
         }
+
+        CheckWindows(file, problems);
 
         if (problems.Count > 0)
         {
@@ -319,7 +321,94 @@ public static class PluginManifestReader
             capability.Title,
             capability.Description,
             risk,
-            capability.Reversible);
+            capability.Reversible,
+            capability.OpensWindowFor is { } window
+                ? new SessionWindow(
+                    window.Actions,
+                    window.MaxActions,
+                    TimeSpan.FromSeconds(window.LifetimeSeconds))
+                : null);
+    }
+
+    /// <summary>
+    /// Checks every declared window against the manifest that declares it (docs/adr/0070).
+    /// </summary>
+    /// <remarks>
+    /// A window is repeated authority, so the reader is where its reach is bounded: it may only
+    /// name actions from this same manifest, only actions a session could ever cover anyway, and
+    /// only under limits that are stated rather than defaulted. A manifest that asks for more is
+    /// refused at load, where the author reads the reason — not silently narrowed at runtime,
+    /// where nobody would.
+    /// </remarks>
+    private static void CheckWindows(PluginManifestFile file, List<string> problems)
+    {
+        // First wins: a manifest that declares the same key twice is already refused, and this
+        // pass still has to say what else is wrong rather than throwing on the way there.
+        var declared = new Dictionary<string, PluginCapabilityFile>(StringComparer.Ordinal);
+
+        foreach (PluginCapabilityFile capability in file.Capabilities)
+        {
+            declared.TryAdd(capability.Key, capability);
+        }
+
+        foreach (PluginCapabilityFile capability in file.Capabilities)
+        {
+            if (capability.OpensWindowFor is not { } window)
+            {
+                continue;
+            }
+
+            var where = $"capability '{capability.Key}': opens_window_for";
+
+            if (!capability.ApprovalRequired)
+            {
+                problems.Add(
+                    $"{where} needs approval_required on this capability — a window is authority a "
+                    + "person grants, so the call that opens one has to be a call they approved");
+            }
+
+            if (window.Actions.Count == 0)
+            {
+                problems.Add($"{where} must name at least one action, or it grants nothing");
+            }
+
+            if (window.MaxActions is < 1 or > 200)
+            {
+                problems.Add($"{where}: max_actions must be between 1 and 200");
+            }
+
+            if (window.LifetimeSeconds is < 1 or > 3600)
+            {
+                problems.Add($"{where}: lifetime_seconds must be between 1 and 3600 (one hour)");
+            }
+
+            foreach (var action in window.Actions)
+            {
+                if (!declared.TryGetValue(action, out PluginCapabilityFile? covered))
+                {
+                    problems.Add(
+                        $"{where}: '{action}' is not a capability of this plugin — a window may "
+                        + "only cover actions declared in the manifest that opens it");
+                    continue;
+                }
+
+                if (!covered.ApprovalRequired)
+                {
+                    problems.Add(
+                        $"{where}: '{action}' does not require approval, so a window over it "
+                        + "covers nothing; remove it from the list");
+                }
+
+                if (Enum.TryParse(covered.Risk, ignoreCase: true, out RiskLevel coveredRisk)
+                    && coveredRisk > RiskLevel.Medium)
+                {
+                    problems.Add(
+                        $"{where}: '{action}' is {coveredRisk.ToString().ToUpperInvariant()}, and a "
+                        + "session never covers anything above MEDIUM — it would still cost an "
+                        + "approval every call, so declaring the window would be a false promise");
+                }
+            }
+        }
     }
 
     private static void Require(List<string> problems, string value, string field, string expected)

@@ -395,19 +395,26 @@ public sealed class DiscordVoiceTests : IDisposable
         PluginCapability converse =
             manifest.Capabilities.Single(c => c.Key == "discord.voice.converse");
 
-        // It asks, like every other write. Aurora's consent gate opens a session only for
-        // capabilities with no effects — "approving a read opens the session that will cover the
-        // next ones; approving a write opens nothing" — so a turn in a conversation costs an
-        // explicit decision exactly like a single sentence does. Whether a bounded window should
-        // change that is a question about the consent model and not one to answer here.
+        // It asks, like every other write, and it is converse that answers for it: the approval
+        // is the window, and a turn spends one of its utterances (docs/adr/0070). What is not
+        // available is a way to speak that nobody opened — reply declares its effect and requires
+        // approval, so with no window live it costs a decision exactly like one sentence does.
         Assert.True(reply.ApprovalRequired);
         Assert.NotEmpty(reply.Effects);
+        Assert.Null(reply.OpensWindow);
         Assert.True(converse.ApprovalRequired);
         Assert.Equal(RiskLevel.High, converse.Risk);
 
-        // And the window is bounded by its own schema, whatever the turns inside it cost.
+        // The window names the turn and nothing else — not speak, not join, not another plugin's
+        // action — so approving a conversation is not approving the rest of the plugin.
+        SessionWindow window = converse.OpensWindow!;
+        Assert.Equal(["discord.voice.reply"], window.Actions);
+
+        // And it never outlives what converse itself can be asked for.
         var schema = converse.InputSchema.ToString();
         Assert.Contains("60", schema, StringComparison.Ordinal);
         Assert.Contains("50", schema, StringComparison.Ordinal);
+        Assert.Equal(50, window.MaxActions);
+        Assert.Equal(TimeSpan.FromMinutes(60), window.Lifetime);
     }
 }

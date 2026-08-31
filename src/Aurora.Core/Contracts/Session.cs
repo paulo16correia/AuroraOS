@@ -32,7 +32,24 @@ public sealed record ConsentSession(
     int ActionsUsed,
     int MaxActions,
     string CreatedAtUtc,
-    string ExpiresAtUtc);
+    string ExpiresAtUtc,
+    /// <summary>
+    /// The effectful actions this session covers, beyond the read-only ones it always covers.
+    /// </summary>
+    /// <remarks>
+    /// Empty for an ordinary session, which is the rule Aurora started with: approving a read
+    /// opens a session for the next reads, and approving a write opens nothing. That rule is what
+    /// separates a conversation from a licence to act, and it is not relaxed here — it is made
+    /// nameable. A capability may declare that approving it covers specific other actions, and
+    /// only those, for the minutes and the count the owner agreed to (docs/adr/0070).
+    /// <para>
+    /// A voice conversation is the case it was written for: approving every sentence is not a
+    /// conversation, and nobody will sit at a keyboard authorising each one while their friends
+    /// talk. What makes it safe to grant is not that speech is harmless but that the window is
+    /// small, named, and ended by three capabilities that ask nobody.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string>? CoveredActions = null);
 
 /// <summary>Whether a live session covered this request.</summary>
 public enum ConsentSessionUseOutcome

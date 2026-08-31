@@ -59,7 +59,16 @@ public sealed class NoConsentSessionStore : IConsentSessionStore
             "none", principal.ClientId, principal.OsUser, "boot", "pv",
             ConsentSessionStatus.Active, 0, 0, "", ""));
 
+    public Task<ConsentSession> OpenAsync(
+        Principal principal, IReadOnlyList<string> coveredActions, TimeSpan lifetime,
+        int maxActions, CancellationToken ct) =>
+        OpenAsync(principal, ct);
+
     public Task<ConsentSessionUse> TryUseAsync(Principal principal, CancellationToken ct) =>
+        Task.FromResult(new ConsentSessionUse(ConsentSessionUseOutcome.None));
+
+    public Task<ConsentSessionUse> TryUseAsync(
+        Principal principal, string actionId, CancellationToken ct) =>
         Task.FromResult(new ConsentSessionUse(ConsentSessionUseOutcome.None));
 
     public Task<int> RevokeAllAsync(CancellationToken ct) => Task.FromResult(0);

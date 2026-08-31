@@ -124,6 +124,13 @@ public static class PluginConsole
                 + $"{(capability.ApprovalRequired ? ", approval required" : "")}"
                 + $"{(capability.Reversible ? ", reversible" : "")}"
                 + $"{(capability.Effects.Count > 0 ? $" [{string.Join(", ", capability.Effects)}]" : "")}");
+
+            if (capability.OpensWindow is { } window)
+            {
+                Console.WriteLine(
+                    $"      approving it opens a window for {string.Join(", ", window.Actions)} "
+                    + $"— up to {window.MaxActions} calls, ending after {window.Lifetime}");
+            }
         }
 
         var executable = Path.Combine(full!, manifest.Executable!);

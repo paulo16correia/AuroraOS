@@ -47,7 +47,12 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
         _gate = Gates.GetOrAdd("session:" + factory.DbPath, static _ => new SemaphoreSlim(1, 1));
     }
 
-    public async Task<ConsentSession> OpenAsync(Principal principal, CancellationToken ct)
+    public Task<ConsentSession> OpenAsync(Principal principal, CancellationToken ct) =>
+        OpenAsync(principal, [], _options.Lifetime, _options.MaxActions, ct);
+
+    public async Task<ConsentSession> OpenAsync(
+        Principal principal, IReadOnlyList<string> coveredActions, TimeSpan lifetime,
+        int maxActions, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -57,11 +62,18 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
 
             // Reuse rather than duplicate: two approvals granted close together should extend the
             // same grant, not stack two budgets for the same principal.
-            await using (var existing = connection.CreateCommand())
+            // An existing session is returned rather than duplicated — but only when it covers at
+            // least what is being asked for. A window opened for reads is not a window that also
+            // covers speaking, and handing one back for the other would grant by accident what the
+            // owner was asked about on purpose.
+            if (coveredActions.Count == 0)
             {
+                await using var existing = connection.CreateCommand();
                 existing.CommandText = LiveSelect + " LIMIT 1;";
                 Bind(existing, principal, now);
+
                 await using var reader = await existing.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     return Read(reader);
@@ -76,17 +88,19 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
                 _policy.Version,
                 ConsentSessionStatus.Active,
                 0,
-                _options.MaxActions,
+                maxActions,
                 Iso(now),
-                Iso(now.Add(_options.Lifetime)));
+                Iso(now.Add(lifetime)),
+                coveredActions);
 
             await using (var insert = connection.CreateCommand())
             {
                 insert.CommandText = """
                     INSERT INTO consent_session
                         (session_id, principal_client_id, principal_os_user, server_boot_id,
-                         policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc)
-                    VALUES (@id, @cid, @wu, @boot, @pv, @st, 0, @max, @created, @expires);
+                         policy_version, status, actions_used, max_actions, created_at_utc,
+                         expires_at_utc, covered_actions)
+                    VALUES (@id, @cid, @wu, @boot, @pv, @st, 0, @max, @created, @expires, @covered);
                     """;
                 insert.Parameters.AddWithValue("@id", session.SessionId);
                 insert.Parameters.AddWithValue("@cid", session.PrincipalClientId);
@@ -97,6 +111,8 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
                 insert.Parameters.AddWithValue("@max", session.MaxActions);
                 insert.Parameters.AddWithValue("@created", session.CreatedAtUtc);
                 insert.Parameters.AddWithValue("@expires", session.ExpiresAtUtc);
+                insert.Parameters.AddWithValue(
+                    "@covered", string.Join('\n', session.CoveredActions ?? []));
                 await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -108,7 +124,23 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
         }
     }
 
-    public async Task<ConsentSessionUse> TryUseAsync(Principal principal, CancellationToken ct)
+    public Task<ConsentSessionUse> TryUseAsync(Principal principal, CancellationToken ct) =>
+        SpendAsync(principal, actionId: null, ct);
+
+    /// <summary>
+    /// Spends one unit of a live session, optionally requiring that it named this action.
+    /// </summary>
+    /// <remarks>
+    /// The scope is matched in SQL alongside the rest of liveness, so an action a session did not
+    /// name cannot spend it — not even under the race where two calls arrive together, because the
+    /// same predicate that selects the row is the one that guards the update.
+    /// </remarks>
+    public async Task<ConsentSessionUse> TryUseAsync(
+        Principal principal, string actionId, CancellationToken ct) =>
+        await SpendAsync(principal, actionId, ct).ConfigureAwait(false);
+
+    private async Task<ConsentSessionUse> SpendAsync(
+        Principal principal, string? actionId, CancellationToken ct)
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -130,11 +162,17 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
                           AND status = @active
                           AND expires_at_utc > @now
                           AND actions_used < max_actions
+                          AND (CASE WHEN @action IS NULL
+                                     THEN covered_actions = ''
+                                     ELSE instr(char(10) || covered_actions || char(10),
+                                                char(10) || @action || char(10)) > 0
+                                END)
                         ORDER BY created_at_utc ASC
                         LIMIT 1)
                 RETURNING session_id;
                 """;
             Bind(command, principal, now);
+            command.Parameters.AddWithValue("@action", (object?)actionId ?? DBNull.Value);
 
             var sessionId = await command.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
 
@@ -181,7 +219,8 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
 
     private const string LiveSelect = """
         SELECT session_id, principal_client_id, principal_os_user, server_boot_id,
-               policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc
+               policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc,
+               covered_actions
           FROM consent_session
          WHERE principal_client_id = @cid
            AND server_boot_id = @boot
@@ -189,6 +228,7 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
            AND status = @active
            AND expires_at_utc > @now
            AND actions_used < max_actions
+           AND covered_actions = ''
          ORDER BY created_at_utc ASC
         """;
 
@@ -204,7 +244,10 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
     private static ConsentSession Read(Microsoft.Data.Sqlite.SqliteDataReader reader) => new(
         reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
         reader.GetString(4), reader.GetString(5), reader.GetInt32(6), reader.GetInt32(7),
-        reader.GetString(8), reader.GetString(9));
+        reader.GetString(8), reader.GetString(9),
+        reader.IsDBNull(10) || reader.GetString(10).Length == 0
+            ? null
+            : reader.GetString(10).Split('\n'));
 
     private static string Iso(DateTimeOffset value) => value.ToString("O", CultureInfo.InvariantCulture);
 }

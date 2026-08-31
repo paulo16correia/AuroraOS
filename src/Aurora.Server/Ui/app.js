@@ -305,6 +305,13 @@ function renderCapabilities(catalog) {
       ['Each call', action.approval_required
         ? 'needs your approval, scoped to that exact input'
         : 'runs without asking (low risk, no effect)'],
+      // Repeated authority is the thing a person most needs to read before granting it, so the
+      // window is named on the card rather than left to be discovered at the second call.
+      ...(action.opens_window ? [['Approving it', 'opens a window for '
+        + escapeHtml((action.opens_window.actions || []).join(', '))
+        + ' — up to ' + escapeHtml(String(action.opens_window.max_actions))
+        + ' calls, ending after ' + escapeHtml(String(action.opens_window.lifetime))
+        + ', and sooner if you revoke, restart or change policy']] : []),
     ])}`));
 
   fill('capabilities-body', nodes.length ? nodes : [empty('No capability is offered.')]);

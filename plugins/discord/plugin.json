@@ -1209,7 +1209,14 @@
       "rate_limit_per_minute": 4,
       "timeout_seconds": 20,
       "idempotent": true,
-      "audit_level": "FULL"
+      "audit_level": "FULL",
+      "opens_window_for": {
+        "actions": [
+          "discord.voice.reply"
+        ],
+        "max_actions": 50,
+        "lifetime_seconds": 3600
+      }
     },
     {
       "key": "discord.voice.pending",

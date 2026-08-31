@@ -127,6 +127,48 @@ reads.
 **`max_data_class`** is the highest classification you may ever be handed. Aurora refuses to pass
 you anything above it — so asking for less is a promise you benefit from keeping.
 
+## When one approval has to cover several calls
+
+Some capabilities are unusable one approval at a time. A voice assistant that needs a passphrase per
+sentence is not having a conversation. For those, a capability can declare the window that approving
+it opens (docs/adr/0070):
+
+```json
+{
+  "key": "notes.session",
+  "title": "Keep the notebook open",
+  "risk": "MEDIUM",
+  "approval_required": true,
+  "opens_window_for": {
+    "actions": ["notes.append"],
+    "max_actions": 20,
+    "lifetime_seconds": 600
+  }
+}
+```
+
+The owner approving `notes.session` reads which action they are covering, how many times and for how
+long, before they decide. The window then pays for `notes.append` — and for nothing else. Not
+another write of yours, not a read, not the same action from another plugin.
+
+What Aurora checks before installing you:
+
+| Rule | Why |
+| --- | --- |
+| Every named action is in **your** manifest | You cannot open a window over Aurora's capabilities or another plugin's. |
+| Every named action sets `approval_required` | A window over something that never asks covers nothing. |
+| Every named action is `LOW` or `MEDIUM` | A session has never covered `HIGH`; declaring it would be a promise Aurora would not keep. |
+| The opener sets `approval_required` | A window is authority somebody grants. A free call cannot mint it. |
+| `max_actions` is 1–200, `lifetime_seconds` is 1–3600 | Both bounds are stated, never defaulted. |
+
+The window dies on restart, on a policy change, on the kill switch, at its deadline, and when its
+budget runs out. If your capability keeps a tighter budget of its own — the minutes the owner
+actually asked for — keep enforcing it: the tighter of the two is what binds, and yours is the one
+that knows what the owner typed.
+
+Most capabilities should not declare this. One decision per call is the model Aurora starts from,
+and it is the right one until a call that repeats is the whole point of the feature.
+
 ## What happens when you get it wrong
 
 `validate` reports everything at once, naming the field:

@@ -37,6 +37,84 @@ public sealed class PluginManifestTests
         }
         """;
 
+    /// <summary>A manifest whose opener asks to cover repeated calls to its own writer.</summary>
+    private const string WithWindow = """
+        {
+          "plugin_id": "acme/notes",
+          "version": "1.0.0",
+          "publisher": "acme",
+          "executable": "run.py",
+          "max_data_class": "PRIVATE",
+          "required_permissions": ["notes.write"],
+          "capabilities": [
+            {
+              "key": "notes.append",
+              "title": "Append a note",
+              "description": "Adds a line to a notebook.",
+              "input_schema": { "type": "object" },
+              "effects": ["notes.write"],
+              "risk": "MEDIUM",
+              "approval_required": true
+            },
+            {
+              "key": "notes.session",
+              "title": "Keep a notebook open",
+              "description": "Appends for a while without asking each time.",
+              "input_schema": { "type": "object" },
+              "effects": ["notes.write"],
+              "risk": "MEDIUM",
+              "approval_required": true,
+              "opens_window_for": {
+                "actions": ["notes.append"],
+                "max_actions": 20,
+                "lifetime_seconds": 600
+              }
+            }
+          ]
+        }
+        """;
+
+    /// <summary>
+    /// The same two capabilities, with the three claims a window is checked against varied.
+    /// </summary>
+    private static string Window(string risk, bool opener, bool covered) =>
+        $$"""
+        {
+          "plugin_id": "acme/notes",
+          "version": "1.0.0",
+          "publisher": "acme",
+          "executable": "run.py",
+          "max_data_class": "PRIVATE",
+          "required_permissions": ["notes.write"],
+          "capabilities": [
+            {
+              "key": "notes.append",
+              "title": "Append a note",
+              "description": "Adds a line to a notebook.",
+              "input_schema": { "type": "object" },
+              "effects": ["notes.write"],
+              "risk": "{{risk}}",
+              "reversible": true,
+              "approval_required": {{(covered ? "true" : "false")}}
+            },
+            {
+              "key": "notes.session",
+              "title": "Keep a notebook open",
+              "description": "Appends for a while without asking each time.",
+              "input_schema": { "type": "object" },
+              "effects": ["notes.write"],
+              "risk": "{{(opener ? "MEDIUM" : "LOW")}}",
+              "approval_required": {{(opener ? "true" : "false")}},
+              "opens_window_for": {
+                "actions": ["notes.append"],
+                "max_actions": 20,
+                "lifetime_seconds": 600
+              }
+            }
+          ]
+        }
+        """;
+
     private static PluginManifestRead Read(string json) =>
         PluginManifestReader.Read(json, BuiltIn);
 
@@ -232,5 +310,72 @@ public sealed class PluginManifestTests
 
         Assert.True(ok.Ok, string.Join("; ", ok.Problems));
         Assert.Equal("bot_token", Assert.Single(ok.Manifest!.RequiredSecrets!).Name);
+    }
+
+    [Fact]
+    public void ADeclaredWindowSurvivesReading()
+    {
+        PluginManifestRead read = Read(WithWindow);
+
+        Assert.Empty(read.Problems);
+        SessionWindow window = read.Manifest!.Capabilities
+            .Single(c => c.Key == "notes.session").OpensWindow!;
+
+        Assert.Equal(["notes.append"], window.Actions);
+        Assert.Equal(20, window.MaxActions);
+        Assert.Equal(TimeSpan.FromMinutes(10), window.Lifetime);
+    }
+
+    [Fact]
+    public void AWindowMayOnlyNameThisPluginsOwnActions()
+    {
+        // Naming a capability Aurora already has is the interesting case: a plugin that could open
+        // a window over files.write_sandbox would be minting repeated authority over the host.
+        PluginManifestRead read = Read(WithWindow.Replace(
+            "\"actions\": [\"notes.append\"]", "\"actions\": [\"files.write_sandbox\"]",
+            StringComparison.Ordinal));
+
+        Assert.Null(read.Manifest);
+        Assert.Contains(read.Problems, p => p.Contains("only cover actions declared in the manifest"));
+    }
+
+    [Fact]
+    public void AWindowOverAHighRiskActionIsRefusedRatherThanPromised()
+    {
+        PluginManifestRead read = Read(Window(risk: "HIGH", opener: true, covered: true));
+
+        Assert.Null(read.Manifest);
+        Assert.Contains(read.Problems, p => p.Contains("never covers anything above MEDIUM"));
+    }
+
+    [Fact]
+    public void AFreeCapabilityCannotOpenAWindow()
+    {
+        // Otherwise the authority would be minted by a call nobody was asked about.
+        PluginManifestRead read = Read(Window(risk: "MEDIUM", opener: false, covered: true));
+
+        Assert.Null(read.Manifest);
+        Assert.Contains(read.Problems, p => p.Contains("a call they approved"));
+    }
+
+    [Fact]
+    public void AWindowOverAFreeActionCoversNothingAndIsSaidSo()
+    {
+        PluginManifestRead read = Read(Window(risk: "LOW", opener: true, covered: false));
+
+        Assert.Null(read.Manifest);
+        Assert.Contains(read.Problems, p => p.Contains("covers nothing"));
+    }
+
+    [Fact]
+    public void AWindowStatesItsBounds()
+    {
+        PluginManifestRead read = Read(WithWindow
+            .Replace("\"max_actions\": 20", "\"max_actions\": 0", StringComparison.Ordinal)
+            .Replace("\"lifetime_seconds\": 600", "\"lifetime_seconds\": 86400", StringComparison.Ordinal));
+
+        Assert.Null(read.Manifest);
+        Assert.Contains(read.Problems, p => p.Contains("max_actions must be between 1 and 200"));
+        Assert.Contains(read.Problems, p => p.Contains("lifetime_seconds must be between 1 and 3600"));
     }
 }

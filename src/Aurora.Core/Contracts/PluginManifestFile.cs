@@ -153,4 +153,24 @@ public sealed record PluginCapabilityFile
 
     [JsonPropertyName("audit_level")]
     public string AuditLevel { get; init; } = "FULL";
+
+    /// <summary>
+    /// The window approving this capability opens, if it asks for one (docs/adr/0070).
+    /// </summary>
+    [JsonPropertyName("opens_window_for")]
+    public PluginWindowFile? OpensWindowFor { get; init; }
+}
+
+/// <summary>A declared window, as its author writes it.</summary>
+public sealed record PluginWindowFile
+{
+    /// <summary>Action ids from this same manifest. Nothing else is accepted.</summary>
+    [JsonPropertyName("actions")]
+    public IReadOnlyList<string> Actions { get; init; } = [];
+
+    [JsonPropertyName("max_actions")]
+    public int MaxActions { get; init; }
+
+    [JsonPropertyName("lifetime_seconds")]
+    public int LifetimeSeconds { get; init; }
 }

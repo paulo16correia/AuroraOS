@@ -102,7 +102,14 @@ public sealed record PluginCapability(
     /// </remarks>
     RiskLevel Risk = RiskLevel.High,
     /// <summary>Whether a completed call can be undone by whoever made it.</summary>
-    bool Reversible = false);
+    bool Reversible = false,
+    /// <summary>The window this capability asks to open when approved (docs/adr/0070).</summary>
+    /// <remarks>
+    /// Checked at load against the plugin's own capabilities: a window may only name actions from
+    /// the manifest that declares it, so a plugin cannot mint repeated authority over Aurora's
+    /// capabilities or over another plugin's.
+    /// </remarks>
+    SessionWindow? OpensWindow = null);
 
 /// <summary>
 /// Everything a plugin says about itself, before anybody decides whether to believe it.

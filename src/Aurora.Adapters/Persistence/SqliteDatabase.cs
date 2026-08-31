@@ -750,7 +750,8 @@ public sealed class SqliteDatabase
           actions_used INTEGER NOT NULL,
           max_actions INTEGER NOT NULL,
           created_at_utc TEXT NOT NULL,
-          expires_at_utc TEXT NOT NULL
+          expires_at_utc TEXT NOT NULL,
+          covered_actions TEXT NOT NULL DEFAULT ''
         );
 
         CREATE INDEX IF NOT EXISTS idx_session_live
@@ -1604,6 +1605,11 @@ public sealed class SqliteDatabase
         // (docs/adr/0069). Zero by default, which is what every installation made before the
         // question existed actually had.
         ("plugin_installation", "gpu_granted", "INTEGER NOT NULL DEFAULT 0"),
+
+        // v18 — the effectful actions a session was opened to cover, and nothing else
+        // (docs/adr/0070). Empty for every session made before the question existed, which is
+        // exactly what they covered.
+        ("consent_session", "covered_actions", "TEXT NOT NULL DEFAULT ''"),
 
         // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
         ("goal", "mission_ref", "TEXT NULL"),

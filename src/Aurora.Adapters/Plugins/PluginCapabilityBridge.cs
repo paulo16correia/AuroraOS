@@ -62,7 +62,8 @@ public sealed class PluginCapabilityBridge : ICapability
             Effects: capability.Effects,
             Risk: capability.Risk,
             ApprovalRequired: capability.ApprovalRequired,
-            Reversible: capability.Reversible);
+            Reversible: capability.Reversible,
+            OpensWindow: capability.OpensWindow);
     }
 
     public CapabilityDescriptor Descriptor { get; }

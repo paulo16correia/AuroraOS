@@ -47,6 +47,92 @@ public sealed class ConsentSessionStoreTests
     }
 
     [Fact]
+    public async Task ANamedWindow_IsSpentOnlyByTheActionItNamed()
+    {
+        using var db = new SqliteTestDb();
+        var store = Store(db);
+
+        var window = await store.OpenAsync(
+            Caller, ["voice.reply"], TimeSpan.FromMinutes(10), 5, CancellationToken.None);
+
+        var named = await store.TryUseAsync(Caller, "voice.reply", CancellationToken.None);
+        var other = await store.TryUseAsync(Caller, "voice.speak", CancellationToken.None);
+        var unnamed = await store.TryUseAsync(Caller, CancellationToken.None);
+
+        Assert.Equal(ConsentSessionUseOutcome.Used, named.Outcome);
+        Assert.Equal(window.SessionId, named.SessionId);
+
+        // Neither a different action nor a nameless request rides it. A window that paid for
+        // anything but what it named would be a wider grant than the words a person read.
+        Assert.Equal(ConsentSessionUseOutcome.None, other.Outcome);
+        Assert.Equal(ConsentSessionUseOutcome.None, unnamed.Outcome);
+    }
+
+    [Fact]
+    public async Task AnUnnamedSession_NeverPaysForANamedAction()
+    {
+        using var db = new SqliteTestDb();
+        var store = Store(db);
+
+        await store.OpenAsync(Caller, CancellationToken.None);
+
+        var use = await store.TryUseAsync(Caller, "voice.reply", CancellationToken.None);
+
+        Assert.Equal(ConsentSessionUseOutcome.None, use.Outcome);
+    }
+
+    [Fact]
+    public async Task ANamedWindow_IsNotReusedForAnUnnamedOpen()
+    {
+        using var db = new SqliteTestDb();
+        var store = Store(db);
+
+        var window = await store.OpenAsync(
+            Caller, ["voice.reply"], TimeSpan.FromMinutes(10), 5, CancellationToken.None);
+        var ordinary = await store.OpenAsync(Caller, CancellationToken.None);
+
+        // Handing the window back here would hand its coverage to reads as well; they get their
+        // own session instead, and the window keeps its budget for what it was opened for.
+        Assert.NotEqual(window.SessionId, ordinary.SessionId);
+        Assert.Equal(2, await store.CountActiveAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ANamedWindow_CarriesItsOwnBudgetAndDeadline()
+    {
+        using var db = new SqliteTestDb();
+        var store = Store(db, maxActions: 50, lifetime: TimeSpan.FromMinutes(15));
+
+        var window = await store.OpenAsync(
+            Caller, ["voice.reply"], TimeSpan.FromMinutes(2), 2, CancellationToken.None);
+
+        Assert.Equal(["voice.reply"], window.CoveredActions);
+        Assert.Equal(2, window.MaxActions);
+        Assert.Equal(Start.AddMinutes(2).ToString("O"), window.ExpiresAtUtc);
+
+        Assert.Equal(ConsentSessionUseOutcome.Used,
+            (await store.TryUseAsync(Caller, "voice.reply", CancellationToken.None)).Outcome);
+        Assert.Equal(ConsentSessionUseOutcome.Used,
+            (await store.TryUseAsync(Caller, "voice.reply", CancellationToken.None)).Outcome);
+        Assert.Equal(ConsentSessionUseOutcome.None,
+            (await store.TryUseAsync(Caller, "voice.reply", CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
+    public async Task ANamedWindow_DiesWithTheServerLikeAnyOtherSession()
+    {
+        using var db = new SqliteTestDb();
+
+        await Store(db).OpenAsync(
+            Caller, ["voice.reply"], TimeSpan.FromMinutes(10), 5, CancellationToken.None);
+
+        var afterRestart = Store(db, bootId: "boot-2");
+
+        Assert.Equal(ConsentSessionUseOutcome.None,
+            (await afterRestart.TryUseAsync(Caller, "voice.reply", CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
     public async Task Open_ReusesTheLiveSessionInsteadOfStackingBudgets()
     {
         using var db = new SqliteTestDb();
