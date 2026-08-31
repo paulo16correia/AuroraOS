@@ -28,10 +28,14 @@ STT_ENGINES = [
     # refusal — exit -11 with a log line about loading Metal and nothing else. Recognition of a
     # few seconds of speech is quick enough on the CPU, and a plugin holding the GPU is not
     # something to grant for a transcript.
+    # -l auto, because whisper.cpp defaults to English and transcribes everything else as
+    # "(speaking in foreign language)" — which is not a failure it reports, it is the transcript.
+    # A system that only understands its owner in one language is not one to ship by default.
     ("whisper-cli",
-     ["-m", "{model}", "-f", "{input}", "--output-txt", "--no-prints", "--no-gpu"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "auto",
+      "--output-txt", "--no-prints", "--no-gpu"]),
     ("whisper.cpp",
-     ["-m", "{model}", "-f", "{input}", "--output-txt", "--no-gpu"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "auto", "--output-txt", "--no-gpu"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
