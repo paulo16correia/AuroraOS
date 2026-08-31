@@ -478,4 +478,39 @@ public sealed class ServicePluginTests
         Assert.NotNull(provider.GetService<IPluginSecretSource>());
         Assert.NotNull(provider.GetService<IPluginObservationSink>());
     }
+
+    [Fact]
+    public async Task AnObservationThatCannotBePublishedIsNotLostSilently()
+    {
+        Installed installed = await RootAsync("plugin/svc", Answers);
+
+        await using ServicePluginHost host = new(
+            installed.Root, new UnconfinedSandbox("tests run the process directly"),
+            new Secrets(), new RefusingSink(), new TestClock(DateTimeOffset.UnixEpoch),
+            allowUnconfined: true);
+
+        PluginResult result = await host.InvokeAsync(
+            Manifest(installed.Executable), Call(), Ct);
+
+        Assert.True(result.Ok, result.Detail);
+
+        // The call still succeeds — a report failing to land is not a reason to lose the
+        // connection it came in on. But it must leave a mark. A silent catch around the only path
+        // a plugin has into Aurora is a path that can stop working without anybody noticing, and
+        // it did: every observation the Discord plugin produced vanished because the event
+        // contract was refusing them and nothing said a word.
+        for (var waited = 0; waited < 50 && host.Running()[0].Detail is null; waited++)
+        {
+            await Task.Delay(100, Ct);
+        }
+
+        Assert.Contains(
+            "was not published", host.Running()[0].Detail ?? "", StringComparison.Ordinal);
+    }
+
+    private sealed class RefusingSink : IPluginObservationSink
+    {
+        public Task ReceiveAsync(PluginObservation observation, CancellationToken ct) =>
+            throw new InvalidOperationException("the contract refused this event");
+    }
 }

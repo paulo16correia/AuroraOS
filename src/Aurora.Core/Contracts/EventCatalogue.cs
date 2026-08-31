@@ -39,6 +39,9 @@ public static class EventCatalogue
     public const string MaintenancePassCompleted = "MaintenancePassCompleted";
     public const string ReviewRequested = "ReviewRequested";
     public const string ExternalObservationReported = "ExternalObservationReported";
+
+    /// <summary>What a plugin saw on the surface it holds open. Untrusted by construction.</summary>
+    public const string PluginObservationReported = "PluginObservationReported";
     public const string PluginQuarantined = "PluginQuarantined";
     public const string MissionChanged = "MissionChanged";
     public const string BeliefChallenged = "BeliefChallenged";
@@ -68,6 +71,17 @@ public static class EventCatalogue
         public const string Identity = "identity";
         public const string Self = "self";
         public const string Security = "security";
+
+        /// <summary>
+        /// A plugin, reporting what it saw on the surface it holds a connection to.
+        /// </summary>
+        /// <remarks>
+        /// Its own producer rather than borrowing the ingress one. A producer emitting another's
+        /// events is how a component starts speaking for a part of the system it does not own, and
+        /// a plugin's report and an API caller's have different provenance even when they carry the
+        /// same kind of news.
+        /// </remarks>
+        public const string Plugin = "plugin";
 
         /// <summary>The ingress endpoint. The only producer reachable from outside Aurora.</summary>
         public const string Api = "api";
@@ -159,6 +173,10 @@ public static class EventCatalogue
 
         // The one ingress type. A UI or channel normalises something it saw and reports it; it is
         // an observation, not a fact Aurora has accepted, and nothing subscribes to it as truth.
+        new(PluginObservationReported, 1, Producers.Plugin, Sensitivity.Private,
+            "what a plugin saw on the surface it holds open; nobody has checked it",
+            ["perception", "attention"]),
+
         new(ExternalObservationReported, 1, Producers.Api, Sensitivity.Private,
             "what an outside surface observed, as reported; unverified by construction",
             ["perception"]),

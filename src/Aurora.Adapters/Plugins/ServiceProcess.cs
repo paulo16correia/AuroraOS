@@ -315,6 +315,10 @@ internal sealed class ServiceProcess : IAsyncDisposable
         }
     }
 
+    /// <summary>Keeps one message from filling the state it is written into.</summary>
+    private static string Truncate(string message) =>
+        message.Length <= 300 ? message : message[..300];
+
     private static string? Detail(JsonNode frame)
     {
         var detail = Text(frame, "detail");
@@ -483,10 +487,18 @@ internal sealed class ServiceProcess : IAsyncDisposable
                     frame["payload"]?.ToJsonString() ?? "{}", sensitivity),
                 ct).ConfigureAwait(false);
         }
-        catch (Exception ignored) when (ignored is not OperationCanceledException)
+        catch (Exception lost) when (lost is not OperationCanceledException)
         {
-            // A plugin's report failing to land is not a reason to lose the connection it came in
-            // on. It is recorded where the sink records things and the service keeps running.
+            // Still not a reason to lose the connection it came in on. But it is a reason to say
+            // so: this swallowed every observation the Discord plugin produced, because the event
+            // contract was refusing them and nothing said a word. A silent catch around the only
+            // path a plugin has into Aurora is a path that can stop working without anybody
+            // noticing.
+            State = State with
+            {
+                Detail = $"an observation was not published: {lost.GetType().Name}: "
+                    + Truncate(lost.Message),
+            };
         }
     }
 

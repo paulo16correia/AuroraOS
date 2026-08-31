@@ -35,6 +35,7 @@ Closes condition 5 of `docs/reviews/architecture-review-v1.0.md`.
 | `MissionChanged` | 1 | `missions` | PRIVATE | mission_id and the status it moved to; never the purpose text | ui, review |
 | `ConversationTurnReceived` | 1 | `pilot` | PRIVATE | length of the turn; the words themselves stay in the conversation record | attention, audit |
 | `GoalDrafted` | 1 | `planner` | PRIVATE | goal_id and its status; never the outcome text | ui, needs, review |
+| `PluginObservationReported` | 1 | `plugin` | PRIVATE | what a plugin saw on the surface it holds open; nobody has checked it | perception, attention |
 | `RelationshipEnded` | 1 | `relationships` | PRIVATE | relationship_id and that its interval closed; never who it was with | ui, world, review |
 | `ReviewRequested` | 1 | `review` | PRIVATE | the audit cursor the review started from | audit |
 | `JobDue` | 1 | `scheduler` | PRIVATE | run_id and the schedule's target; the run itself is not started by this | cycle, review |
