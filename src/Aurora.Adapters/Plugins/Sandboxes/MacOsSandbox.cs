@@ -36,7 +36,7 @@ public sealed class MacOsSandbox : IPluginSandbox
 
         return new SandboxPlan(
             SandboxExec,
-            ["-p", Profile(workingDirectory, installed, request.NetworkGranted)],
+            ["-p", Profile(workingDirectory, installed, request.NetworkGranted, request.GpuGranted)],
             SandboxLevel.Confined,
             "sandbox-exec",
             []);
@@ -46,7 +46,8 @@ public sealed class MacOsSandbox : IPluginSandbox
     /// Builds the profile. Order matters: in SBPL the last rule that matches wins, so every
     /// exception has to come after the denial it is an exception to.
     /// </summary>
-    private static string Profile(string workingDirectory, string installed, bool network)
+    private static string Profile(
+        string workingDirectory, string installed, bool network, bool gpu)
     {
         var profile = new StringBuilder();
         profile.Append("(version 1)");
@@ -110,6 +111,22 @@ public sealed class MacOsSandbox : IPluginSandbox
             // protocol, and not a licence to listen for connections. A plugin still cannot accept
             // anything.
             profile.Append("(allow network-inbound (local udp))");
+        }
+
+        if (gpu)
+        {
+            // Two rules, found by measuring rather than by reading: without the first, Metal loads
+            // its backend and the process dies without a word — the segmentation fault that reads
+            // as a broken recogniser. Without the second it initialises, reports the GPU by name,
+            // and quietly computes on the processor instead, which is the same answer twenty times
+            // slower and with nothing to say why.
+            profile.Append("(allow iokit-open)");
+
+            // The shader cache, and only that. Metal compiles pipelines on first use and writes
+            // them somewhere under the user's cache directory; denying the write does not fail,
+            // it falls back. Matched by name rather than by allowing the directory, so this grants
+            // a plugin a shader cache and not the rest of what lives beside it.
+            profile.Append("(allow file-write* (regex #\"/com\\.apple\\.metal\"))");
         }
 
         return profile.ToString();

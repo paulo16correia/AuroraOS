@@ -62,6 +62,19 @@ public interface IPluginRegistry
     /// </remarks>
     Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct);
 
+    /// <summary>
+    /// Installs with the network hosts and the graphics processor the owner agreed to.
+    /// </summary>
+    /// <remarks>
+    /// Both are separate questions from the permissions and from each other. Somebody can
+    /// reasonably want a plugin's capabilities without wanting it to reach the internet, or want
+    /// it to reach the internet without handing it a graphics driver.
+    /// </remarks>
+    Task<PluginInstallation> InstallAsync(
+        PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+        IReadOnlyList<string> grantedEndpoints, bool grantGpu, string approvalRef,
+        CancellationToken ct);
+
     /// <summary>Releases a quarantine, which is a decision and needs an approval.</summary>
     Task<PluginInstallation> ReleaseAsync(
         string installationId, string approvalRef, string actor, CancellationToken ct);
@@ -116,7 +129,17 @@ public sealed record SandboxRequest(
     /// plugin is audited against — they are not a boundary the kernel enforces, and pretending
     /// otherwise in this type would be the lie spreading into the code.
     /// </remarks>
-    bool NetworkGranted = false);
+    bool NetworkGranted = false,
+    /// <summary>
+    /// Whether the owner granted this plugin the graphics processor.
+    /// </summary>
+    /// <remarks>
+    /// Separate from the network because it is a separate decision. Local speech recognition is
+    /// unusable without it — a large model runs about twenty times slower on the processor alone —
+    /// and a graphics driver is a wide surface to open to third-party code, so neither answer is
+    /// obviously right and the owner gives it.
+    /// </remarks>
+    bool GpuGranted = false);
 
 /// <summary>How confined a plugin actually is once launched.</summary>
 public enum SandboxLevel

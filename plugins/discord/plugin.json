@@ -1211,5 +1211,6 @@
       "idempotent": true,
       "audit_level": "FULL"
     }
-  ]
+  ],
+  "requires_gpu": true
 }

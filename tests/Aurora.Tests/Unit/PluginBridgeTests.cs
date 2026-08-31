@@ -57,6 +57,12 @@ public sealed class PluginBridgeTests
         public Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<PluginInstallation> InstallAsync(
+            PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+            IReadOnlyList<string> grantedEndpoints, bool grantGpu, string approvalRef,
+            CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<PluginInstallation>> ListAsync(CancellationToken ct) =>
             throw new NotSupportedException();
     }

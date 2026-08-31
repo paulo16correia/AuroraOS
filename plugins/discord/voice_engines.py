@@ -31,11 +31,15 @@ STT_ENGINES = [
     # -l auto, because whisper.cpp defaults to English and transcribes everything else as
     # "(speaking in foreign language)" — which is not a failure it reports, it is the transcript.
     # A system that only understands its owner in one language is not one to ship by default.
+    #
+    # The GPU is used when Aurora granted it and refused when it did not: a large model takes
+    # about eight seconds on the graphics processor and seventy on the processor alone, and
+    # seventy seconds to hear one sentence is not listening.
     ("whisper-cli",
      ["-m", "{model}", "-f", "{input}", "-l", "auto",
-      "--output-txt", "--no-prints", "--no-gpu"]),
+      "--output-txt", "--no-prints", "{gpu}"]),
     ("whisper.cpp",
-     ["-m", "{model}", "-f", "{input}", "-l", "auto", "--output-txt", "--no-gpu"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "auto", "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
@@ -198,7 +202,7 @@ def readiness():
     }
 
 
-def transcribe(engine, audio_bytes, model=None, timeout=60):
+def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
     The audio touches the disk because these programs read files, and it is removed in the same
@@ -220,6 +224,12 @@ def transcribe(engine, audio_bytes, model=None, timeout=60):
                     .replace("{model}", model or engine.get("model") or "")
             for argument in engine["arguments"]
         ]
+
+        # Without the grant the GPU is not merely slow, it is a segmentation fault: whisper.cpp
+        # loads its Metal backend by default and the sandbox refuses it. --no-gpu is how the
+        # refusal becomes a fallback instead of a crash.
+        arguments = [a for a in (
+            a.replace("{gpu}", "" if gpu else "--no-gpu") for a in arguments) if a]
 
         finished = subprocess.run(
             [engine["path"], *arguments], capture_output=True, timeout=timeout, check=False)

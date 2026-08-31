@@ -35,6 +35,9 @@ public static class PluginRefusal
     /// <summary>The manifest declares network endpoints and the owner has not granted them.</summary>
     public const string NetworkNotGranted = "NETWORK_NOT_GRANTED";
 
+    /// <summary>The manifest asks for the graphics processor and the owner has not granted it.</summary>
+    public const string GpuNotGranted = "GPU_NOT_GRANTED";
+
     /// <summary>A secret the plugin needs is not in the vault, so it was never started.</summary>
     public const string SecretMissing = "SECRET_MISSING";
 
@@ -136,6 +139,15 @@ public sealed record PluginManifest(
     string? Executable = null,
     /// <summary>Set when the plugin holds a connection rather than answering one call.</summary>
     PluginService? Service = null,
+    /// <summary>
+    /// Whether this plugin needs the graphics processor.
+    /// </summary>
+    /// <remarks>
+    /// Granted separately at install, like the network. It is compute rather than the owner's
+    /// files, which is why it can be granted at all — and it is a large driver surface reached
+    /// from a plugin, which is why it is not granted by default.
+    /// </remarks>
+    bool RequiresGpu = false,
     /// <summary>Secrets it cannot run without, by name. Values never appear here.</summary>
     IReadOnlyList<PluginSecretRequirement>? RequiredSecrets = null);
 
@@ -160,7 +172,9 @@ public sealed record PluginInstallation(
     /// what was asked for, and this is what was agreed to. An update that adds a host therefore
     /// needs a fresh decision instead of inheriting the old one.
     /// </remarks>
-    IReadOnlyList<string>? GrantedEndpoints = null);
+    IReadOnlyList<string>? GrantedEndpoints = null,
+    /// <summary>Whether the owner agreed this plugin may use the graphics processor.</summary>
+    bool GpuGranted = false);
 
 /// <summary>What verification found, before anything is installed.</summary>
 /// <remarks>Named apart from the Mind State one: they answer different questions about different things.</remarks>
@@ -192,7 +206,9 @@ public sealed record PluginInvocation(
     /// and the installation is what was agreed to. A plugin whose update declares a new host does
     /// not inherit the old grant.
     /// </remarks>
-    bool NetworkGranted = false);
+    bool NetworkGranted = false,
+    /// <summary>Whether this installation may use the graphics processor.</summary>
+    bool GpuGranted = false);
 
 /// <summary>
 /// What is known about a call after it returns.

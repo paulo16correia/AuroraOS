@@ -64,6 +64,10 @@ public sealed record PluginManifestFile
     [JsonPropertyName("service")]
     public PluginServiceFile? Service { get; init; }
 
+    /// <summary>Whether this plugin needs the graphics processor. Granted separately at install.</summary>
+    [JsonPropertyName("requires_gpu")]
+    public bool RequiresGpu { get; init; }
+
     /// <summary>Secrets the plugin cannot run without, by name. Values never appear here.</summary>
     [JsonPropertyName("required_secrets")]
     public IReadOnlyList<PluginSecretFile> RequiredSecrets { get; init; } = [];

@@ -99,9 +99,15 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
         string approvalRef, CancellationToken ct) =>
         InstallAsync(manifest, grantedPermissions, [], approvalRef, ct);
 
+    public Task<PluginInstallation> InstallAsync(
+        PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+        IReadOnlyList<string> grantedEndpoints, string approvalRef, CancellationToken ct) =>
+        InstallAsync(manifest, grantedPermissions, grantedEndpoints, false, approvalRef, ct);
+
     public async Task<PluginInstallation> InstallAsync(
         PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
-        IReadOnlyList<string> grantedEndpoints, string approvalRef, CancellationToken ct)
+        IReadOnlyList<string> grantedEndpoints, bool grantGpu, string approvalRef,
+        CancellationToken ct)
     {
         PluginVerification verification = await VerifyAsync(manifest, ct).ConfigureAwait(false);
         if (!verification.Ok)
@@ -132,7 +138,11 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             Guid.NewGuid().ToString("N"), manifest.PluginId, manifest.Version, manifest.Publisher,
             InstallationStatus.Installed, granted, AuroraJson.Serialize(manifest),
             now, now, ConsecutiveFailures: 0, QuarantineReason: null, approvalRef,
-            GrantedEndpoints: endpoints);
+            GrantedEndpoints: endpoints,
+
+            // Granting what was not asked for is how a review stops meaning anything, here as
+            // everywhere else: the intersection, never the union.
+            GpuGranted: grantGpu && manifest.RequiresGpu);
 
         await SaveAsync(installation, ct).ConfigureAwait(false);
         return installation;
@@ -261,12 +271,23 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
                 $"not covered by the grant: {string.Join(", ", reaching)}");
         }
 
+        if (manifest.RequiresGpu && !installation.GpuGranted)
+        {
+            return Refused(
+                PluginRefusal.GpuNotGranted,
+                $"{invocation.PluginId} asks for the graphics processor and was not granted it");
+        }
+
         PluginResult result;
         try
         {
             result = await _host.InvokeAsync(
                 manifest,
-                invocation with { NetworkGranted = grantedEndpoints.Count > 0 },
+                invocation with
+                {
+                    NetworkGranted = grantedEndpoints.Count > 0,
+                    GpuGranted = installation.GpuGranted,
+                },
                 ct).ConfigureAwait(false);
         }
         catch (Exception failure) when (failure is not OperationCanceledException)
@@ -517,7 +538,7 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
     private const string Select = """
         SELECT id, plugin_id, version, publisher, status, granted_permissions, manifest_json,
                installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason,
-               approval_ref, granted_endpoints
+               approval_ref, granted_endpoints, gpu_granted
           FROM plugin_installation
         """;
 
@@ -526,14 +547,15 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             INSERT INTO plugin_installation
                 (id, plugin_id, version, publisher, status, granted_permissions, manifest_json,
                  installed_at_utc, updated_at_utc, consecutive_failures, quarantine_reason,
-                 approval_ref, granted_endpoints)
+                 approval_ref, granted_endpoints, gpu_granted)
             VALUES (@id, @plugin, @version, @publisher, @status, @granted, @manifest, @installed,
-                    @updated, @failures, @reason, @approval, @endpoints)
+                    @updated, @failures, @reason, @approval, @endpoints, @gpu)
             ON CONFLICT(plugin_id) DO UPDATE SET
                 version = @version, publisher = @publisher, status = @status,
                 granted_permissions = @granted, manifest_json = @manifest, updated_at_utc = @updated,
                 consecutive_failures = @failures, quarantine_reason = @reason,
-                approval_ref = @approval, granted_endpoints = @endpoints;
+                approval_ref = @approval, granted_endpoints = @endpoints,
+                gpu_granted = @gpu;
             """, ct,
             ("@id", installation.Id), ("@plugin", installation.PluginId),
             ("@version", installation.Version), ("@publisher", installation.Publisher),
@@ -544,7 +566,8 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             ("@failures", installation.ConsecutiveFailures),
             ("@reason", (object?)installation.QuarantineReason ?? DBNull.Value),
             ("@approval", (object?)installation.ApprovalRef ?? DBNull.Value),
-            ("@endpoints", string.Join('\n', installation.GrantedEndpoints ?? [])));
+            ("@endpoints", string.Join('\n', installation.GrantedEndpoints ?? [])),
+            ("@gpu", installation.GpuGranted ? 1 : 0));
 
     private async Task<IReadOnlyList<PluginInstallation>> ReadAsync(
         string sql, CancellationToken ct, params (string Name, object Value)[] args)
@@ -567,7 +590,8 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
                 reader.GetString(7), reader.GetString(8), reader.GetInt32(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
                 reader.IsDBNull(11) ? null : reader.GetString(11),
-                reader.IsDBNull(12) ? [] : Lines(reader.GetString(12))));
+                reader.IsDBNull(12) ? [] : Lines(reader.GetString(12)),
+                !reader.IsDBNull(13) && reader.GetInt32(13) == 1));
         }
 
         return installations;

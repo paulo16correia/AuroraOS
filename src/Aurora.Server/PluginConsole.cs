@@ -204,6 +204,31 @@ public static class PluginConsole
             }
         }
 
+        var gpu = false;
+
+        if (sealed_.RequiresGpu)
+        {
+            Console.WriteLine("""
+
+                [Aurora] It also asks for the graphics processor.
+
+                That is compute rather than your files, which is why it can be granted at all. It
+                is also a large driver surface reached from third-party code, which is why it is
+                not granted by default. Local speech recognition is roughly twenty times slower
+                without it — slow enough to be unusable — so for that the answer is probably yes,
+                and for a plugin with no such need it is probably no.
+                """);
+
+            Console.Write("[Aurora] Let it use the GPU? [y/N] ");
+            gpu = string.Equals(Console.ReadLine()?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
+
+            if (!gpu)
+            {
+                Console.WriteLine(
+                    "[Aurora] Installing without it. Anything needing it will be refused.");
+            }
+        }
+
         if ((sealed_.RequiredSecrets ?? []).Count > 0)
         {
             Console.WriteLine();
@@ -220,8 +245,8 @@ public static class PluginConsole
         Registry registry = Open(options);
 
         PluginInstallation installed = registry.Plugins.InstallAsync(
-            sealed_, sealed_.RequiredPermissions, endpoints, $"console/{Environment.UserName}",
-            CancellationToken.None).GetAwaiter().GetResult();
+            sealed_, sealed_.RequiredPermissions, endpoints, gpu,
+            $"console/{Environment.UserName}", CancellationToken.None).GetAwaiter().GetResult();
 
         Console.WriteLine($"""
             [Aurora] Installed. Status {installed.Status}.

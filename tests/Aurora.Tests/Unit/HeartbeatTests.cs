@@ -172,6 +172,12 @@ public sealed class HeartbeatTests
 
         public Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<PluginInstallation> InstallAsync(
+            PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+            IReadOnlyList<string> grantedEndpoints, bool grantGpu, string approvalRef,
+            CancellationToken ct) =>
+            throw new NotSupportedException();
     }
 
     private static PluginInstallation Installed(string id, string status = InstallationStatus.Installed) =>
@@ -290,6 +296,12 @@ public sealed class HeartbeatTests
             throw new NotSupportedException();
 
         public Task<PluginInstallation> RemoveAsync(string installationId, string actor, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<PluginInstallation> InstallAsync(
+            PluginManifest manifest, IReadOnlyList<string> grantedPermissions,
+            IReadOnlyList<string> grantedEndpoints, bool grantGpu, string approvalRef,
+            CancellationToken ct) =>
             throw new NotSupportedException();
     }
 }

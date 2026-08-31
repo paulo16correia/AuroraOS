@@ -1139,7 +1139,8 @@ public sealed class SqliteDatabase
           consecutive_failures INTEGER NOT NULL,
           quarantine_reason TEXT NULL,
           approval_ref TEXT NULL,
-          granted_endpoints TEXT NOT NULL DEFAULT ''
+          granted_endpoints TEXT NOT NULL DEFAULT '',
+          gpu_granted INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_plugin_status ON plugin_installation(status);
@@ -1598,6 +1599,11 @@ public sealed class SqliteDatabase
         // v16 — the hosts the owner agreed a plugin may reach (docs/adr/0067). Empty by default,
         // which is what every installation made before the grant existed actually had.
         ("plugin_installation", "granted_endpoints", "TEXT NOT NULL DEFAULT ''"),
+
+        // v17 — whether the owner agreed this plugin may use the graphics processor
+        // (docs/adr/0069). Zero by default, which is what every installation made before the
+        // question existed actually had.
+        ("plugin_installation", "gpu_granted", "INTEGER NOT NULL DEFAULT 0"),
 
         // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
         ("goal", "mission_ref", "TEXT NULL"),

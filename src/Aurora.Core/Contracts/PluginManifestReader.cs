@@ -119,7 +119,7 @@ public static class PluginManifestReader
     {
         "plugin_id", "version", "publisher", "executable", "min_platform_version",
         "max_data_class", "documentation_ref", "required_permissions", "event_subscriptions",
-        "network_endpoints", "capabilities", "service", "required_secrets",
+        "network_endpoints", "capabilities", "service", "required_secrets", "requires_gpu", "service", "required_secrets",
     };
 
     private static readonly HashSet<string> KnownCapability = new(StringComparer.Ordinal)
@@ -214,6 +214,7 @@ public static class PluginManifestReader
                         file.Executable,
                         TimeSpan.FromSeconds(Math.Clamp(file.Service.StartTimeoutSeconds, 1, 300)),
                         Math.Clamp(file.Service.MaxConsecutiveFailures, 1, 100)),
+                RequiresGpu: file.RequiresGpu,
                 RequiredSecrets:
                 [
                     .. file.RequiredSecrets.Select(

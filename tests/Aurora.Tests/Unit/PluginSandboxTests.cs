@@ -558,4 +558,70 @@ public sealed class PluginSandboxTests
             TryDelete(root);
         }
     }
+
+    [Fact]
+    public async Task APluginWithoutTheGrantCannotReachTheGraphicsProcessor()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        (string root, string script) = await PluginAsync(
+            "if /usr/bin/python3 -c \"import ctypes;ctypes.CDLL('/System/Library/Frameworks/"
+            + "Metal.framework/Metal').MTLCreateSystemDefaultDevice() or True\" 2>/dev/null; "
+            + "then printf '{\"metal\":\"open\"}'; else printf '{\"metal\":\"denied\"}'; fi");
+
+        try
+        {
+            var host = new SubprocessPluginHost(root, new MacOsSandbox(), allowUnconfined: false);
+
+            // The default. A graphics driver is a wide surface to open to third-party code, and
+            // nothing about granting it to one plugin may leak it to another.
+            PluginResult result = await host.InvokeAsync(Manifest(script), Call(), Ct);
+
+            Assert.True(result.Ok, result.Detail);
+            Assert.DoesNotContain(
+                "\"metal\": \"open\"", result.OutputJson ?? "", StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void TheGrantAddsExactlyTheTwoRulesItNeedsAndNoMore()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            return;
+        }
+
+        var without = new MacOsSandbox()
+            .Plan(new SandboxRequest("plugin/probe", "/bin/echo", Path.GetTempPath()));
+
+        var with = new MacOsSandbox()
+            .Plan(new SandboxRequest(
+                "plugin/probe", "/bin/echo", Path.GetTempPath(), GpuGranted: true));
+
+        var granted = with.Arguments[1];
+
+        Assert.DoesNotContain("iokit-open", without.Arguments[1], StringComparison.Ordinal);
+
+        // Both, and found by measuring rather than reading. Without the first, Metal loads its
+        // backend and the process dies without a word. Without the second it initialises, reports
+        // the GPU by name, and computes on the processor anyway — the same answer twenty times
+        // slower and with nothing to say why.
+        Assert.Contains("(allow iokit-open)", granted, StringComparison.Ordinal);
+        Assert.Contains("apple", granted, StringComparison.Ordinal);
+        Assert.Contains("metal", granted, StringComparison.Ordinal);
+        Assert.Contains("file-write*", granted, StringComparison.Ordinal);
+
+        // The shader cache by name, not the directory it sits in. A plugin gets somewhere to
+        // compile pipelines and not the rest of what lives beside them.
+        Assert.DoesNotContain(
+            "(allow file-write* (subpath \"/private/var/folders\"))", granted,
+            StringComparison.Ordinal);
+    }
 }
