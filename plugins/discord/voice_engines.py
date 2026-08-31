@@ -23,8 +23,15 @@ OPUS_SEARCH = ["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib", "/usr/lib/x86_
 
 # Local speech-to-text, in the order they are preferred. Each is a program the owner installed.
 STT_ENGINES = [
-    ("whisper-cli", ["-m", "{model}", "-f", "{input}", "--output-txt", "--no-prints"]),
-    ("whisper.cpp", ["-m", "{model}", "-f", "{input}", "--output-txt"]),
+    # --no-gpu is not a performance choice. whisper.cpp loads its Metal backend by default, the
+    # sandbox denies a plugin the GPU, and the result is a segmentation fault rather than a
+    # refusal — exit -11 with a log line about loading Metal and nothing else. Recognition of a
+    # few seconds of speech is quick enough on the CPU, and a plugin holding the GPU is not
+    # something to grant for a transcript.
+    ("whisper-cli",
+     ["-m", "{model}", "-f", "{input}", "--output-txt", "--no-prints", "--no-gpu"]),
+    ("whisper.cpp",
+     ["-m", "{model}", "-f", "{input}", "--output-txt", "--no-gpu"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
