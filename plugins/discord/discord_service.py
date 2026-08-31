@@ -663,6 +663,13 @@ def voice_listen(state, args, nonce=None):
         if speaker_id is not None and session.speaker_for(ssrc) is None:
             session.identify_speaker(ssrc, speaker_id)
 
+        # A packet arriving is not somebody speaking. Discord's silence *frames* are already
+        # filtered, but a microphone with voice detection switched off transmits the sound of the
+        # room continuously — real audio, encoded properly, carrying nothing. Counting that as
+        # speech means somebody is always talking, and Aurora waits for a floor that never frees.
+        if voice_engines.is_silence(pcm):
+            return
+
         for action, detail in session.audio(ssrc, at_ms):
             if action == "speaker_started":
                 heard[detail["user_id"]] = bytearray()
