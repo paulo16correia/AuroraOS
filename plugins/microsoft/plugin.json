@@ -1,0 +1,88 @@
+{
+  "plugin_id": "plugin/microsoft",
+  "version": "0.1.0",
+  "publisher": "aurora",
+  "executable": "microsoft_service.py",
+  "min_platform_version": 1,
+  "max_data_class": "PRIVATE",
+  "documentation_ref": "docs/integrations/microsoft.md",
+  "required_permissions": [
+    "microsoft.identity.read"
+  ],
+  "event_subscriptions": [],
+  "network_endpoints": [
+    "graph.microsoft.com",
+    "login.microsoftonline.com"
+  ],
+  "service": {
+    "start_timeout_seconds": 20,
+    "max_consecutive_failures": 5
+  },
+  "required_secrets": [
+    {
+      "name": "tenant_id",
+      "purpose": "Which Microsoft 365 organisation to sign in to. Not a secret in the usual sense, and kept here so every part of the sign-in lives in one place."
+    },
+    {
+      "name": "client_id",
+      "purpose": "The Entra application registration Aurora signs in as. Public identifier of the app you created."
+    },
+    {
+      "name": "refresh_token",
+      "purpose": "Acts as you, with the permissions you consented to. Anything Aurora does with Microsoft is done as you and is attributable to you. Obtained once by running device_login.py yourself; Aurora never asks for your password."
+    }
+  ],
+  "requires_gpu": false,
+  "capabilities": [
+    {
+      "key": "microsoft.status",
+      "title": "Microsoft connection status",
+      "description": "Whether this machine could reach Microsoft 365 at all, and what is missing if not. Answers without contacting Microsoft, so it is safe to ask before anything has been approved.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 5,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.identity.me",
+      "title": "Who Aurora is signed in as",
+      "description": "The signed-in account's name, address, job title and department, read from the Microsoft directory. Reads only. A job title here is a fact about a directory entry and never a reason to allow anything.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    }
+  ]
+}
