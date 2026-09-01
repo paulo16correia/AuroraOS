@@ -82,6 +82,12 @@ public sealed class MicrosoftPluginTests
         RunPython("test_service", 12);
     }
 
+    [Fact]
+    public void TheMailboxRulesHold()
+    {
+        RunPython("test_mail", 20);
+    }
+
     // ---- what the manifest promises ----
 
     [Fact]
@@ -153,6 +159,72 @@ public sealed class MicrosoftPluginTests
         // and a window over sending mail is exactly the thing that should be argued for
         // separately rather than arriving with a family of read capabilities.
         Assert.All(Manifest().Capabilities, capability => Assert.Null(capability.OpensWindow));
+    }
+
+    // ---- writing mail and sending mail are different decisions ----
+
+    [Fact]
+    public void NothingComposesAndSendsInOneStep()
+    {
+        IReadOnlyList<PluginCapability> capabilities = Manifest().Capabilities;
+
+        // Graph offers POST /me/sendMail, which takes a body and delivers it in one call.
+        // Approving that would mean approving text nobody had read, so it is not offered.
+        PluginCapability send = capabilities.Single(c => c.Effects.Contains("microsoft.mail.send"));
+
+        Assert.Equal("microsoft.mail.send_draft", send.Key);
+
+        // Its input is an identifier and nothing else — no subject, no body, no recipients.
+        var schema = send.InputSchema;
+
+        Assert.Contains("message_id", schema, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"body\"", schema, StringComparison.Ordinal);
+        Assert.DoesNotContain("recipients", schema, StringComparison.Ordinal);
+        Assert.DoesNotContain("subject", schema, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EveryDraftCapabilityDeclaresADraftEffectAndNotASendEffect()
+    {
+        IEnumerable<PluginCapability> drafts = Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.mail.draft", StringComparison.Ordinal));
+
+        Assert.Equal(3, drafts.Count());
+
+        foreach (PluginCapability draft in drafts)
+        {
+            Assert.Equal(["microsoft.mail.draft"], draft.Effects);
+
+            // Reversible because a draft can be deleted, which is what makes it the safe half of
+            // the split: the consequential half is the one that cannot be undone.
+            Assert.True(draft.Reversible);
+        }
+    }
+
+    [Fact]
+    public void SendingIsNeverReversibleAndNeverCoveredByAWindow()
+    {
+        PluginCapability send =
+            Manifest().Capabilities.Single(c => c.Key == "microsoft.mail.send_draft");
+
+        // Mail cannot be unsent, and nothing may turn one approval into standing authority to keep
+        // sending. Every send costs its own decision, bound to its own draft.
+        Assert.False(send.Reversible);
+        Assert.True(send.ApprovalRequired);
+        Assert.Null(send.OpensWindow);
+    }
+
+    [Fact]
+    public void EveryMailWriteAsksAndEveryMailReadAsksToo()
+    {
+        foreach (PluginCapability capability in Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.mail.", StringComparison.Ordinal)))
+        {
+            // Reading somebody's mailbox is worth a decision even though it changes nothing —
+            // and being effect-free is what lets a consent session cover the next read.
+            Assert.True(capability.ApprovalRequired, capability.Key);
+            Assert.Equal(RiskLevel.Medium, capability.Risk);
+        }
     }
 
     /// <summary>

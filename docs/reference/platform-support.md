@@ -82,6 +82,36 @@ the wrong one for anything installed, and Aurora says so in the refusal.
 plugin-sandbox PASS — plugins confined by sandbox-exec
 ```
 
+## Microsoft 365
+
+A different table, because the question is different: this is one provider reached from a plugin,
+and what matters is whether it has met the provider rather than which operating system it ran on.
+
+| | Status | Tests | Verified against a tenant |
+| --- | --- | --- | --- |
+| Authentication — refresh token grant | IMPLEMENTED | 6 | **no** |
+| Authentication — client credentials grant | IMPLEMENTED | 1 | **no** |
+| Graph transport, retries, throttling, pagination | IMPLEMENTED | 30 | **no** |
+| Credential redaction | IMPLEMENTED | 6 | not applicable |
+| Outlook — read, list, search, attachments | IMPLEMENTED | 8 | **no** |
+| Outlook — drafts | IMPLEMENTED | 4 | **no** |
+| Outlook — sending a draft | IMPLEMENTED | 3 | **no** |
+| Outlook — move, mark read | IMPLEMENTED | 3 | **no** |
+| Attachment content download | **UNSUPPORTED** — not written | — | — |
+| Calendar, files, tasks, people, Teams | **not implemented** | — | — |
+
+**Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
+no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —
+throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing at another
+host. That is worth having and it is not verification.
+
+There are no live tests and no simulated live tests. What a real tenant would settle is listed in
+`docs/integrations/microsoft.md`.
+
+**On Windows this plugin does not run at all**, for two separate reasons: plugin confinement there
+is unverified, and `CreateProcess` will not run a `.py` the way a shebang does on Unix, so a script
+plugin needs its interpreter named in the manifest. The second is unaddressed.
+
 ## Discord
 
 Everything Discord-facing is tested against a stand-in on loopback: a real HTTP server and a real

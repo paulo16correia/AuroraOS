@@ -18,6 +18,7 @@ import os
 import sys
 
 import graph
+import mail
 import msauth
 
 # Refusals that are about this plugin rather than about Microsoft.
@@ -124,9 +125,16 @@ def _text(value, limit=400):
     return value[:limit]
 
 
+# Reads change nothing at the far end. Aurora knows that from the manifest's effects, and the
+# split is repeated here so that a capability cannot be added to the wrong half by accident.
 READS = {
     "microsoft.identity.me": identity,
     "microsoft.status": status,
+    **mail.READS,
+}
+
+WRITES = {
+    **mail.WRITES,
 }
 
 
@@ -136,6 +144,9 @@ def handle(state, frame):
 
     if capability in READS:
         return READS[capability](state, args)
+
+    if capability in WRITES:
+        return WRITES[capability](state, args)
 
     raise graph.GraphError(E_UNSUPPORTED, "this plugin does not offer '%s'" % capability)
 

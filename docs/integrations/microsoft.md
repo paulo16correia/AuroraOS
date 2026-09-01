@@ -91,14 +91,66 @@ It will ask three separate questions: the permissions, the network, and — for 
 
 ## What is implemented
 
-| Capability | Graph | Classification | Risk | Approval |
-| --- | --- | --- | --- | --- |
-| `microsoft.status` | none | SUPPORTED | LOW | no |
-| `microsoft.identity.me` | `GET /me` | SUPPORTED | MEDIUM | yes |
+| Capability | Graph | Classification | Risk | Approval | Effects |
+| --- | --- | --- | --- | --- | --- |
+| `microsoft.status` | none | SUPPORTED | LOW | no | — |
+| `microsoft.identity.me` | `GET /me` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.mail.list` | `GET /me/mailFolders/{f}/messages` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.mail.search` | `GET /me/messages?$search` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.mail.read` | `GET /me/messages/{id}` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.mail.attachments` | `GET /me/messages/{id}/attachments` | LIMITED — metadata only | MEDIUM | yes | — |
+| `microsoft.mail.draft` | `POST /me/messages` | SUPPORTED | MEDIUM | yes | `mail.draft` |
+| `microsoft.mail.draft_reply` | `POST …/createReply` | SUPPORTED | MEDIUM | yes | `mail.draft` |
+| `microsoft.mail.draft_forward` | `POST …/createForward` | SUPPORTED | MEDIUM | yes | `mail.draft` |
+| `microsoft.mail.send_draft` | `POST /me/messages/{id}/send` | SUPPORTED | MEDIUM | yes | `mail.send` |
+| `microsoft.mail.move` | `POST /me/messages/{id}/move` | SUPPORTED | MEDIUM | yes | `mail.move` |
+| `microsoft.mail.mark_read` | `PATCH /me/messages/{id}` | SUPPORTED | MEDIUM | yes | `mail.flag` |
 
-Mail, calendar, files, tasks, people and Teams are **not implemented**. The foundation they will
-sit on is: authentication, transport, retries, throttling, pagination, error mapping, redaction and
-audit metadata. That is what exists today.
+Calendar, files, tasks, people and Teams are **not implemented**.
+
+### Graph permissions for mail
+
+| Permission | Type | Admin consent | Needed for |
+| --- | --- | --- | --- |
+| `Mail.Read` | Delegated | No | list, search, read, attachments |
+| `Mail.ReadWrite` | Delegated | No | drafts, move, mark read |
+| `Mail.Send` | Delegated | No | sending a draft |
+
+Delegated throughout. `Mail.Read` as an *application* permission reads every mailbox in the tenant;
+the delegated one reads yours.
+
+## Writing mail and sending mail are different decisions
+
+**No capability both composes and sends.** Graph offers `POST /me/sendMail`, which takes a body and
+delivers it in one call. It is not wired up, and that is the design rather than an omission:
+approving it would mean approving whatever text was composed in the same breath, unread.
+
+So:
+
+- a draft is created by its own capability, with its own effect and its own approval;
+- the draft is a real message in your Drafts folder — you can open it in Outlook;
+- `send_draft` takes **an identifier and nothing else**. No subject, no body, no recipients.
+
+Which means an approval to send is an approval to send *that* content, which somebody could have
+read, rather than a blank cheque on the next thing composed. `reply` and `forward` follow the same
+rule — they use Graph's `createReply` and `createForward`, never the siblings that deliver
+immediately. Forwarding especially: it is the operation that most often sends outward something
+that was never meant to leave, so its recipients sit in a draft where they can be seen.
+
+Sending is never reversible, and no consent window covers it (`docs/adr/0070`). Every send costs
+its own decision.
+
+A send that times out comes back as `microsoft_unknown_outcome` and is never retried — Graph offers
+no idempotency key for it, and sending twice is worse than saying it did not obviously work. Once a
+draft has been sent it leaves the Drafts folder, so a repeat gets a 404 rather than a second
+delivery. That is worth knowing and is not idempotency Aurora can rely on.
+
+## Attachments
+
+Listing is metadata only — name, type, size. **Downloading content is not implemented.** Graph
+serves file content from a host that is deliberately not on this plugin's allowlist, so fetching one
+means an explicit credential-free request to somewhere else. That deserves its own capability and
+its own approval rather than arriving as a side effect of listing, and it is not written yet.
 
 ## The foundation, and the rules it enforces
 
@@ -159,7 +211,8 @@ becomes a permission check.
 | --- | --- |
 | `test_graph.py` | 37 tests — allowlist, credential ordering, redaction, error mapping, malformed responses, throttling, retries, pagination, audit metadata, authentication |
 | `test_service.py` | 12 tests — the protocol, degraded start, hostile content, bounded fields, failure handling |
-| `MicrosoftPluginTests.cs` | 8 tests — runs both modules, and checks what the manifest promises |
+| `test_mail.py` | 20 tests — reading, the draft/send split, spoofed sender names, hostile bodies, identifier injection, moving |
+| `MicrosoftPluginTests.cs` | 13 tests — runs all three modules, and checks what the manifest promises |
 
 The stand-in is a real HTTP server on loopback that answers like Graph and like Graph on a bad day:
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing somewhere
