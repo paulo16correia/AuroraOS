@@ -35,11 +35,23 @@ STT_ENGINES = [
     # The GPU is used when Aurora granted it and refused when it did not: a large model takes
     # about eight seconds on the graphics processor and seventy on the processor alone, and
     # seventy seconds to hear one sentence is not listening.
+    # -bs 1 is greedy decoding. Measured on this machine, a beam search costs ~15% more time and
+    # changed no word of a short reply — and in a conversation the time is what is being spent.
+    #
+    # {language} is "auto" unless the owner says otherwise, and saying otherwise is worth about
+    # 400ms on a four-second utterance: detecting the language is a pass over the audio that a
+    # person who always speaks Portuguese pays for every sentence, forever.
+    #
+    # --prompt is the surprising one. It is context, not a command, and seeding it with Aurora's
+    # own name is the difference between a small model hearing "Aurora" and hearing "A hora" —
+    # measured, on this machine, with the same clip. A name is the word recognition gets wrong
+    # most, and telling the recogniser the word exists costs nothing.
     ("whisper-cli",
-     ["-m", "{model}", "-f", "{input}", "-l", "auto",
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "--prompt", "{prompt}",
       "--output-txt", "--no-prints", "{gpu}"]),
     ("whisper.cpp",
-     ["-m", "{model}", "-f", "{input}", "-l", "auto", "--output-txt", "{gpu}"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "--prompt", "{prompt}",
+      "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
@@ -93,10 +105,15 @@ def find_opus():
     return opus_codec.library() if opus_codec.available() else None
 
 
-def find_model():
-    """A whisper model file, or None. Separate from the program and separately absent."""
+def find_model(preferred=None):
+    """A whisper model file, or None. Separate from the program and separately absent.
+
+    The owner may name one. The trade is speed against a proper noun: measured here, the large
+    model takes about seven seconds for a four-second sentence and the base model four tenths of
+    one — and the base model mishears the name, unless it is prompted with it (docs/adr/0071).
+    """
     for directory in MODEL_SEARCH:
-        for name in MODEL_NAMES:
+        for name in ([preferred] if preferred else []) + MODEL_NAMES:
             candidate = os.path.join(directory, name)
 
             if os.path.exists(candidate):
@@ -105,7 +122,7 @@ def find_model():
     return None
 
 
-def find_stt():
+def find_stt(preferred_model=None):
     """A local speech-to-text program with a model to run, or None.
 
     Both, because either alone recognises nothing. whisper.cpp with no model exits non-zero on
@@ -118,7 +135,7 @@ def find_stt():
         if not found:
             continue
 
-        model = find_model()
+        model = find_model(preferred_model)
 
         if "{model}" in " ".join(arguments) and model is None:
             return None
@@ -245,7 +262,8 @@ def is_hallucination(text):
     return text.strip().lower() in HALLUCINATIONS
 
 
-def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True):
+def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
+               language="auto", prompt=""):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
     The audio touches the disk because these programs read files, and it is removed in the same
@@ -265,6 +283,8 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True):
         arguments = [
             argument.replace("{input}", source)
                     .replace("{model}", model or engine.get("model") or "")
+                    .replace("{language}", language or "auto")
+                    .replace("{prompt}", prompt or "")
             for argument in engine["arguments"]
         ]
 

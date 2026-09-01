@@ -26,6 +26,7 @@ import voice_engines
 from gateway import Gateway
 from voice_transport import VoiceTransport
 from conversation import Conversation
+import voice_session
 from voice_session import VoiceSession
 
 DEFAULT_API = "https://discord.com/api/v10"
@@ -79,9 +80,15 @@ def _setting(name, default=None):
 
     try:
         with open(os.path.join(here, "config.json"), "r") as handle:
-            return (json.load(handle) or {}).get(name) or default
+            settings = json.load(handle) or {}
     except (OSError, ValueError):
         return default
+
+    # Present-but-falsy is an answer. "wait zero milliseconds before replying" is a setting
+    # somebody can mean, and reading it as "unset" would silently give them the default instead.
+    value = settings.get(name, default)
+
+    return default if value is None else value
 
 
 def api_base(allowed):
@@ -554,7 +561,13 @@ def voice_join(state, args, nonce=None):
 
     identity = gateway.status().get("bot_user_id")
 
-    session = VoiceSession(args["guild_id"], args["channel_id"], identity)
+    # How long a pause has to last before Aurora treats a turn as over. Every millisecond here is
+    # paid on every single answer, and it is the one part of the delay that is pure waiting: 900ms
+    # is a comfortable conversational pause, 350ms is a fast one that will sometimes cut a person
+    # off mid-thought. The owner picks, because which is right depends on how they talk.
+    session = VoiceSession(
+        args["guild_id"], args["channel_id"], identity,
+        silence_ms=int(_setting("silence_ms", voice_session.SILENCE_MS)))
     state["voice"] = session
     state["voice_muted"] = False
     state["voice_listening"] = False
@@ -713,10 +726,17 @@ def _watch_turns(state):
     Separate from the audio thread on purpose: recognition takes as long as it takes, and doing it
     where the packets arrive would stop draining the socket while somebody is still speaking.
     """
-    engine = voice_engines.find_stt()
+    engine = voice_engines.find_stt(_setting("stt_model"))
+    language = _setting("stt_language", "auto")
+
+    # What the recogniser is told to expect. Aurora's own name, because that is the word it must
+    # get right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
+    gateway = state.get("gateway")
+    own_name = (gateway.status() if gateway else {}).get("bot_name") or "Aurora"
+    prompt = ", ".join([own_name] + list(_setting("stt_vocabulary", []) or []))
 
     while state.get("voice_listening"):
-        time.sleep(0.25)
+        time.sleep(0.05)
 
         session = state.get("voice")
         heard = state.get("voice_audio")
@@ -741,8 +761,11 @@ def _watch_turns(state):
                 # reliable way not to believe that is not to ask.
                 continue
 
+            recognition_started = time.monotonic() * 1000
+
             try:
-                transcript = voice_engines.transcribe(engine, _wav(audio))
+                transcript = voice_engines.transcribe(
+                    engine, _wav(audio), language=language, prompt=prompt)
             except Exception as unheard:
                 # The message. A recogniser that cannot run and one that heard nothing produce the
                 # same exception type and need entirely different fixes.
@@ -751,6 +774,8 @@ def _watch_turns(state):
                     "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
                 })
                 continue
+
+            recognised_at = time.monotonic() * 1000
 
             if not transcript.strip() or voice_engines.is_hallucination(transcript):
                 # It got through the energy gate and still came back as one of the things a
@@ -763,18 +788,33 @@ def _watch_turns(state):
             # The raw audio is gone by here. What leaves this function is words, and only because
             # somebody asked Aurora to listen.
             if decision["speak"] and conversation_window(state) is not None:
-                time.sleep((decision.get("delay_ms") or 0) / 1000.0)
+                # A pause before answering is what makes a reply sound like a person rather than a
+                # buzzer, and it is also time nobody gets back. Scaled rather than removed, so the
+                # owner can have either without the code pretending the choice is free.
+                pace = float(_setting("answer_pace", 1.0))
+                time.sleep((decision.get("delay_ms") or 0) * pace / 1000.0)
 
                 waiting = state.setdefault("voice_pending", [])
 
                 # Only the most recent few. A conversation that got ahead of whoever is answering
                 # is one where the old lines are no longer worth saying — answering a question
                 # from a minute ago is worse than having missed it.
+                # Timed, because "it feels slow" and "which part is slow" are different questions
+                # and only the second one can be fixed. Milliseconds from the moment the speaker
+                # stopped: how long the pause rule waited, how long recognition took, and how long
+                # the whole thing took before anybody could answer.
+                now_ms = int(time.monotonic() * 1000)
+
                 waiting.append({
                     "speaker_id": speaker,
                     "transcript": transcript,
                     "reason": decision["reason"],
-                    "at_ms": int(time.monotonic() * 1000),
+                    "at_ms": now_ms,
+                    "latency": {
+                        "waited_for_silence_ms": int(recognition_started - detail["ended_ms"]),
+                        "recognised_in_ms": int(recognised_at - recognition_started),
+                        "since_speaker_stopped_ms": int(now_ms - detail["ended_ms"]),
+                    },
                 })
 
                 del waiting[:-3]
@@ -938,9 +978,12 @@ def speak_in_conversation(state, text, invited):
 
     window["remaining"] -= 1
 
+    synthesis_started = time.monotonic() * 1000
+
     audio = voice_engines.synthesise(
         voice_engines.find_tts(), text, voice=_setting("tts_voice"))
 
+    spoke_at = time.monotonic() * 1000
     frames = transport.play(_pcm_from_wav(audio), speech)
     completed = session.finished_speaking(speech)
 
@@ -954,6 +997,12 @@ def speak_in_conversation(state, text, invited):
         "completed": completed,
         "frames": frames,
         "utterances_left": window["remaining"],
+        "latency": {
+            # Text to sound, which on this machine is a fixed cost of loading a voice rather than
+            # anything to do with the length of the sentence.
+            "synthesised_in_ms": int(spoke_at - synthesis_started),
+            "spoken_in_ms": int(time.monotonic() * 1000 - spoke_at),
+        },
     }
 
 
