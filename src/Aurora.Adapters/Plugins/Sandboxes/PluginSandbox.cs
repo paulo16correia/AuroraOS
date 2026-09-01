@@ -38,11 +38,15 @@ public static class PluginSandbox
 
         if (OperatingSystem.IsWindows())
         {
-            // AppContainer would do it, and it is reached through CreateProcessAsUser with a
-            // capability SID — not through ProcessStartInfo. Claiming a Windows sandbox that has
-            // never run on Windows would be worse than saying there is none.
-            return new UnconfinedSandbox(
-                "Windows confinement needs an AppContainer token, which Aurora does not yet create");
+            // An AppContainer, which is a property of the token the process is created with rather
+            // than of its command line — so the seam starts the process there (docs/adr/0072).
+            //
+            // It has never run. Written on a Mac, and no line of its interop has met a Windows
+            // kernel, which is why it verifies the child's token before letting it execute an
+            // instruction: if any of it is wrong, the first machine to try it terminates the child
+            // and refuses, rather than reporting a confinement it did not achieve. That is what
+            // makes returning it here honest, and it is not the same as saying it works.
+            return new Windows.WindowsAppContainerSandbox();
         }
 
         return new UnconfinedSandbox($"no sandbox is implemented for {RuntimeInformation.OSDescription}");

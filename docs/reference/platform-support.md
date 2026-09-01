@@ -7,13 +7,14 @@ and how much of it has actually been run.
 | --- | --- | --- | --- |
 | Kernel, Mind, memory, planning, cognition | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | MCP surface and control panel | **VERIFIED** | **VERIFIED** | **VERIFIED** |
-| Plugin execution | **VERIFIED** | **VERIFIED** | **UNSUPPORTED** |
-| Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **UNSUPPORTED** |
+| Plugin execution | **VERIFIED** | **VERIFIED** | **UNVERIFIED** |
+| Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **UNVERIFIED** — AppContainer |
+| Owner-only key files | **VERIFIED** — mode bits | **VERIFIED** | **UNVERIFIED** — ACL |
 | Discord messaging and gateway | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in |
-| Discord against the real service | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Discord against the real service | **VERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
 | Discord voice — turn taking, governance | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Discord voice — cipher and codec | **VERIFIED** — RFC vectors, real round trip | **VERIFIED** | **VERIFIED** |
-| Discord voice — against real Discord | **UNVERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
+| Discord voice — against real Discord | **VERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
 
 ## What each word means here
 
@@ -44,15 +45,36 @@ open until somebody runs the suite on Linux with bubblewrap installed.
 
 Without bubblewrap, Linux behaves like Windows below.
 
-**Windows — UNSUPPORTED.** Confinement needs an AppContainer token through `CreateProcessAsUser`,
-which `ProcessStartInfo` does not reach and Aurora does not create. There is no sandbox, so the
-plugin host **refuses to invoke** — the default for `Aurora:Plugins:AllowUnconfined` is `false`,
-and a platform Aurora cannot confine gets a refusal rather than a silent exception to RFC 060
-rule 2.
+**Windows — UNVERIFIED.** An AppContainer, implemented and never run (docs/adr/0072). It was
+written on a Mac; no line of its interop has met a Windows kernel.
 
-Turning it on is a decision an owner makes deliberately, and it is the right one for somebody
-running a plugin they wrote themselves. It is the wrong one for anything installed, and Aurora says
-so in the refusal.
+What that means in practice is decided by how it fails. The process is created **suspended**, its
+token is opened and questioned, and only a token that is an app container — and the *right* app
+container — earns a `ResumeThread`. Anything else is terminated having executed nothing. So if the
+interop is wrong, the first Windows machine to run a plugin gets a refusal naming the missing
+property, not a plugin running unconfined while Aurora reports it as confined.
+
+That is why UNVERIFIED here is a different risk from UNVERIFIED on Linux. Both mean "never run";
+bubblewrap's failure mode if the flags are wrong is a plugin with more access than intended,
+and this one's is a plugin that does not start.
+
+**What is confined, when it works.** An AppContainer reaches no filesystem it has not been named
+on, so Aurora names exactly two paths: read-and-execute where the plugin's program lives, and full
+control of the plugin's own directory. It reaches no network without the `internetClient`
+capability, added only when the owner granted the network — and Windows refuses app containers
+loopback regardless, so a networked plugin there cannot reach Aurora's own MCP endpoint, which on
+macOS rests on it not knowing the port. It inherits exactly three handles, named individually, so
+nothing else Aurora holds open travels into it.
+
+**What is not confined.** The graphics processor. macOS grants it by opening the IOKit surface;
+Windows has no capability that means the same thing, so a plugin that asked for it gets a container
+without it. Local speech recognition will therefore be slow or absent on Windows.
+
+**Without confinement, on any platform**, the plugin host **refuses to invoke** — the default for
+`Aurora:Plugins:AllowUnconfined` is `false`, and a platform Aurora cannot confine gets a refusal
+rather than a silent exception to RFC 060 rule 2. Turning it on is a decision an owner makes
+deliberately, and it is the right one for somebody running a plugin they wrote themselves. It is
+the wrong one for anything installed, and Aurora says so in the refusal.
 
 `aurora health` reports which of these applies to the machine it is running on:
 
@@ -64,8 +86,13 @@ plugin-sandbox PASS — plugins confined by sandbox-exec
 
 Everything Discord-facing is tested against a stand-in on loopback: a real HTTP server and a real
 websocket, so the plugin performs a real RFC 6455 handshake and is disconnected if it masks its
-frames wrongly. It is still not Discord. **No credentials were available and nothing has been run
-against the real service**, so every row naming it says UNVERIFIED.
+frames wrongly. It is still not Discord.
+
+**Since 2026-08-31 it has also met the real service, on macOS.** Gateway connection and identify,
+guild and channel listing, voice join with DAVE/MLS end-to-end encryption, listening with local
+transcription, and speaking — all run against real Discord with a real bot. The rows for macOS say
+VERIFIED because of that session and for no other reason. Linux and Windows still say UNVERIFIED:
+the code is the same, the run has not happened.
 
 Voice is implemented, including the transport: voice gateway v4, UDP discovery, RTP framing,
 `aead_xchacha20_poly1305_rtpsize` and Opus. The cipher is checked against nine RFC test vectors and
@@ -78,6 +105,18 @@ anybody tries to use them. See `docs/adr/0068`.
 
 ## What would change this
 
-Windows moves from UNSUPPORTED to supported when Aurora creates an AppContainer profile and starts
-the plugin under it. Linux moves from UNVERIFIED to VERIFIED the first time the suite runs on a
-Linux machine with bubblewrap and the sandbox tests pass — no code change needed, only a run.
+**Windows** moves from UNVERIFIED to VERIFIED the first time the suite runs on a Windows machine
+and a plugin actually starts, is confined, and is proved so. No code change is needed for the
+attempt — only a run. What a run would settle, and nothing here can:
+
+- whether `CreateAppContainerProfile` and the security-capabilities attribute are used correctly;
+- whether the three inherited pipe handles reach the child and carry its stdio;
+- whether the ACEs Aurora writes are enough for a container to execute its own program;
+- whether the token verification reads what it believes it reads;
+- whether a plugin whose executable is a script can start at all — `CreateProcess` will not run a
+  `.py` the way a shebang does on Unix, so a plugin like Discord's may need its interpreter named
+  in the manifest. This is a limitation of the manifest, not of the confinement, and it is
+  unaddressed.
+
+**Linux** moves from UNVERIFIED to VERIFIED the first time the suite runs on a Linux machine with
+bubblewrap and the sandbox tests pass — no code change needed, only a run.
