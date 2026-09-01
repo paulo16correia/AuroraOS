@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using Aurora.Adapters.Files;
 
 namespace Aurora.Adapters.Persistence;
 
@@ -14,6 +14,11 @@ namespace Aurora.Adapters.Persistence;
 /// Cross-platform by construction — no DPAPI, no Keychain. An OS keystore or HSM is the stronger
 /// answer and is listed among RFC 09's future expansions; the interface here takes raw bytes, so
 /// changing the source touches only this class.
+/// </para>
+/// <para>
+/// "Owner-only" is a claim on every platform, not only where mode bits exist: see
+/// <see cref="OwnerOnly"/>, which restricts the ACL on Windows rather than assuming the directory
+/// carried the right one.
 /// </para>
 /// </remarks>
 public static class LocalKeyFile
@@ -44,22 +49,7 @@ public static class LocalKeyFile
 
         var key = RandomNumberGenerator.GetBytes(KeyLengthBytes);
 
-        var options = new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-        };
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        }
-
-        using (var stream = new FileStream(path, options))
-        {
-            stream.Write(key);
-        }
+        OwnerOnly.Write(path, FileMode.CreateNew, stream => stream.Write(key));
 
         return key;
     }

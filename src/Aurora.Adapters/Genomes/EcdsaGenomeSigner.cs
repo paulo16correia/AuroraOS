@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Cryptography;
+using Aurora.Adapters.Files;
 
 namespace Aurora.Adapters.Genomes;
 
@@ -44,22 +45,8 @@ public sealed class EcdsaGenomeSigner : IGenomeSigner, IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        var options = new FileStreamOptions
-        {
-            Mode = FileMode.CreateNew,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-        };
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        }
-
-        using (var stream = new FileStream(path, options))
-        {
-            stream.Write(key.ExportPkcs8PrivateKey());
-        }
+        OwnerOnly.Write(
+            path, FileMode.CreateNew, stream => stream.Write(key.ExportPkcs8PrivateKey()));
 
         return new EcdsaGenomeSigner(key);
     }

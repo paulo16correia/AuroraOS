@@ -26,29 +26,18 @@ public static class SandboxGuard
     /// applies it, so the assumption the hardening rests on is something Aurora does rather than
     /// something it hopes an operator did.
     /// <para>
-    /// A no-op on Windows, where <see cref="UnixFileMode"/> does not apply; there the equivalent is
-    /// the inherited ACL of a per-user application data directory, which is where the default root
-    /// lives.
+    /// This was once a no-op on Windows, on the argument that a per-user application data directory
+    /// already carries the right inherited ACL. That is true of the default root and says nothing
+    /// about a configured one, which is the same "should" the ADR refused to rely on —
+    /// <see cref="OwnerOnly"/> now applies it there too.
     /// </para>
     /// </remarks>
     public static void RestrictToOwner(string directory)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        try
-        {
-            File.SetUnixFileMode(
-                directory,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-        catch (Exception refused) when (refused is IOException or UnauthorizedAccessException)
-        {
-            // A root Aurora cannot re-permission is one somebody else controls. Better to keep
-            // working with the lexical and link checks than to refuse to start over a mode bit.
-        }
+        // A root Aurora cannot re-permission is one somebody else controls. Better to keep working
+        // with the lexical and link checks than to refuse to start over a mode bit, so the answer
+        // is reported rather than thrown — and `aurora doctor` is where it is read out loud.
+        OwnerOnly.Directory(directory);
     }
 
     /// <summary>

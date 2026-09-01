@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Aurora.Core.Abstractions;
+using Aurora.Adapters.Files;
 
 namespace Aurora.Adapters.Consent;
 
@@ -193,20 +194,10 @@ public sealed class Pbkdf2PassphraseAuthenticator : IPassphraseAuthenticator
 
     private void Write(State state)
     {
-        var options = new FileStreamOptions
+        OwnerOnly.Write(_path, FileMode.Create, stream =>
         {
-            Mode = FileMode.Create,
-            Access = FileAccess.Write,
-            Share = FileShare.None,
-        };
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        }
-
-        using var stream = new FileStream(_path, options);
-        using var writer = new StreamWriter(stream);
-        writer.Write(JsonSerializer.Serialize(state));
+            using var writer = new StreamWriter(stream);
+            writer.Write(JsonSerializer.Serialize(state));
+        });
     }
 }
