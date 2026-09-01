@@ -61,8 +61,10 @@ round; a restart keeps what must survive and loses what must not.
 
 - **Linux plugin confinement is UNVERIFIED.** The bubblewrap code exists and its plan is asserted;
   nothing has run it on Linux. See `docs/reference/platform-support.md`.
-- **Windows plugin confinement is UNSUPPORTED.** No AppContainer token, so the host refuses to
-  invoke rather than running third-party code loose. The default is safe.
+- **Windows plugin confinement is UNVERIFIED.** An AppContainer is implemented and has never run
+  (`docs/adr/0072`). It is written to fail closed: the process is created suspended, its token is
+  questioned, and only a token that is the right app container is resumed — so wrong interop
+  yields a plugin that does not start rather than one running loose.
 - **Argon2 and OS keystore** are deferred, not missing — both are better answers to rules already
   met. See `docs/reference/rfc-status.md`.
 

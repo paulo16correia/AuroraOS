@@ -348,10 +348,12 @@ public sealed class PluginSandboxTests
         }
         else if (OperatingSystem.IsWindows())
         {
-            // UNSUPPORTED, and safe by default: no confinement is available, so the host refuses
-            // to invoke rather than running third-party code loose.
-            Assert.Equal(SandboxLevel.Process, plan.Level);
+            // An AppContainer since docs/adr/0072. Confined is what the plan claims; whether the
+            // kernel agrees is settled when the process is created and its token questioned, and
+            // a launch that cannot demonstrate it refuses rather than running.
+            Assert.Equal(SandboxLevel.Confined, plan.Level);
             Assert.Contains("AppContainer", plan.Mechanism, StringComparison.Ordinal);
+            Assert.Empty(plan.Unenforced);
         }
     }
 

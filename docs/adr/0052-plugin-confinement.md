@@ -38,6 +38,12 @@ anybody can write to — a sandbox found that way could be a program that preten
 token through `CreateProcessAsUser`, which `ProcessStartInfo` does not reach. Writing that
 unverified and calling it a sandbox would be worse than reporting there is none.
 
+> **Superseded for Windows by `docs/adr/0072`.** The AppContainer now exists. The sentence above
+> was right about the danger and wrong to conclude it could not be answered: what it needed was a
+> seam that starts processes rather than describing commands, and a launch that proves the
+> confinement before the plugin runs instead of asserting it. The paragraph stands for every other
+> platform, and Windows is still UNVERIFIED — implemented is not run.
+
 ## The decision that matters: what happens when it cannot confine
 
 The host **refuses to invoke**. `sandbox_unavailable`, naming the mechanism that is missing, the

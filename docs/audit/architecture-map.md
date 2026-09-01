@@ -44,6 +44,9 @@ a subprocess behind it.
 
 ### F1 — Plugin execution is unsupported on Windows, by deliberate refusal
 
+> **Addressed, unverified, 2026-09-01.** An AppContainer now exists (`docs/adr/0072`). Windows
+> moved from UNSUPPORTED to UNVERIFIED — implemented and never run.
+
 `PluginSandbox.ForThisMachine()` returns `UnconfinedSandbox` on Windows, and both hosts
 (`SubprocessPluginHost:81`, `ServicePluginHost:257`) refuse to launch when the plan is not
 `Confined` unless `Aurora:Plugins:AllowUnconfined` is set. The default is `false`.
@@ -52,6 +55,8 @@ This is correct behaviour and should not be weakened. Its consequence is the sin
 constraint on this programme: **anything shipped as a plugin does not exist on Windows.**
 
 ### F2 — The sandbox seam cannot express AppContainer
+
+> **Fixed 2026-09-01.** The seam gained `StartAsync` beside `Plan` (`docs/adr/0072`).
 
 `IPluginSandbox.Plan()` returns a `SandboxPlan(FileName, Arguments, …)` — it rewrites a command
 line, because that is what `sandbox-exec` and `bwrap` are: wrapper programs. Windows confinement is
@@ -63,6 +68,8 @@ confined* rather than *rewrite this command*. This is the case section 2.1(5) co
 
 ### F3 — Key material is unprotected on Windows
 
+> **Fixed 2026-09-01.** `OwnerOnly` restricts the ACL on Windows; unverified there.
+
 `LocalKeyFile:54`, `Pbkdf2PassphraseAuthenticator:205`, `EcdsaGenomeSigner:56` all set
 `UnixCreateMode = UserRead | UserWrite`, and all skip it on Windows. `SandboxGuard.RestrictToOwner`
 documents itself as a no-op there. So on Windows the audit key, the vault key, the genome key and
@@ -71,6 +78,10 @@ the passphrase verifier are created with whatever the parent directory's ACL gra
 A real security defect on the platform being promoted to first-class — section 2.1(2).
 
 ### F4 — Aurora has no outbound HTTP seam
+
+> **Closed as by-design 2026-09-01** (`docs/adr/0071`). It is not a gap: Aurora's process opening a
+> socket would break the invariant `LocalOnlyTests` enforces. External integrations reach the world
+> from inside a sandboxed plugin, and Microsoft 365 will too.
 
 `HttpClient` appears exactly once in `src/`, in `OperationsConsole.cs`. Every external call Aurora
 makes today happens *inside a sandboxed plugin*, where the sandbox's network grant is the boundary
@@ -87,6 +98,8 @@ and a governance freeze — and no entry point that gets somebody from a clean m
 Aurora.
 
 ### F6 — `docs/reference/platform-support.md` is stale
+
+> **Fixed 2026-09-01.**
 
 It records Discord as **UNVERIFIED** against the real service in every row. As of this session
 Discord's gateway, guild and channel listing, voice join with DAVE/MLS, listening with local
@@ -110,13 +123,16 @@ any Microsoft integration; README and setup documentation.
 
 ## Consequences for this programme
 
-1. **Microsoft 365 belongs in-process, as `ICapability` implementations — not as a plugin.**
-   F1 makes the alternative self-defeating: the enterprise capability family would be missing from
-   the enterprise platform. In-process also reaches Windows-native credential storage, which a
-   confined subprocess should never hold.
-2. **The HTTP seam (F4) is a prerequisite**, not a detail. It is built before the first Graph call,
-   or the first Graph call establishes the wrong pattern for everything after it.
-3. **Windows work (F2, F3) is independent of Microsoft work** and can proceed in parallel; F3 in
-   particular is a defect to fix regardless of whether anybody ever installs a plugin there.
+> **This section was wrong on its first point, and the correction is `docs/adr/0071`.** It reasoned
+> from F1 to "Microsoft must be in-process" without checking whether Aurora's process may open a
+> socket. It may not — `LocalOnlyTests` enforces that over the whole source tree. What follows is
+> the corrected reading.
+
+1. **Microsoft 365 is a plugin, like Discord.** In-process would have meant Aurora itself becoming
+   networked, moving the blast radius from "a subprocess that can reach graph.microsoft.com" to
+   "the process holding every key". A worse trade than a late platform.
+2. **Windows plugin confinement is therefore the prerequisite** for enterprise capabilities
+   existing on Windows at all — not a parallel track. Done, unverified (`docs/adr/0072`).
+3. **F3 was a defect to fix regardless** of whether anybody installs a plugin there. Done.
 4. **Discord stays as it is.** It is the reference for how an external integration is governed, and
    it works.
