@@ -26,6 +26,8 @@ namespace Aurora.Adapters.Plugins;
 internal sealed class ServiceProcess : IAsyncDisposable
 {
     private readonly PluginManifest _manifest;
+    private readonly IPluginSandbox _sandbox;
+    private readonly SandboxRequest _request;
     private readonly SandboxPlan _plan;
     private readonly string _executable;
     private readonly string _working;
@@ -38,15 +40,18 @@ internal sealed class ServiceProcess : IAsyncDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly SemaphoreSlim _writing = new(1, 1);
 
-    private Process? _process;
+    private ISandboxedProcess? _process;
     private Task? _reading;
     private Task? _draining;
 
     internal ServiceProcess(
-        PluginManifest manifest, SandboxPlan plan, string executable, string working,
+        PluginManifest manifest, IPluginSandbox sandbox, SandboxRequest request, SandboxPlan plan,
+        string executable, string working,
         IPluginObservationSink observations, IClock clock, int failures)
     {
         _manifest = manifest;
+        _sandbox = sandbox;
+        _request = request;
         _plan = plan;
         _executable = executable;
         _working = working;
@@ -71,6 +76,8 @@ internal sealed class ServiceProcess : IAsyncDisposable
     private ServiceProcess(PluginServiceState state)
     {
         _manifest = null!;
+        _sandbox = null!;
+        _request = null!;
         _plan = null!;
         _executable = string.Empty;
         _working = string.Empty;
@@ -87,58 +94,37 @@ internal sealed class ServiceProcess : IAsyncDisposable
     {
         State = State with { Status = PluginServiceStatus.Starting };
 
-        var start = new ProcessStartInfo
-        {
-            FileName = _plan.FileName,
-            WorkingDirectory = _working,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        foreach (var argument in _plan.Arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        if (_plan.FileName != _executable)
-        {
-            // Under a wrapper the plugin's own path is the wrapper's last argument. Unconfined,
-            // the plan already names the plugin and adding it again would pass it to itself.
-            start.ArgumentList.Add(_executable);
-        }
-
         // The same cleared environment as a one-shot plugin. Nothing about the owner's shell
         // travels into a plugin, and no secret travels this way either.
-        start.Environment.Clear();
-        start.Environment["AURORA_PLUGIN_ID"] = _manifest.PluginId;
-        start.Environment["AURORA_MODE"] = "service";
-        // The system directories, plus where package managers put things. A plugin that needs a
-        // local program — speech recognition, a codec tool — finds it here or not at all, and
-        // "not at all" reads as the feature being unavailable rather than as a path being short.
-        // Still a fixed list rather than the owner's own PATH, which can name a directory
-        // anybody can write to.
-        start.Environment["PATH"] = OperatingSystem.IsWindows()
-            ? "C:\\Windows\\System32"
-            : "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin";
-
-        try
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            _process = new Process { StartInfo = start };
-            _process.Start();
-        }
-        catch (Exception cannotStart)
-            when (cannotStart is System.ComponentModel.Win32Exception or IOException)
-        {
-            // Dropped, so nothing later asks an un-started Process whether it has exited — which
-            // throws, and turns a clean "could not start" into an unhandled exception somewhere
-            // else entirely.
-            _process?.Dispose();
-            _process = null;
+            ["AURORA_PLUGIN_ID"] = _manifest.PluginId,
+            ["AURORA_MODE"] = "service",
 
-            return Failed($"could not start: {cannotStart.GetType().Name}");
+            // The system directories, plus where package managers put things. A plugin that needs
+            // a local program — speech recognition, a codec tool — finds it here or not at all,
+            // and "not at all" reads as the feature being unavailable rather than as a path being
+            // short. Still a fixed list rather than the owner's own PATH, which can name a
+            // directory anybody can write to.
+            ["PATH"] = OperatingSystem.IsWindows()
+                ? "C:\\Windows\\System32"
+                : "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+        };
+
+        // The sandbox starts it, because on one platform confinement is a property of the token
+        // the process is created with rather than of the command line (docs/adr/0072). A sandbox
+        // that could not deliver what it promised returns a refusal here instead of a process.
+        SandboxStart started = await _sandbox
+            .StartAsync(
+                new SandboxLaunch(_request, _plan, _executable, _working, environment), ct)
+            .ConfigureAwait(false);
+
+        if (!started.Started)
+        {
+            return Failed(started.Refused ?? "the sandbox did not start it and did not say why");
         }
+
+        _process = started.Process;
 
         _reading = Task.Run(() => ReadAsync(_stopping.Token), CancellationToken.None);
         _draining = Task.Run(() => DrainAsync(_stopping.Token), CancellationToken.None);
@@ -554,7 +540,7 @@ internal sealed class ServiceProcess : IAsyncDisposable
         {
             if (_process is { HasExited: false })
             {
-                _process.Kill(entireProcessTree: true);
+                _process.Kill();
             }
         }
         catch (Exception gone) when (gone is InvalidOperationException or NotSupportedException)

@@ -19,7 +19,7 @@ namespace Aurora.Adapters.Plugins.Sandboxes;
 /// stated here rather than left for them to find out.
 /// </para>
 /// </remarks>
-public sealed class LinuxSandbox : IPluginSandbox
+public sealed class LinuxSandbox : WrapperSandbox
 {
     private readonly string _bwrap;
 
@@ -46,7 +46,7 @@ public sealed class LinuxSandbox : IPluginSandbox
         return null;
     }
 
-    public SandboxPlan Plan(SandboxRequest request)
+    public override SandboxPlan Plan(SandboxRequest request)
     {
         var workingDirectory = SandboxPaths.Real(request.WorkingDirectory);
         var executable = SandboxPaths.Real(request.Executable);

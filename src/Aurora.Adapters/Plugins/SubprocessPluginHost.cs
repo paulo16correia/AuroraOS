@@ -74,10 +74,10 @@ public sealed class SubprocessPluginHost : IPluginHost
         var workingDirectory = Path.Combine(_root, manifest.PluginId);
         Directory.CreateDirectory(workingDirectory);
 
-        SandboxPlan plan = _sandbox.Plan(
-            new SandboxRequest(
-                manifest.PluginId, manifest.Executable, workingDirectory,
-                invocation.NetworkGranted));
+        var request = new SandboxRequest(
+            manifest.PluginId, manifest.Executable, workingDirectory, invocation.NetworkGranted);
+
+        SandboxPlan plan = _sandbox.Plan(request);
 
         if (plan.Level == SandboxLevel.Process && !_allowUnconfined)
         {
@@ -92,49 +92,24 @@ public sealed class SubprocessPluginHost : IPluginHost
                 0);
         }
 
-        var start = new ProcessStartInfo
-        {
-            FileName = plan.FileName,
-
-            // The plugin's own directory, which under a sandbox is also the only one it may write
-            // to. Losing this line makes the child inherit Aurora's directory instead, and every
-            // relative path it uses lands somewhere the sandbox correctly refuses.
-            WorkingDirectory = workingDirectory,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        foreach (var argument in plan.Arguments)
-        {
-            start.ArgumentList.Add(argument);
-        }
-
-        if (plan.FileName != manifest.Executable)
-        {
-            // Under a wrapper the plugin's own path is the wrapper's last argument.
-            start.ArgumentList.Add(manifest.Executable);
-        }
-
         // Nothing of Aurora's travels. A key path or a connection string sitting in the parent's
         // environment is exactly the sort of thing that leaks without anybody deciding to pass it.
-        start.Environment.Clear();
-        start.Environment["AURORA_PLUGIN_ID"] = manifest.PluginId;
-        start.Environment["AURORA_CAPABILITY"] = invocation.CapabilityKey;
+        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AURORA_PLUGIN_ID"] = manifest.PluginId,
+            ["AURORA_CAPABILITY"] = invocation.CapabilityKey,
 
-        // A fixed PATH, not an inherited one. The property that matters is that nothing of
-        // Aurora's travels, and a constant naming only system directories carries nothing — while
-        // without it a script beginning "#!/usr/bin/env python3" cannot find an interpreter and
-        // every plugin written the ordinary way fails with exit 127.
-        start.Environment["PATH"] = OperatingSystem.IsWindows()
-            ? @"C:\Windows\System32"
-            : "/usr/bin:/bin:/usr/local/bin";
+            // A fixed PATH, not an inherited one. The property that matters is that nothing of
+            // Aurora's travels, and a constant naming only system directories carries nothing —
+            // while without it a script beginning "#!/usr/bin/env python3" cannot find an
+            // interpreter and every plugin written the ordinary way fails with exit 127.
+            ["PATH"] = OperatingSystem.IsWindows()
+                ? @"C:\Windows\System32"
+                : "/usr/bin:/bin:/usr/local/bin",
+        };
 
         var stopwatch = Stopwatch.StartNew();
 
-        using var process = new Process { StartInfo = start };
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         PluginCapability? capability = manifest.Capabilities
@@ -142,10 +117,45 @@ public sealed class SubprocessPluginHost : IPluginHost
 
         timeout.CancelAfter(capability?.Timeout ?? TimeSpan.FromSeconds(30));
 
+        // The sandbox starts it. On one platform confinement is a property of the token a process
+        // is created with rather than of its command line (docs/adr/0072), and a sandbox that
+        // could not prove what it promised refuses here rather than handing back a process.
+        SandboxStart started = await _sandbox
+            .StartAsync(
+                new SandboxLaunch(
+                    // The plugin's own directory, which under a sandbox is also the only one it
+                    // may write to. Losing this makes the child inherit Aurora's directory
+                    // instead, and every relative path it uses lands somewhere correctly refused.
+                    request, plan, manifest.Executable, workingDirectory, environment),
+                timeout.Token)
+            .ConfigureAwait(false);
+
+        if (started.Process is not { } process)
+        {
+            return new PluginResult(
+                false, null, PluginRefusal.SandboxUnavailable,
+                started.Refused ?? "the sandbox did not start it and did not say why",
+                stopwatch.ElapsedMilliseconds);
+        }
+
+        using (process)
+        {
+            return await ExchangeAsync(
+                process, manifest, invocation, capability, stopwatch, timeout, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// One request in, one answer out, over the pipes of a process somebody else confined.
+    /// </summary>
+    private static async Task<PluginResult> ExchangeAsync(
+        ISandboxedProcess process, PluginManifest manifest, PluginInvocation invocation,
+        PluginCapability? capability, Stopwatch stopwatch,
+        CancellationTokenSource timeout, CancellationToken ct)
+    {
         try
         {
-            process.Start();
-
             await process.StandardInput.WriteAsync(invocation.InputJson.AsMemory(), timeout.Token)
                 .ConfigureAwait(false);
             process.StandardInput.Close();
@@ -187,15 +197,13 @@ public sealed class SubprocessPluginHost : IPluginHost
         }
     }
 
-    private static void Kill(Process process)
+    private static void Kill(ISandboxedProcess process)
     {
         try
         {
             if (!process.HasExited)
             {
-                // The whole tree: a plugin that spawned something is not stopped by killing the
-                // shell it started in.
-                process.Kill(entireProcessTree: true);
+                process.Kill();
             }
         }
         catch (Exception gone) when (gone is InvalidOperationException or NotSupportedException)

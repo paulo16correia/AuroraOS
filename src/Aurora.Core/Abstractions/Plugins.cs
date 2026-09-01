@@ -100,13 +100,90 @@ public interface IPluginRegistry
 /// truthful statement of what confining it achieved. A platform that cannot confine says so rather
 /// than returning the command unchanged and letting the caller assume.
 /// </para>
+/// <para>
+/// <b>Why it also starts the process (docs/adr/0072).</b> Describing a command was enough while
+/// every sandbox Aurora had was a wrapper program — <c>sandbox-exec</c> and <c>bwrap</c> both take
+/// the plugin's path as an argument, so confinement fitted into a file name and a list of
+/// arguments. Windows does not work that way: an AppContainer is a property of the token a process
+/// is created with, reached through <c>CreateProcess</c> with a security-capabilities attribute
+/// and not through anything <see cref="System.Diagnostics.ProcessStartInfo"/> exposes. A seam that
+/// can only rewrite a command line cannot express it, so the seam starts the process instead.
+/// </para>
 /// </remarks>
 public interface IPluginSandbox
 {
     /// <summary>
     /// Decides how to launch this plugin, and reports what the launch will and will not enforce.
     /// </summary>
+    /// <remarks>
+    /// Separate from starting it, because "what would this machine do" is a question asked without
+    /// wanting it done — the health report and the install decision both ask it.
+    /// </remarks>
     SandboxPlan Plan(SandboxRequest request);
+
+    /// <summary>
+    /// Starts the plugin under this confinement, or explains why it did not.
+    /// </summary>
+    /// <remarks>
+    /// A sandbox that cannot prove the confinement it promised must return a refusal here rather
+    /// than a running process. It is the last moment at which the difference between "confined"
+    /// and "started" can still be noticed, and after it every caller is entitled to assume they
+    /// were the same thing.
+    /// </remarks>
+    Task<SandboxStart> StartAsync(SandboxLaunch launch, CancellationToken ct);
+}
+
+/// <summary>Everything needed to start one plugin, once the plan has been accepted.</summary>
+/// <param name="Request">What was asked for, carried through so a sandbox can re-read the grants.</param>
+/// <param name="Plan">The plan this launch is executing.</param>
+/// <param name="Executable">The plugin's own program, which the plan may be wrapping.</param>
+/// <param name="WorkingDirectory">The one directory it may write to.</param>
+/// <param name="Environment">
+/// The child's entire environment. Cleared rather than inherited: nothing about the owner's shell
+/// travels into a plugin, and no secret travels this way either.
+/// </param>
+public sealed record SandboxLaunch(
+    SandboxRequest Request,
+    SandboxPlan Plan,
+    string Executable,
+    string WorkingDirectory,
+    IReadOnlyDictionary<string, string> Environment);
+
+/// <summary>A started process, or the reason there is not one.</summary>
+/// <remarks>
+/// Both are values. A refusal to start is an ordinary outcome of asking a sandbox to do something
+/// it cannot do safely, and an exception would make it indistinguishable from the plugin itself
+/// being broken.
+/// </remarks>
+public sealed record SandboxStart(ISandboxedProcess? Process, string? Refused = null)
+{
+    public bool Started => Process is not null;
+}
+
+/// <summary>
+/// A running plugin, seen through the three pipes and the two questions a host actually asks.
+/// </summary>
+/// <remarks>
+/// Narrower than <see cref="System.Diagnostics.Process"/> on purpose. A host that could reach the
+/// underlying process could also start one, and then the sandbox would be advice rather than a
+/// boundary.
+/// </remarks>
+public interface ISandboxedProcess : IDisposable
+{
+    StreamWriter StandardInput { get; }
+
+    StreamReader StandardOutput { get; }
+
+    StreamReader StandardError { get; }
+
+    bool HasExited { get; }
+
+    int ExitCode { get; }
+
+    Task WaitForExitAsync(CancellationToken ct);
+
+    /// <summary>Ends it, and everything it started.</summary>
+    void Kill();
 }
 
 /// <summary>What the host wants confined.</summary>

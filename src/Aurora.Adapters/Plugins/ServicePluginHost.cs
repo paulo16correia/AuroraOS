@@ -264,8 +264,11 @@ public sealed class ServicePluginHost
             return state;
         }
 
+        var request = new SandboxRequest(
+            manifest.PluginId, executable, working, networkGranted, gpuGranted);
+
         var service = new ServiceProcess(
-            manifest, plan, executable, working, _observations, _clock, failures);
+            manifest, _sandbox, request, plan, executable, working, _observations, _clock, failures);
 
         _running[manifest.PluginId] = service;
 

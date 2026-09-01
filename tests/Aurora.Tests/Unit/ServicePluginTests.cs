@@ -539,11 +539,11 @@ public sealed class ServicePluginTests
         Assert.True(sandbox.Last!.GpuGranted, "the GPU grant did not reach the sandbox");
     }
 
-    private sealed class RecordingSandbox : IPluginSandbox
+    private sealed class RecordingSandbox : WrapperSandbox
     {
         public SandboxRequest? Last { get; private set; }
 
-        public SandboxPlan Plan(SandboxRequest request)
+        public override SandboxPlan Plan(SandboxRequest request)
         {
             Last = request;
             return new UnconfinedSandbox("recording what it was asked").Plan(request);

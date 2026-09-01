@@ -22,11 +22,11 @@ namespace Aurora.Adapters.Plugins.Sandboxes;
 /// silently running plugins loose.
 /// </para>
 /// </remarks>
-public sealed class MacOsSandbox : IPluginSandbox
+public sealed class MacOsSandbox : WrapperSandbox
 {
     internal const string SandboxExec = "/usr/bin/sandbox-exec";
 
-    public SandboxPlan Plan(SandboxRequest request)
+    public override SandboxPlan Plan(SandboxRequest request)
     {
         // Resolved, not merely absolute: the sandbox matches the path the kernel reaches, and
         // the system temporary directory is reached through a symlink (see SandboxPaths).

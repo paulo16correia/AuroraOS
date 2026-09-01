@@ -10,7 +10,7 @@ namespace Aurora.Adapters.Plugins.Sandboxes;
 /// on, rather than a silence. A sandbox seam whose fallback quietly returns the command unchanged
 /// is worse than no seam at all: it converts a missing security property into an invisible one.
 /// </remarks>
-public sealed class UnconfinedSandbox : IPluginSandbox
+public sealed class UnconfinedSandbox : WrapperSandbox
 {
     private readonly string _because;
 
@@ -19,7 +19,7 @@ public sealed class UnconfinedSandbox : IPluginSandbox
         _because = because;
     }
 
-    public SandboxPlan Plan(SandboxRequest request) => new(
+    public override SandboxPlan Plan(SandboxRequest request) => new(
         request.Executable,
         [],
         SandboxLevel.Process,
