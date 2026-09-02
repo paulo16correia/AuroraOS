@@ -91,7 +91,7 @@ rather than operating systems, because that is where the risk is.
 | | Status | Tests | Verified against the real thing |
 | --- | --- | --- | --- |
 | Voice runtime, end to end through the real host and Kernel | IMPLEMENTED · TESTED | 14 | not applicable — local |
-| Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 29 | not applicable — local |
+| Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 32 | not applicable — local |
 | Local stack, end to end: audio → STT → Ollama → Kernel → `clock.now` → TTS | IMPLEMENTED · TESTED | 8, real host and Kernel | **partly** — real HTTP to the model, scripted STT/TTS |
 | Faster-Whisper transcribing PT-PT | **UNVERIFIED** — not installed | — | **no** |
 | Ollama answering as Aurora in PT-PT | **UNVERIFIED** — not installed | — | **no** |

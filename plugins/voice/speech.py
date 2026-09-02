@@ -329,13 +329,22 @@ class SaySpeaker:
 
         directory = tempfile.mkdtemp(prefix="aurora-voice-")
         target = os.path.join(directory, "said.wav")
+        sentence = os.path.join(directory, "sentence.txt")
 
         try:
+            # The sentence goes in a file rather than in the argument list. It was written by a
+            # language model, and as the last positional argument a sentence that looks like one
+            # of `say`'s own options is read as one instead of being spoken. It stays a single
+            # argument either way, so it cannot carry a value with it — but a sentence that goes
+            # silently missing is a bad enough failure, and a file has no options at all.
+            with open(sentence, "w", encoding="utf-8") as handle:
+                handle.write(text)
+
             # LEI16 explicitly: `say` writes 32-bit float however it is asked otherwise, and the
             # right-length noise that produces is indistinguishable from a working encoder.
             finished = subprocess.run(
                 [shutil.which("say"), "-o", target,
-                 "--data-format=LEI16@%d" % SAMPLE_RATE, "-v", self.voice, text],
+                 "--data-format=LEI16@%d" % SAMPLE_RATE, "-v", self.voice, "-f", sentence],
                 capture_output=True, timeout=60, check=False)
 
             if finished.returncode != 0:

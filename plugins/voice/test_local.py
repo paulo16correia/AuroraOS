@@ -7,6 +7,7 @@ the refusals are the shipped code.
 
 import base64
 import json
+import os
 import struct
 import threading
 import unittest
@@ -315,6 +316,70 @@ class TheModelHasNoAuthority(unittest.TestCase):
             speak_a_turn(session)
 
             self.assertNotIn("tools", ollama.seen[0])
+
+    def test_no_part_of_the_voice_stack_can_reach_a_shell(self):
+        """The engines are programs, and running one is not the same as having a shell."""
+        import glob
+        import os
+
+        for path in glob.glob(os.path.join(os.path.dirname(speech.__file__), "*.py")):
+            if os.path.basename(path).startswith("test_"):
+                continue
+
+            with open(path) as handle:
+                source = handle.read()
+
+            where = os.path.basename(path)
+
+            # No shell, ever. A fixed program with an argument list cannot become a command;
+            # `shell=True` would make every sentence the model produces one.
+            self.assertNotIn("shell=True", source, where)
+            self.assertNotIn("os.system", source, where)
+            self.assertNotIn("eval(", source, where)
+
+    def test_every_engine_is_launched_as_a_list_and_never_as_a_command(self):
+        """Read as a syntax tree rather than as text, so this says something about the code."""
+        import ast
+
+        with open(speech.__file__) as handle:
+            tree = ast.parse(handle.read())
+
+        launches = 0
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+
+            called = ast.unparse(node.func)
+
+            if called not in ("subprocess.run", "subprocess.Popen", "subprocess.call"):
+                continue
+
+            launches += 1
+
+            # A list: the program and each argument separately, which the operating system passes
+            # through untouched. A string would be handed to a shell to take apart.
+            self.assertIsInstance(node.args[0], ast.List, ast.unparse(node))
+
+            for keyword in node.keywords:
+                self.assertNotEqual("shell", keyword.arg, ast.unparse(node))
+
+        # Whisper and `say`. If a third ever appears, this test should be read again rather than
+        # updated — every program the voice stack runs is a decision worth making deliberately.
+        self.assertEqual(2, launches)
+
+    def test_a_sentence_that_looks_like_an_option_is_still_spoken(self):
+        speaker = speech.SaySpeaker(voice="Joana")
+
+        if not speaker.available():
+            self.skipTest("`say` is not on this machine")
+
+        # The model writes the sentence, so it can begin with anything. It goes to `say` in a file
+        # rather than in the argument list, where it would be read as an option instead.
+        spoken = speaker.speak("-o /tmp/aurora-should-never-exist.wav")
+
+        self.assertGreater(len(spoken), 0)
+        self.assertFalse(os.path.exists("/tmp/aurora-should-never-exist.wav"))
 
     def test_the_loop_cannot_execute_anything_itself(self):
         with open(local_provider.__file__) as handle:

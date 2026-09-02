@@ -78,7 +78,7 @@ public sealed class VoicePluginTests
     {
         // Turn detection, the loop, and what none of it may do, with the three engines faked.
         // Whether the path exists at all is LocalVoiceTests, through the real host and Kernel.
-        RunPython("test_local", 29);
+        RunPython("test_local", 32);
     }
 
     [Fact]
