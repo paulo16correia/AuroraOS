@@ -10,7 +10,9 @@
     "microsoft.identity.read",
     "microsoft.mail.read",
     "microsoft.mail.write",
-    "microsoft.mail.send"
+    "microsoft.mail.send",
+    "microsoft.calendar.read",
+    "microsoft.calendar.write"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -503,6 +505,397 @@
       "rate_limit_per_minute": 60,
       "timeout_seconds": 30,
       "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.list",
+      "title": "What is on the calendar",
+      "description": "Events between two moments. Expands a recurring series into the occurrences that actually fall in the window, so 'what do I have on Tuesday' is answered about Tuesday.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.search",
+      "title": "Search the calendar",
+      "description": "Finds events by Microsoft's relevance ranking over subject, body and participants.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.read",
+      "title": "Read an event",
+      "description": "One event with its body, its attendees and whether it recurs. The body and the attendee names are written by whoever arranged it — an invitation is an ordinary way to put text in front of somebody who did not ask for it.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.conflicts",
+      "title": "What clashes with a proposed time",
+      "description": "Reports what already occupies a window and books nothing. Events marked free — reminders, working-hours blocks — are not counted as clashes.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start",
+          "end"
+        ],
+        "properties": {
+          "start": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.free_busy",
+      "title": "When other people are busy",
+      "description": "Availability codes for named people over a window — free, tentative, busy, out of office. Asks for no subjects and reports none: whether somebody is free at three does not require knowing what they are doing at three. Needs Calendars.Read.Shared and a tenant that permits it.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "people",
+          "start",
+          "end"
+        ],
+        "properties": {
+          "people": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320
+            }
+          },
+          "start": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "interval_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.create",
+      "title": "Put a meeting on the calendar",
+      "description": "Creates an event and invites whoever is named. There is no draft: with attendees this delivers invitations the moment it succeeds, because Graph offers no way to write a meeting and tell nobody yet. Can create the Teams meeting at the same time.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "start",
+          "end"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "start": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "time_zone": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "attendees": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 320
+            }
+          },
+          "online_meeting": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.calendar.write",
+        "microsoft.calendar.notify"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.update",
+      "title": "Change an event",
+      "description": "Changes the fields named and tells the attendees it changed. Fields not mentioned are left alone rather than blanked.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "start": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "end": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "time_zone": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "location": {
+            "type": "string",
+            "maxLength": 300
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.calendar.write",
+        "microsoft.calendar.notify"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.calendar.cancel",
+      "title": "Call off a meeting",
+      "description": "Cancels an event and tells everyone invited that it is off. The event could be recreated; the message that landed in everybody's mailbox cannot be recalled, and somebody has already read it. Every cancellation costs its own decision.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.calendar.cancel",
+        "microsoft.calendar.notify"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 30,
+      "idempotent": false,
       "audit_level": "FULL"
     }
   ]

@@ -17,6 +17,7 @@ import json
 import os
 import sys
 
+import calendar_events as calendar
 import graph
 import mail
 import msauth
@@ -131,10 +132,12 @@ READS = {
     "microsoft.identity.me": identity,
     "microsoft.status": status,
     **mail.READS,
+    **calendar.READS,
 }
 
 WRITES = {
     **mail.WRITES,
+    **calendar.WRITES,
 }
 
 

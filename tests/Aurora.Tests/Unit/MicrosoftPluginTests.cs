@@ -88,6 +88,12 @@ public sealed class MicrosoftPluginTests
         RunPython("test_mail", 20);
     }
 
+    [Fact]
+    public void TheCalendarRulesHold()
+    {
+        RunPython("test_calendar", 21);
+    }
+
     // ---- what the manifest promises ----
 
     [Fact]
@@ -224,6 +230,54 @@ public sealed class MicrosoftPluginTests
             // and being effect-free is what lets a consent session cover the next read.
             Assert.True(capability.ApprovalRequired, capability.Key);
             Assert.Equal(RiskLevel.Medium, capability.Risk);
+        }
+    }
+
+    // ---- a calendar write reaches other people ----
+
+    [Fact]
+    public void EveryCalendarWriteThatNotifiesPeopleDeclaresThat()
+    {
+        IEnumerable<PluginCapability> writes = Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.calendar.", StringComparison.Ordinal))
+            .Where(c => c.Effects.Count > 0);
+
+        Assert.Equal(3, writes.Count());
+
+        foreach (PluginCapability write in writes)
+        {
+            // Creating an event emails the attendees, updating one emails them again, cancelling
+            // tells them it is off. Graph has no draft equivalent, so the effect is declared
+            // rather than discovered by the people who receive the invitation.
+            Assert.Contains("microsoft.calendar.notify", write.Effects);
+        }
+    }
+
+    [Fact]
+    public void CancellingAMeetingIsNeverReversible()
+    {
+        PluginCapability cancel =
+            Manifest().Capabilities.Single(c => c.Key == "microsoft.calendar.cancel");
+
+        // The event could be recreated. The message that landed in everybody's mailbox cannot be
+        // recalled, and somebody has already read it.
+        Assert.False(cancel.Reversible);
+        Assert.True(cancel.ApprovalRequired);
+        Assert.Null(cancel.OpensWindow);
+    }
+
+    [Fact]
+    public void ReadingTheCalendarChangesNothing()
+    {
+        foreach (PluginCapability read in Manifest().Capabilities
+            .Where(c => c.Key is "microsoft.calendar.list" or "microsoft.calendar.search"
+                or "microsoft.calendar.read" or "microsoft.calendar.conflicts"
+                or "microsoft.calendar.free_busy"))
+        {
+            // Conflict detection especially: it reports what occupies a window and books nothing,
+            // so that "am I free" cannot quietly become "put it in the diary".
+            Assert.Empty(read.Effects);
+            Assert.True(read.ApprovalRequired);
         }
     }
 

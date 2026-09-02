@@ -97,8 +97,13 @@ and what matters is whether it has met the provider rather than which operating 
 | Outlook — drafts | IMPLEMENTED | 4 | **no** |
 | Outlook — sending a draft | IMPLEMENTED | 3 | **no** |
 | Outlook — move, mark read | IMPLEMENTED | 3 | **no** |
+| Calendar — list, search, read, conflicts | IMPLEMENTED | 10 | **no** |
+| Calendar — free/busy for other people | IMPLEMENTED | 1 | **no** |
+| Calendar — create, update, cancel | IMPLEMENTED | 7 | **no** |
+| Calendar — Teams meeting association | IMPLEMENTED | 1 | **no** |
 | Attachment content download | **UNSUPPORTED** — not written | — | — |
-| Calendar, files, tasks, people, Teams | **not implemented** | — | — |
+| Creating a recurring series | **UNSUPPORTED** — not written | — | — |
+| Files, tasks, people, Teams | **not implemented** | — | — |
 
 **Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
 no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —

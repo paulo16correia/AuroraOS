@@ -105,8 +105,29 @@ It will ask three separate questions: the permissions, the network, and — for 
 | `microsoft.mail.send_draft` | `POST /me/messages/{id}/send` | SUPPORTED | MEDIUM | yes | `mail.send` |
 | `microsoft.mail.move` | `POST /me/messages/{id}/move` | SUPPORTED | MEDIUM | yes | `mail.move` |
 | `microsoft.mail.mark_read` | `PATCH /me/messages/{id}` | SUPPORTED | MEDIUM | yes | `mail.flag` |
+| `microsoft.calendar.list` | `GET /me/calendarView` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.calendar.search` | `GET /me/events?$search` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.calendar.read` | `GET /me/events/{id}` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.calendar.conflicts` | `GET /me/calendarView` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.calendar.free_busy` | `POST /me/calendar/getSchedule` | SUPPORTED_WITH_CONFIGURATION | MEDIUM | yes | — |
+| `microsoft.calendar.create` | `POST /me/events` | SUPPORTED | MEDIUM | yes | `calendar.write`, `calendar.notify` |
+| `microsoft.calendar.update` | `PATCH /me/events/{id}` | SUPPORTED | MEDIUM | yes | `calendar.write`, `calendar.notify` |
+| `microsoft.calendar.cancel` | `POST /me/events/{id}/cancel` | SUPPORTED | MEDIUM | yes | `calendar.cancel`, `calendar.notify` |
 
-Calendar, files, tasks, people and Teams are **not implemented**.
+Files, tasks, people and Teams are **not implemented**.
+
+### Graph permissions for calendar
+
+| Permission | Type | Admin consent | Needed for |
+| --- | --- | --- | --- |
+| `Calendars.Read` | Delegated | No | list, search, read, conflicts |
+| `Calendars.ReadWrite` | Delegated | No | create, update, cancel |
+| `Calendars.Read.Shared` | Delegated | No | free/busy for other people |
+
+`free_busy` is SUPPORTED_WITH_CONFIGURATION rather than SUPPORTED: the permission is not enough on
+its own, because an organisation can restrict what availability information leaves it. Where it is
+restricted, Microsoft answers with an error per person and the plugin reports that per person
+rather than failing the whole call.
 
 ### Graph permissions for mail
 
@@ -144,6 +165,43 @@ A send that times out comes back as `microsoft_unknown_outcome` and is never ret
 no idempotency key for it, and sending twice is worse than saying it did not obviously work. Once a
 draft has been sent it leaves the Drafts folder, so a repeat gets a 404 rather than a second
 delivery. That is worth knowing and is not idempotency Aurora can rely on.
+
+## A calendar write reaches other people
+
+There is no draft equivalent for a meeting. Graph offers no way to write one and tell nobody yet, so
+`create` with attendees delivers invitations the moment it succeeds, `update` tells them it changed,
+and `cancel` tells them it is off. All three declare a `calendar.notify` effect so that what reaches
+other people says that it does, and the audit records whether anybody was actually notified.
+
+`cancel` is not reversible. The event could be recreated; the message that landed in everybody's
+mailbox cannot be recalled, and somebody has already read it.
+
+Reading is genuinely read-only, and conflict detection especially: it reports what occupies a window
+and books nothing, so "am I free then" cannot quietly become "put it in the diary". Events marked
+free — reminders, working-hours blocks — are not counted as clashes, because counting them makes the
+answer useless on any real calendar.
+
+## Nobody on an invitation gains authority
+
+An attendee list says who was invited. An organizer says who arranged it. A response status says who
+accepted. **None of that is a permission**, and the fields are named for what they are so that
+nothing downstream can read one as the other. There is a test that asserts no field in a calendar
+result is named `role`, `authorized`, `permitted`, `may_approve` or `principal`.
+
+Free/busy reports availability codes and no subjects. Whether somebody is free at three does not
+require knowing what they are doing at three, and Microsoft will hand over subjects if the tenant
+allows it.
+
+## Recurring events
+
+Listing uses `calendarView`, which expands a series into the occurrences that actually fall in the
+window — "what do I have on Tuesday" is a question about occurrences, and `/me/events` would answer
+with one series master that says nothing about Tuesday. Each event reports its `occurrence_type`
+(`singleInstance`, `occurrence`, `exception`, `seriesMaster`) and its `series_master_id`.
+
+**Creating a recurring series is not implemented.** Graph's recurrence pattern has enough shape —
+daily, weekly, absolute and relative monthly, ranges by count or by date — that a half-implementation
+would produce series subtly different from what was asked for. Single events only, for now.
 
 ## Attachments
 
@@ -212,7 +270,8 @@ becomes a permission check.
 | `test_graph.py` | 37 tests — allowlist, credential ordering, redaction, error mapping, malformed responses, throttling, retries, pagination, audit metadata, authentication |
 | `test_service.py` | 12 tests — the protocol, degraded start, hostile content, bounded fields, failure handling |
 | `test_mail.py` | 20 tests — reading, the draft/send split, spoofed sender names, hostile bodies, identifier injection, moving |
-| `MicrosoftPluginTests.cs` | 13 tests — runs all three modules, and checks what the manifest promises |
+| `test_calendar.py` | 21 tests — the view that expands recurrence, time zones kept whole, conflicts, free/busy without subjects, what notifies, impersonating display names |
+| `MicrosoftPluginTests.cs` | 17 tests — runs all four modules, and checks what the manifest promises |
 
 The stand-in is a real HTTP server on loopback that answers like Graph and like Graph on a bad day:
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing somewhere
