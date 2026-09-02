@@ -1,9 +1,9 @@
 # Voice
 
-**Status:** the runtime is **IMPLEMENTED · TESTED** — a whole conversation executes end to end
-through Aurora's real plugin host, the real `VoiceToolBridge` and the real Kernel, with only the
-telephone provider and the speech layer faked. Real OpenAI Realtime, real Twilio and a real +351
-number remain **UNVERIFIED**; inbound PSTN remains **UNSUPPORTED**. See
+**Status:** the runtime is **IMPLEMENTED · TESTED**, and so is the real OpenAI Realtime transport —
+driven over a real socket against a Realtime service on loopback, with a real RFC 6455 handshake and
+real masked frames. **UNVERIFIED** against the real endpoint: no OpenAI key exists here. Twilio and
+a real +351 number remain UNVERIFIED; inbound PSTN remains UNSUPPORTED. See
 `docs/reference/platform-support.md`.
 
 ## What this is
@@ -117,12 +117,61 @@ One round of a conversation:
 plugin's pending turns already work — the one voice design here that has met a real service. A
 callback would need the plugin to call into Aurora, which the plugin protocol exists to prevent.
 
+## The speech layer
+
+`realtime.py` speaks the real OpenAI Realtime protocol over a real WebSocket — the RFC 6455 client
+vendored from the Discord plugin, which has performed a real handshake against a real service and
+been disconnected for masking a frame wrongly.
+
+| | |
+| --- | --- |
+| Endpoint | `wss://api.openai.com/v1/realtime?model=…` |
+| Headers | `Authorization: Bearer …`, `OpenAI-Beta: realtime=v1` |
+| Audio | base64 PCM16, 24 kHz mono, both directions |
+| Turn taking | `server_vad` — the service decides when somebody stopped talking |
+| Interruption | `input_audio_buffer.speech_started` → `response.cancel` |
+| Tools | function calls in, `function_call_output` out |
+
+Audio is **appended, never committed**. With server-side turn detection the service decides when a
+turn ended, and committing by hand takes that decision back and does it worse.
+
+**Without a key there is no session.** The plugin refuses rather than falling back to a stand-in,
+because a stand-in would let a call appear to happen.
+
+### The audio granularity Aurora imposes
+
+A capability is capped at 600 calls a minute, which puts a floor of about **100 ms** under an audio
+chunk carried through `voice.listen`. That is the granularity a governed capability can have, and
+it costs up to 100 ms of latency. Worth knowing before measuring the conversation and blaming the
+model.
+
+## Running the slice locally
+
+```bash
+export OPENAI_API_KEY=sk-...
+python3 plugins/voice/local_slice.py
+```
+
+Needs `ffmpeg` for the microphone and `ffplay` or `afplay` for the speakers; it says which is
+missing rather than failing obscurely.
+
+**It is a harness, not a capability.** It opens your microphone, and a program that does that on
+somebody's behalf should be one they started. It talks to the real service and plays what comes
+back — and it does **not** go through Aurora's Kernel: a tool the model asks for there is answered
+with a refusal, because the governed path runs inside Aurora and the harness is outside it.
+
+Use it to hear the voice. Use the test suite to prove the governance.
+
 ## Known gaps
 
-- **No audio.** This milestone is protocol and runtime correctness. The speech layer's real
-  transport is not implemented, and the plugin refuses rather than pretending: with no transport
-  configured, `voice.session.start` returns "nothing can carry a conversation".
-- Nothing has met a real provider, a real number or a real Realtime session.
+- **Nothing has met the real service.** No OpenAI key exists on this machine, so every claim about
+  how the real endpoint behaves rests on its documentation.
+- **The microphone has never been opened from inside the sandbox.** The harness runs unsandboxed;
+  whether `sandbox-exec` and macOS TCC will let a confined plugin capture audio is untried, and it
+  is the next thing a real slice would hit.
+- **Audio does not yet flow through Aurora end to end.** `voice.listen` and the audio returned by
+  `voice.poll` exist and are tested; nothing is wired to a device on Aurora's side.
+- Nothing has met a real provider or a real number.
 - Inbound PSTN is unsupported without owner-supplied ingress.
 - Discord voice is not yet on the shared session model.
 - Audio quality, latency and PT-PT recognition are entirely unmeasured.

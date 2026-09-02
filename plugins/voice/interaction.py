@@ -173,6 +173,18 @@ class InteractionSession:
         self.state = "closed"
         self._transport.close(reason)
 
+    def append_audio(self, base64_pcm16):
+        """Puts microphone audio into the buffer the model is listening to.
+
+        Appended rather than committed. With server-side turn detection the service decides when
+        somebody stopped talking, which is what makes interruption work without Aurora holding a
+        clock — committing by hand would take that decision back and do it worse.
+        """
+        self._transport.send({
+            "type": "input_audio_buffer.append",
+            "audio": base64_pcm16,
+        })
+
     def poll(self):
         """What the layer has said since last time, as events Aurora can act on."""
         events = []
@@ -180,7 +192,18 @@ class InteractionSession:
         for frame in self._transport.receive():
             kind = frame.get("type", "")
 
-            if kind == "response.function_call_arguments.done":
+            if kind == "response.audio.delta":
+                # A piece of what Aurora is saying, as base64 PCM16. Passed straight through: the
+                # runtime plays it and does not look inside it.
+                events.append({"kind": "audio", "audio": frame.get("delta") or ""})
+
+            elif kind == "input_audio_buffer.speech_started":
+                # Somebody started talking while Aurora was. Barge-in, and it is reported rather
+                # than acted on here — stopping is the session's decision, and the runtime makes it
+                # by calling `interrupt`.
+                events.append({"kind": "interrupted"})
+
+            elif kind == "response.function_call_arguments.done":
                 events.append({
                     "kind": "tool_requested",
                     "request_id": frame.get("call_id", ""),
@@ -198,6 +221,14 @@ class InteractionSession:
 
             elif kind == "response.done":
                 events.append({"kind": "spoke"})
+
+            elif kind == "response.audio_transcript.done":
+                # What Aurora actually said, as text. Worth having in the audit: a call where
+                # nobody can say afterwards what was said is not much of a record.
+                events.append({
+                    "kind": "said",
+                    "text": str(frame.get("transcript", ""))[:4000],
+                })
 
             elif kind == "error":
                 events.append({

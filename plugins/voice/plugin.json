@@ -8,7 +8,8 @@
   "documentation_ref": "docs/guides/voice.md",
   "required_permissions": [
     "voice.session",
-    "voice.speak"
+    "voice.speak",
+    "voice.listen"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -23,6 +24,10 @@
     {
       "name": "provider_auth_token",
       "purpose": "Signs in to the telephone provider and validates the events it sends. Anything Aurora does on the telephone is done with this and is attributable to your account."
+    },
+    {
+      "name": "openai_api_key",
+      "purpose": "Signs in to the speech service that hears and speaks for Aurora. Audio from a conversation goes to OpenAI while a call is running; nothing else does, and the key never leaves the plugin."
     }
   ],
   "requires_gpu": false,
@@ -84,6 +89,48 @@
       "rate_limit_per_minute": 600,
       "timeout_seconds": 30,
       "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.listen",
+      "title": "Hear a moment of audio",
+      "description": "Puts a slice of microphone audio into the buffer the model is listening to — base64 PCM16 at 24 kHz mono. Appended rather than committed, so the service decides when somebody stopped talking. What is heard is speech, and speech is a request rather than an instruction. Aurora caps a capability at 600 calls a minute, which puts a floor of about 100 ms under an audio chunk; that is the granularity a governed capability can carry, and it costs up to 100 ms of latency.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "audio"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "audio": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000000
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "voice.listen"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 600,
+      "timeout_seconds": 10,
+      "idempotent": false,
       "audit_level": "FULL"
     },
     {

@@ -97,7 +97,10 @@ providers rather than operating systems, because that is where the risk is.
 | Operator stop across every channel | IMPLEMENTED | 3 | not applicable — local |
 | Provider webhook validation (signature, replay, schema) | IMPLEMENTED | 16 | **no** |
 | Interaction layer protocol and outcome truthfulness | IMPLEMENTED | 18 | **no** |
-| OpenAI Realtime — a real session | **UNVERIFIED** | fakes only | **no** |
+| OpenAI Realtime transport — handshake, framing, audio, tools | IMPLEMENTED · TESTED | 20, real socket | **no** |
+| OpenAI Realtime — a real session against api.openai.com | **UNVERIFIED** | — | **no** — no key exists |
+| Microphone capture inside the plugin sandbox | **UNVERIFIED** — never attempted | — | **no** |
+| Local audio harness (outside the sandbox) | IMPLEMENTED | preflight only | **no** — no key |
 | Twilio — a real outbound call | **UNVERIFIED** | fakes only | **no** |
 | A real +351 number | **UNVERIFIED** | — | **no** |
 | Audio, end to end | **not implemented** — this milestone is protocol correctness | — | — |

@@ -22,9 +22,14 @@ import time
 
 import interaction
 import provider
+import realtime
 from fake_realtime import FakeTransport
 
 E_UNSUPPORTED = "voice_unsupported_capability"
+
+# The model, overridable by configuration. Named here rather than assumed in three places, and
+# read from settings so an installation can move without an edit.
+DEFAULT_MODEL = "gpt-realtime"
 E_NO_SESSION = "voice_no_session"
 E_ALREADY = "voice_session_exists"
 
@@ -52,22 +57,29 @@ def _settings():
         return {}
 
 
-def _transport_for(settings):
-    """The interaction transport: a real one, or the deterministic stand-in.
+def _transport_for(settings, api_key):
+    """The interaction transport: the real service, or the deterministic stand-in.
 
-    The stand-in is selected only by configuration that a shipped installation does not have. It
-    exists because the failures worth testing — a layer that will not connect, one that disconnects
+    The stand-in is selected only by configuration a shipped installation does not have. It exists
+    because the failures worth testing — a layer that will not connect, one that disconnects
     mid-call, one that returns a tool name nobody offered — cannot be asked for on demand from a
-    real provider.
+    real service.
+    <br>
+    With no key there is no transport and no session. Refusing is the honest answer: a plugin that
+    quietly fell back to a stand-in would let a call appear to happen.
     """
-    realtime = settings.get("realtime") or {}
+    config = settings.get("realtime") or {}
 
-    if realtime.get("transport") == "fake":
-        return FakeTransport(script=realtime.get("script") or [])
+    if config.get("transport") == "fake":
+        return FakeTransport(script=config.get("script") or [])
 
-    # The real transport is not implemented in this milestone. Refusing is the honest answer: a
-    # plugin that silently fell back to a stand-in would let a call appear to happen.
-    return None
+    if not api_key:
+        return None
+
+    return realtime.RealtimeTransport(
+        api_key,
+        url=config.get("url") or realtime.REALTIME_URL,
+        timeout=int(config.get("timeout_seconds") or 30))
 
 
 class Session:
@@ -84,21 +96,28 @@ class Session:
         # `voice.poll`, which is how a request reaches Aurora at all.
         self.pending = []
         self.heard = []
+
+        # What Aurora is saying, as base64 PCM16, waiting for whoever is playing it. Drained by
+        # the same poll that drains tool requests, so one round trip carries both.
+        self.audio = []
         self.lock = threading.Lock()
 
 
 def status(state, args):
     settings = _settings()
-    realtime = settings.get("realtime") or {}
+    config = settings.get("realtime") or {}
+    transport = _transport_for(settings, state.get("api_key"))
 
     return {
         "sessions": len(state["sessions"]),
-        "transport": realtime.get("transport") or "none",
+        "transport": config.get("transport") or ("openai" if state.get("api_key") else "none"),
+        "model": config.get("model") or DEFAULT_MODEL,
         "provider": (settings.get("provider") or {}).get("kind") or "none",
 
-        # Said plainly: without a real transport nothing can carry a conversation, and a caller
-        # deserves to know that before approving anything that would find out.
-        "can_hold_a_conversation": _transport_for(settings) is not None,
+        # Said plainly, and without contacting anybody: a caller deserves to know there is no
+        # speech layer before approving something that would find out by failing.
+        "can_hold_a_conversation": transport is not None,
+        "missing": [] if transport is not None else ["openai_api_key"],
     }
 
 
@@ -150,7 +169,8 @@ def session_start(state, args):
     if session_id in state["sessions"]:
         raise provider.ProviderRefused(E_ALREADY, "that session is already running")
 
-    transport = _transport_for(_settings())
+    settings = _settings()
+    transport = _transport_for(settings, state.get("api_key"))
 
     if transport is None:
         raise provider.ProviderRefused(
@@ -164,7 +184,8 @@ def session_start(state, args):
         instructions=str(args["instructions"]),
         tools=args.get("tools") or [],
         voice=str(args.get("voice") or "alloy"),
-        model=str(args.get("model") or "gpt-realtime"),
+        model=str(args.get("model") or (settings.get("realtime") or {}).get("model")
+                  or DEFAULT_MODEL),
         locale=str(args.get("locale") or "pt-PT"),
     )
 
@@ -209,6 +230,20 @@ def poll(state, args):
                 "text": event["text"],
             })
 
+        elif kind == "audio":
+            with session.lock:
+                session.audio.append(event["audio"])
+
+        elif kind == "interrupted":
+            # Somebody talked over Aurora. Stopping is the session's decision and this is where it
+            # is made: a voice that finishes its sentence while being interrupted is broadcasting.
+            session.interaction.interrupt()
+            report("voice.interrupted", {"session_id": session.session_id})
+
+        elif kind == "said":
+            report("voice.said", {
+                "session_id": session.session_id, "text": event["text"]})
+
         elif kind == "failed":
             session.state = "failed"
             report("voice.failed", {
@@ -216,12 +251,35 @@ def poll(state, args):
 
     with session.lock:
         waiting, session.pending = session.pending, []
+        spoken, session.audio = session.audio, []
 
-    return {
+    answer = {
         "session_id": session.session_id,
         "state": session.state,
         "tool_requests": waiting,
+        "audio": spoken,
     }
+
+    if isinstance(session.transport, realtime.RealtimeTransport):
+        # What the conversation has moved, which is the one number that predicts what it cost.
+        answer["telemetry"] = session.transport.telemetry()
+
+    return answer
+
+
+def listen(state, args):
+    """Puts a slice of microphone audio into the buffer the model is listening to.
+
+    Base64 PCM16 at 24 kHz mono, which is what the service documents. Appended rather than
+    committed: with server-side turn detection the service decides when somebody stopped talking,
+    and taking that decision back would do it worse.
+    """
+    session = _session(state, args)
+    audio = str(args["audio"])
+
+    session.interaction.append_audio(audio)
+
+    return {"session_id": session.session_id, "bytes": len(audio)}
 
 
 def tool_result(state, args):
@@ -320,6 +378,7 @@ READS = {
 }
 
 WRITES = {
+    "voice.listen": listen,
     "voice.inbound": inbound,
     "voice.session.start": session_start,
     "voice.tool_result": tool_result,
@@ -363,7 +422,12 @@ def main():
             state["provider"] = provider.FakePhoneProvider(
                 secrets.get("provider_auth_token", ""))
 
-            say({"kind": "ready", "degraded": False})
+            # The speech key, held in memory for the life of the process and put in exactly one
+            # Authorization header. Optional: without it the plugin still answers `voice.status`,
+            # which is how an owner finds out it is missing rather than by a failed call.
+            state["api_key"] = secrets.get("openai_api_key", "")
+
+            say({"kind": "ready", "degraded": not state["api_key"]})
             continue
 
         if kind == "shutdown":

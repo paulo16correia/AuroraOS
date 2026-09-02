@@ -31,8 +31,7 @@ public sealed class VoicePluginTests
         return Path.Combine(directory!.FullName, "plugins", "voice");
     }
 
-    [Fact]
-    public void TheProviderBoundaryAndTheInteractionLayerHoldTheirRules()
+    private static void RunPython(string module, int expected)
     {
         using var python = new Process
         {
@@ -48,18 +47,30 @@ public sealed class VoicePluginTests
 
         python.StartInfo.ArgumentList.Add("-m");
         python.StartInfo.ArgumentList.Add("unittest");
-        python.StartInfo.ArgumentList.Add("test_voice_plugin");
+        python.StartInfo.ArgumentList.Add(module);
         python.StartInfo.ArgumentList.Add("-v");
 
         python.Start();
         var output = python.StandardOutput.ReadToEnd() + python.StandardError.ReadToEnd();
-        python.WaitForExit(120_000);
+        python.WaitForExit(180_000);
 
         Assert.True(python.ExitCode == 0, output);
+        Assert.Contains($"Ran {expected} test", output, StringComparison.Ordinal);
+    }
 
-        // Asserted so a module that stops being collected fails here rather than passing with
-        // nothing run.
-        Assert.Contains("Ran 34 tests", output, StringComparison.Ordinal);
+    [Fact]
+    public void TheRealRealtimeTransportHoldsItsRules()
+    {
+        // Driven against a Realtime service on loopback, so the class that ships performs a real
+        // RFC 6455 handshake and carries real masked frames. The client stand-in used by the
+        // runtime tests replaces the transport, which leaves everything inside it untested.
+        RunPython("test_realtime", 20);
+    }
+
+    [Fact]
+    public void TheProviderBoundaryAndTheInteractionLayerHoldTheirRules()
+    {
+        RunPython("test_voice_plugin", 34);
     }
 
     [Fact]

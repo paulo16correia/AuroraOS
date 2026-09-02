@@ -122,8 +122,18 @@ public sealed class VoiceRuntimeTests : IDisposable
 
     private sealed class Secrets : IPluginSecretSource
     {
+        /// <summary>
+        /// Both declared secrets. The host refuses to start a service plugin missing one of them,
+        /// which is correct — a voice plugin with no speech credential has no job — and it means
+        /// a test that supplied only the provider token would never get the plugin running.
+        /// </summary>
         public Task<string?> FindAsync(string pluginId, string name, CancellationToken ct) =>
-            Task.FromResult<string?>(name == "provider_auth_token" ? Token : null);
+            Task.FromResult<string?>(name switch
+            {
+                "provider_auth_token" => Token,
+                "openai_api_key" => "sk-test-key-never-logged",
+                _ => null,
+            });
     }
 
     private sealed class Observations : IPluginObservationSink
