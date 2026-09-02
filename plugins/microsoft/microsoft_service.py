@@ -35,25 +35,41 @@ def say(frame):
     sys.stdout.flush()
 
 
-def _where_microsoft_is():
-    """Graph and the sign-in service, or a stand-in when one is named in the environment.
+def _setting(name, default=None):
+    """One value from the config file beside this program, or the default.
 
-    This is a test seam and it is safe because of something Aurora does rather than something this
-    program promises: both plugin hosts call `Environment.Clear()` before launching, so a plugin's
-    environment contains exactly what Aurora put there and nothing of the owner's shell. Aurora
-    never sets these. A test harness that starts this program directly does.
-
-    The alternative — testing the protocol without a subprocess — would test a different program
-    from the one that ships.
+    The same seam the Discord plugin uses, and for a reason found by auditing: the plugin hosts
+    call `Environment.Clear()` before launching, so anything read from the environment is
+    unreachable when Aurora is the one starting this program. A test that pointed the plugin at a
+    stand-in through the environment could therefore only ever test it standalone — which is why
+    there was no end-to-end test until the seam moved here.
     """
-    base = os.environ.get("AURORA_MICROSOFT_BASE")
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    try:
+        with open(os.path.join(here, "config.json"), "r") as handle:
+            settings = json.load(handle) or {}
+    except (OSError, ValueError):
+        return default
+
+    value = settings.get(name, default)
+
+    return default if value is None else value
+
+
+def _where_microsoft_is():
+    """Graph and the sign-in service, or a stand-in when the config names one.
+
+    `api_base` is absent in every shipped installation, so this returns Microsoft's own hosts and
+    the strict allowlist. A test writes one into the plugin's copied directory, which is the only
+    way it is ever set.
+    """
+    base = _setting("api_base")
 
     if not base:
         return graph.GRAPH_V1, None, graph.ALLOWED_HOSTS, False
 
-    loopback = os.environ.get("AURORA_MICROSOFT_ALLOW_LOOPBACK") == "1"
-
-    return base + "/v1.0", base, ("127.0.0.1", "::1"), loopback
+    return base + "/v1.0", base, ("127.0.0.1", "::1"), True
 
 
 def identity(state, args):
@@ -198,10 +214,20 @@ def main():
         if kind != "call":
             continue
 
-        nonce = frame.get("id")
+        # One result frame per call, in the shape Aurora's host actually reads: `ok`, and either
+        # `output` or `refusal` with `detail`. An `outcome` of "unknown" is how a plugin says the
+        # effect may have happened, which the host turns into an ambiguous outcome rather than a
+        # failure.
+        #
+        # This was wrong until a completion audit ran the plugin under the real host: successes
+        # omitted `ok`, so every one read as a failure, and refusals were sent as a frame kind the
+        # host does not know, so every one timed out after thirty seconds. The Python tests missed
+        # it because their harness read the frames this file wrote rather than the ones Aurora
+        # reads — the harness agreed with the bug.
+        answer = {"kind": "result", "id": frame.get("id")}
 
         try:
-            say({"kind": "result", "id": nonce, "output": handle(state, frame)})
+            answer.update({"ok": True, "output": handle(state, frame)})
 
         except graph.GraphError as refused:
             code, message, detail = refused.as_refusal()
@@ -211,21 +237,24 @@ def main():
                 # next call into a fresh exchange rather than a second identical rejection.
                 state["tokens"].forget()
 
-            say({
-                "kind": "error", "id": nonce, "code": code,
-                "message": message, "detail": detail,
-            })
+            if code == graph.E_UNKNOWN:
+                # It may have happened. Never a failure, because reporting one invites a retry
+                # that does the thing twice.
+                answer.update({"ok": False, "outcome": "unknown", "detail": message})
+            else:
+                answer.update({"ok": False, "refusal": code, "detail": message})
 
         except Exception as unexpected:
             # The type, not the text. A message from an unexpected exception is written by whatever
             # threw it and could carry anything at all; the audit gets the shape of the failure and
             # Aurora reports that the call did not work.
-            say({
-                "kind": "error", "id": nonce,
-                "code": graph.E_GRAPH,
-                "message": "the plugin failed unexpectedly (%s)" % type(unexpected).__name__,
-                "detail": {},
+            answer.update({
+                "ok": False,
+                "refusal": graph.E_GRAPH,
+                "detail": "the plugin failed unexpectedly (%s)" % type(unexpected).__name__,
             })
+
+        say(answer)
 
 
 if __name__ == "__main__":

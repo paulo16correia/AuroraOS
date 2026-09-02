@@ -109,6 +109,10 @@ public sealed class SchemaMigrationTests : IDisposable
         Assert.Equal("principal_os_user", ColumnOf(Factory, "audit_record", "principal_os_user"));
         Assert.Null(ColumnOf(Factory, "audit_record", "principal_windows_user"));
 
+        // A table added by a later migration, asserted on an upgraded database rather than only on
+        // a fresh one. The two paths differ, and the operator's voice stop depends on this one.
+        Assert.Equal("session_id", ColumnOf(Factory, "voice_session", "session_id"));
+
         // A rename must not disturb the values, or the audit chain would stop verifying.
         using var check = Factory.Open();
         using var read = check.CreateCommand();

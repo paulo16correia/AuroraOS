@@ -98,6 +98,14 @@ public sealed class DiscordVoiceTests : IDisposable
     }
 
     [Fact]
+    public void TheConversationRulesHold()
+    {
+        // Found orphaned by a completion audit: eighteen passing tests that nothing ran, because
+        // no .NET test referenced the module. A test suite nobody executes is documentation.
+        RunPython("test_conversation", 18);
+    }
+
+    [Fact]
     public void TheTurnTakingRulesHold()
     {
         // The state machine is Python, so its tests are Python. Run from here so the suite is one

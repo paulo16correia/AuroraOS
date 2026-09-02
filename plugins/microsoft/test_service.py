@@ -15,10 +15,21 @@ from fake_graph import FakeGraph
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def _write_config(settings):
+    with open(os.path.join(HERE, "config.json"), "w") as handle:
+        json.dump(settings, handle)
+
+
 class Plugin:
     """The plugin as a subprocess, pointed at a stand-in instead of Microsoft."""
 
     def __init__(self, service, secrets=None):
+        # Where the stand-in is listening, written where the plugin reads its settings. Not the
+        # environment: Aurora's plugin hosts clear it, so a seam there would work standalone and
+        # be unreachable when Aurora is the one starting the program.
+        self._config = os.path.join(HERE, "config.json")
+        _write_config({"api_base": service.base})
+
         self._process = subprocess.Popen(
             [sys.executable, os.path.join(HERE, "microsoft_service.py")],
             stdin=subprocess.PIPE,
@@ -26,13 +37,6 @@ class Plugin:
             stderr=subprocess.PIPE,
             cwd=HERE,
             text=True,
-            env={
-                **os.environ,
-                # Read by the program only when set, and set only here. The shipped default is
-                # Microsoft's own host list, which the manifest declares and the owner agreed to.
-                "AURORA_MICROSOFT_BASE": service.base,
-                "AURORA_MICROSOFT_ALLOW_LOOPBACK": "1",
-            },
         )
 
         self.send({
@@ -60,8 +64,18 @@ class Plugin:
         return json.loads(line)
 
     def call(self, capability, **arguments):
+        """One call, answered in the frame shape Aurora's plugin host actually reads.
+
+        `kind`/`ok`/`output`/`refusal`/`detail` — not a shape invented here. An audit found this
+        harness had been asserting on frames the host ignores, which is how a protocol defect
+        survived a hundred and forty passing tests.
+        """
         self.send({"kind": "call", "id": "1", "capability": capability, "input": arguments})
-        return self.receive()
+        frame = self.receive()
+
+        assert frame.get("kind") == "result", "the host only reads ready, result and event frames"
+
+        return frame
 
     def close(self):
         try:
@@ -69,6 +83,13 @@ class Plugin:
             self._process.wait(timeout=5)
         except Exception:
             self._process.kill()
+
+        # The config is a test artefact. Leaving it behind would point a real installation at a
+        # port that is no longer listening.
+        try:
+            os.remove(self._config)
+        except OSError:
+            pass
 
     def __enter__(self):
         return self
@@ -112,8 +133,8 @@ class Protocol(unittest.TestCase):
         with FakeGraph() as service, Plugin(service) as plugin:
             answer = plugin.call("microsoft.mail.send_everything")
 
-            self.assertEqual("error", answer["kind"])
-            self.assertEqual("unsupported_capability", answer["code"])
+            self.assertFalse(answer["ok"])
+            self.assertEqual("unsupported_capability", answer["refusal"])
 
     def test_the_signed_in_identity_comes_back_in_named_fields(self):
         with FakeGraph() as service:
@@ -129,7 +150,7 @@ class Protocol(unittest.TestCase):
             with Plugin(service) as plugin:
                 answer = plugin.call("microsoft.identity.me")
 
-                self.assertEqual("result", answer["kind"])
+                self.assertTrue(answer["ok"])
                 self.assertEqual("Ada Lovelace", answer["output"]["display_name"])
                 self.assertEqual("Head of Engineering", answer["output"]["job_title"])
                 self.assertEqual("refresh_token", answer["output"]["grant"])
@@ -156,7 +177,7 @@ class UntrustedContent(unittest.TestCase):
                 # ask Aurora to do anything — there is no frame kind for it — so provider content
                 # can be alarming and still cannot be an instruction.
                 self.assertIn("SYSTEM:", answer["output"]["display_name"])
-                self.assertEqual("result", answer["kind"])
+                self.assertTrue(answer["ok"])
                 self.assertNotIn("capability", answer["output"])
 
     def test_an_enormous_field_is_bounded_before_it_reaches_aurora(self):
@@ -198,9 +219,8 @@ class Failures(unittest.TestCase):
             with Plugin(service) as plugin:
                 answer = plugin.call("microsoft.identity.me")
 
-                self.assertEqual("error", answer["kind"])
-                self.assertEqual("microsoft_denied", answer["code"])
-                self.assertEqual(403, answer["detail"]["status"])
+                self.assertFalse(answer["ok"])
+                self.assertEqual("microsoft_denied", answer["refusal"])
 
     def test_a_refused_sign_in_never_carries_the_credential_across_the_pipe(self):
         with FakeGraph() as service:
@@ -212,8 +232,8 @@ class Failures(unittest.TestCase):
             with Plugin(service) as plugin:
                 answer = plugin.call("microsoft.identity.me")
 
-                self.assertEqual("microsoft_auth_failed", answer["code"])
-                self.assertIn("AADSTS70008", answer["message"])
+                self.assertEqual("microsoft_auth_failed", answer["refusal"])
+                self.assertIn("AADSTS70008", answer["detail"])
 
                 # The whole frame, not only the message: nothing anywhere in what Aurora receives
                 # carries the value, because this is what lands in the audit.
@@ -227,7 +247,7 @@ class Failures(unittest.TestCase):
             with Plugin(service) as plugin:
                 answer = plugin.call("microsoft.identity.me")
 
-                self.assertEqual("microsoft_malformed_response", answer["code"])
+                self.assertEqual("microsoft_malformed_response", answer["refusal"])
 
     def test_the_plugin_survives_a_failure_and_answers_the_next_call(self):
         with FakeGraph() as service:
@@ -237,11 +257,11 @@ class Failures(unittest.TestCase):
             service.answer("GET", "/v1.0/me", 500, {"error": {"code": "x", "message": "y"}})
 
             with Plugin(service) as plugin:
-                self.assertEqual("error", plugin.call("microsoft.identity.me")["kind"])
+                self.assertFalse(plugin.call("microsoft.identity.me")["ok"])
 
                 # A service plugin that died on the first provider error would be restarted by
                 # Aurora on every transient fault, which is a worse outage than the fault.
-                self.assertEqual("result", plugin.call("microsoft.status")["kind"])
+                self.assertTrue(plugin.call("microsoft.status")["ok"])
 
 
 if __name__ == "__main__":
