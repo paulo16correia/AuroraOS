@@ -177,6 +177,12 @@ and what matters is whether it has met the provider rather than which operating 
 | Permanent delete | **UNSUPPORTED** — deliberately not offered | — | — |
 | Creating a recurring series | **UNSUPPORTED** — not written | — | — |
 
+**The runtime path was unexercised until 2026-09-02.** Every Microsoft test ran the plugin's Python
+modules directly, which proved the code and proved nothing about whether Aurora could start it.
+Running it through `ServicePluginHost` for the first time found two protocol defects that 142
+passing tests could not see. Both fixed; there is now an end-to-end suite. See
+`docs/audit/completion-baseline.md`.
+
 **Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
 no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing at another

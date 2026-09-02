@@ -486,7 +486,15 @@ throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` p
 else. It records every request, so a test can tell "the plugin refused" from "the plugin asked and
 was told no" — which look identical from the caller's side and are nothing alike in a review.
 
-**No test contacts Microsoft.** There are no live tests and no simulated live tests.
+Since 2026-09-02 there is also an end-to-end suite (`MicrosoftRuntimeTests`) that starts the real
+plugin through Aurora's own `ServicePluginHost` and invokes capabilities through it. It was added by
+a completion audit, which found that the plugin could not in fact be run by Aurora — successes
+omitted the `ok` field the host reads, and refusals used a frame kind the host ignores, so they
+timed out. Neither was visible to the Python tests, whose harness read the frames the plugin wrote
+rather than the ones the host reads.
+
+**No test contacts Microsoft.** There are no live tests and no simulated live tests. The
+implementation is deterministic-tested; real tenant verification is pending for every capability.
 
 ## What real tenant access would settle
 

@@ -96,6 +96,10 @@ listener, and inbound is UNSUPPORTED until you do.
 
 ## Known gaps
 
+- **The runtime does not exist.** `voice_service.py` has not been written, and none of
+  `SqliteVoiceSessionStore`, `VoicePolicyService` or `VoiceToolBridge` is registered in
+  `ServiceRegistration`. The foundation is implemented and tested; nothing constructs it, no MCP
+  tool reaches it, and no audio flows. Everything below follows from that.
 - Nothing has met a real provider, a real number or a real Realtime session.
 - Inbound PSTN is unsupported without owner-supplied ingress.
 - Discord voice is not yet on the shared session model.
