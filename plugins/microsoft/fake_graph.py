@@ -78,6 +78,9 @@ class FakeGraph:
             def do_PATCH(self):
                 self._handle("PATCH")
 
+            def do_PUT(self):
+                self._handle("PUT")
+
             def do_DELETE(self):
                 self._handle("DELETE")
 

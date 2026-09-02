@@ -113,8 +113,30 @@ It will ask three separate questions: the permissions, the network, and — for 
 | `microsoft.calendar.create` | `POST /me/events` | SUPPORTED | MEDIUM | yes | `calendar.write`, `calendar.notify` |
 | `microsoft.calendar.update` | `PATCH /me/events/{id}` | SUPPORTED | MEDIUM | yes | `calendar.write`, `calendar.notify` |
 | `microsoft.calendar.cancel` | `POST /me/events/{id}/cancel` | SUPPORTED | MEDIUM | yes | `calendar.cancel`, `calendar.notify` |
+| `microsoft.files.list` | `GET …/children` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.files.search` | `GET …/root/search(q=…)` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.files.metadata` | `GET …/items/{id}` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.files.versions` | `GET …/items/{id}/versions` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.files.upload_text` | `PUT …/content` | LIMITED — 4 MB, text | MEDIUM | yes | `files.write` |
+| `microsoft.files.create_folder` | `POST …/children` | SUPPORTED | MEDIUM | yes | `files.write` |
+| `microsoft.files.move` | `PATCH …/items/{id}` | SUPPORTED | MEDIUM | yes | `files.write` |
+| `microsoft.files.rename` | `PATCH …/items/{id}` | SUPPORTED | MEDIUM | yes | `files.write` |
+| `microsoft.files.copy` | `POST …/items/{id}/copy` | LIMITED — asynchronous | MEDIUM | yes | `files.write` |
+| `microsoft.files.delete` | `DELETE …/items/{id}` | SUPPORTED | MEDIUM | yes | `files.delete` |
+| Reading a file's **content** | `GET …/content` | **UNSUPPORTED** — see below | — | — | — |
 
-Files, tasks, people and Teams are **not implemented**.
+Tasks, people and Teams are **not implemented**.
+
+### Graph permissions for files
+
+| Permission | Type | Admin consent | Needed for |
+| --- | --- | --- | --- |
+| `Files.Read` | Delegated | No | list, search, metadata, versions in your own OneDrive |
+| `Files.ReadWrite` | Delegated | No | upload, folders, move, rename, copy, delete |
+| `Sites.Read.All` | Delegated | **Yes** | reading a SharePoint site's library |
+| `Sites.ReadWrite.All` | Delegated | **Yes** | writing to a SharePoint site's library |
+
+The two `Sites.*` permissions need an administrator. `Files.*` do not, and cover OneDrive.
 
 ### Graph permissions for calendar
 
@@ -203,6 +225,50 @@ with one series master that says nothing about Tuesday. Each event reports its `
 daily, weekly, absolute and relative monthly, ranges by count or by date — that a half-implementation
 would produce series subtly different from what was asked for. Single events only, for now.
 
+## Remote files are not local files
+
+Aurora already has `files.read_sandbox` and `files.write_sandbox`, which operate on one directory on
+this machine under rules that took an ADR to get right. These operate on somebody's cloud storage —
+different owners, different permissions, different provenance, different blast radius.
+
+So they are named differently, return a different shape, and every item carries `is_remote: true`,
+`source: microsoft`, its drive id and its parent path. A summary that said only
+`quarterly-report.docx` would be indistinguishable from a local file of the same name, and Aurora
+would be holding two different things under one description.
+
+Nothing deletes permanently. `delete` moves an item to the recycle bin, where it can be restored.
+Graph offers `permanentDelete`; it is deliberately not wired up, because "it is in the recycle bin"
+is recoverable and "it is gone" is a sentence nobody should be able to reach through an agent.
+
+`copy` reports that it was **started**, not that it finished. Microsoft copies in the background and
+answers before it is done; reporting a copy as complete when Microsoft has only accepted the request
+would report something that has not happened.
+
+## Why reading a file's content is UNSUPPORTED
+
+This one is worth explaining, because the obvious reading is that it was forgotten.
+
+Graph does not serve file bytes from `graph.microsoft.com`. It answers `/content` with a redirect to
+a pre-authenticated URL on a **tenant-specific** host — `contoso.sharepoint.com`,
+`…files.1drv.com`. Those cannot be enumerated before the tenant is known.
+
+It was implemented: fetch the metadata first, take the download link, follow it **with no credential
+at all** to a host matching Microsoft's documented content suffixes, size-bounded, no redirects,
+with the host reached recorded in the audit. Then Aurora's manifest reader refused
+`*.sharepoint.com`:
+
+> No wildcards, schemes, ports or paths: the owner is agreeing to each host by name.
+
+That is the better argument, and it is Aurora's, not a limitation of Microsoft's. The credential
+reasoning was sound as far as it went — dropping the token does answer the leak — and it never
+answered the *disclosure* question. Somebody who agreed to `graph.microsoft.com` at install did not
+agree to "and whatever host Microsoft names at runtime".
+
+What is offered instead is everything that identifies, finds and organises a document, which is what
+"find the documents relevant to this meeting" actually needs. Reading the bytes waits for somebody
+to design disclosure for a host that is not known in advance — a change to the manifest contract,
+not to the plugin.
+
 ## Attachments
 
 Listing is metadata only — name, type, size. **Downloading content is not implemented.** Graph
@@ -271,7 +337,8 @@ becomes a permission check.
 | `test_service.py` | 12 tests — the protocol, degraded start, hostile content, bounded fields, failure handling |
 | `test_mail.py` | 20 tests — reading, the draft/send split, spoofed sender names, hostile bodies, identifier injection, moving |
 | `test_calendar.py` | 21 tests — the view that expands recurrence, time zones kept whole, conflicts, free/busy without subjects, what notifies, impersonating display names |
-| `MicrosoftPluginTests.cs` | 17 tests — runs all four modules, and checks what the manifest promises |
+| `test_files.py` | 19 tests — provenance on every item, drive and site targeting, search-expression injection, raw uploads, recycle bin |
+| `MicrosoftPluginTests.cs` | 20 tests — runs all five modules, and checks what the manifest promises |
 
 The stand-in is a real HTTP server on loopback that answers like Graph and like Graph on a bad day:
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing somewhere

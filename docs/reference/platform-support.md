@@ -101,9 +101,14 @@ and what matters is whether it has met the provider rather than which operating 
 | Calendar — free/busy for other people | IMPLEMENTED | 1 | **no** |
 | Calendar — create, update, cancel | IMPLEMENTED | 7 | **no** |
 | Calendar — Teams meeting association | IMPLEMENTED | 1 | **no** |
-| Attachment content download | **UNSUPPORTED** — not written | — | — |
+| Files — list, search, metadata, versions | IMPLEMENTED | 8 | **no** |
+| Files — upload, folders, move, rename, copy | IMPLEMENTED | 8 | **no** |
+| Files — delete to recycle bin | IMPLEMENTED | 2 | **no** |
+| Reading a file's content | **UNSUPPORTED** — host cannot be disclosed | — | — |
+| Attachment content download | **UNSUPPORTED** — same reason | — | — |
+| Permanent delete | **UNSUPPORTED** — deliberately not offered | — | — |
 | Creating a recurring series | **UNSUPPORTED** — not written | — | — |
-| Files, tasks, people, Teams | **not implemented** | — | — |
+| Tasks, people, Teams | **not implemented** | — | — |
 
 **Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
 no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —

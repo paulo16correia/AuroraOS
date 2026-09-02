@@ -12,7 +12,9 @@
     "microsoft.mail.write",
     "microsoft.mail.send",
     "microsoft.calendar.read",
-    "microsoft.calendar.write"
+    "microsoft.calendar.write",
+    "microsoft.files.read",
+    "microsoft.files.write"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -893,6 +895,503 @@
       "risk": "MEDIUM",
       "approval_required": true,
       "reversible": false,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.list",
+      "title": "List files",
+      "description": "What is in a OneDrive or SharePoint folder. Every item says which drive it came from and that it is remote, so a cloud file is never mistaken for one on this machine.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "folder_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.search",
+      "title": "Search files",
+      "description": "Finds files by name and content across a drive, using Microsoft's own search.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.metadata",
+      "title": "File details",
+      "description": "One item's name, size, type, who last changed it and where it lives. No content.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.versions",
+      "title": "File versions",
+      "description": "The versions Microsoft is keeping of one item, with who changed it and when.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.upload_text",
+      "title": "Write a text file",
+      "description": "Creates or replaces a small text file. Microsoft keeps the previous version, which is what makes this recoverable — but the file somebody had open has changed under them.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "text"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "folder_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 4000000
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 60,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.create_folder",
+      "title": "Create a folder",
+      "description": "Makes a folder. If the name is taken Microsoft renames the new one rather than replacing what was there.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "folder_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.move",
+      "title": "Move a file",
+      "description": "Moves an item into another folder. Reversible by moving it back.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id",
+          "folder_id"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "folder_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.rename",
+      "title": "Rename a file",
+      "description": "Changes an item's name and nothing else.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id",
+          "name"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.copy",
+      "title": "Copy a file",
+      "description": "Asks Microsoft to copy an item. Microsoft does it in the background and answers before it has finished, so the result says the copy was started rather than that it exists.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id",
+          "folder_id"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "folder_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 10,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.files.delete",
+      "title": "Move a file to the recycle bin",
+      "description": "Moves an item to the recycle bin, where it can be restored. Nothing here deletes anything permanently — Graph offers that and it is deliberately not wired up.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item_id"
+        ],
+        "properties": {
+          "drive_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "item_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.files.delete"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
       "rate_limit_per_minute": 10,
       "timeout_seconds": 30,
       "idempotent": false,

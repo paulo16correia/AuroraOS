@@ -18,6 +18,7 @@ import os
 import sys
 
 import calendar_events as calendar
+import files
 import graph
 import mail
 import msauth
@@ -133,11 +134,13 @@ READS = {
     "microsoft.status": status,
     **mail.READS,
     **calendar.READS,
+    **files.READS,
 }
 
 WRITES = {
     **mail.WRITES,
     **calendar.WRITES,
+    **files.WRITES,
 }
 
 

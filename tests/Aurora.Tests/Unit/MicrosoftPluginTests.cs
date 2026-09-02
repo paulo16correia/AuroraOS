@@ -94,6 +94,12 @@ public sealed class MicrosoftPluginTests
         RunPython("test_calendar", 21);
     }
 
+    [Fact]
+    public void TheFileRulesHold()
+    {
+        RunPython("test_files", 19);
+    }
+
     // ---- what the manifest promises ----
 
     [Fact]
@@ -279,6 +285,40 @@ public sealed class MicrosoftPluginTests
             Assert.Empty(read.Effects);
             Assert.True(read.ApprovalRequired);
         }
+    }
+
+    // ---- remote files are not local files ----
+
+    [Fact]
+    public void NoFileCapabilityCanBeMistakenForTheLocalSandbox()
+    {
+        foreach (PluginCapability capability in Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.files.", StringComparison.Ordinal)))
+        {
+            // Aurora already has files.read_sandbox and files.write_sandbox, which operate on one
+            // directory on this machine under rules that took an ADR to get right. These operate
+            // on somebody's cloud storage. Sharing a prefix would be the first step to sharing an
+            // assumption.
+            Assert.StartsWith("microsoft.files.", capability.Key, StringComparison.Ordinal);
+            Assert.DoesNotContain("sandbox", capability.Key, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void DeletingAFileIsRecoverableAndNeverPermanent()
+    {
+        PluginCapability delete =
+            Manifest().Capabilities.Single(c => c.Key == "microsoft.files.delete");
+
+        // It moves an item to the recycle bin. Graph offers a permanent delete and it is
+        // deliberately not offered here: "it is in the recycle bin" is recoverable, and "it is
+        // gone" is a sentence nobody should be able to reach through an agent.
+        Assert.True(delete.Reversible);
+        Assert.True(delete.ApprovalRequired);
+
+        Assert.DoesNotContain(
+            Manifest().Capabilities,
+            c => c.Key.Contains("permanent", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

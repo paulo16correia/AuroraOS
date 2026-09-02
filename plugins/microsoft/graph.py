@@ -191,7 +191,7 @@ class GraphClient:
     # ---- the one place a request is made ----
 
     def request(self, method, path, body=None, query=None, timeout=30,
-                base=None, repeatable=None, headers=None, attempts=3):
+                base=None, repeatable=None, headers=None, attempts=3, raw_body=None):
         """One Graph call, with the retry and throttle rules applied.
 
         `repeatable` decides what a timeout means. A GET that times out can be asked again; a
@@ -208,7 +208,8 @@ class GraphClient:
             if clean:
                 url += ("&" if "?" in url else "?") + urllib.parse.urlencode(clean)
 
-        return self._send(method, url, body, timeout, repeatable, headers or {}, attempts)
+        return self._send(
+            method, url, body, timeout, repeatable, headers or {}, attempts, raw_body)
 
     def paged(self, path, query=None, timeout=30, base=None, max_pages=MAX_PAGES):
         """Walks @odata.nextLink and returns the items, bounded.
@@ -245,10 +246,15 @@ class GraphClient:
 
     # ---- the parts that make it safe rather than merely working ----
 
-    def _send(self, method, url, body, timeout, repeatable, headers, attempts):
+    def _send(self, method, url, body, timeout, repeatable, headers, attempts, raw_body=None):
         check_host(url, self._allowed, self._plain_loopback)
 
-        payload = None if body is None else json.dumps(body).encode("utf-8")
+        # Bytes as given, for the one case Graph does not take JSON: uploading a file's content.
+        # The caller supplies the Content-Type with it, because only the caller knows what it is.
+        if raw_body is not None:
+            payload = raw_body
+        else:
+            payload = None if body is None else json.dumps(body).encode("utf-8")
         tried = 0
 
         while True:
@@ -258,7 +264,7 @@ class GraphClient:
             request.add_header("Accept", "application/json")
             request.add_header("User-Agent", "Aurora/1.0 (+local governed agent)")
 
-            if payload is not None:
+            if payload is not None and raw_body is None:
                 request.add_header("Content-Type", "application/json")
 
             for name, value in headers.items():
