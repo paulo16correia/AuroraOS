@@ -93,10 +93,12 @@ rather than operating systems, because that is where the risk is.
 | Voice runtime, end to end through the real host and Kernel | IMPLEMENTED · TESTED | 14 | not applicable — local |
 | Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 32 | not applicable — local |
 | Local stack, end to end: audio → STT → Ollama → Kernel → `clock.now` → TTS | IMPLEMENTED · TESTED | 8, real host and Kernel | **partly** — real HTTP to the model, scripted STT/TTS |
-| Faster-Whisper transcribing PT-PT | **UNVERIFIED** — not installed | — | **no** |
-| Ollama answering as Aurora in PT-PT | **UNVERIFIED** — not installed | — | **no** |
-| XTTS v2 speaking PT-PT | **UNVERIFIED** — not installed | — | **no** |
-| Local stack latency, spoken word to spoken answer | **UNVERIFIED** — no models on this machine | — | **no** |
+| Faster-Whisper transcribing PT-PT | **VERIFIED** — 3/3 correct, confidence 0.93 | — | **yes**, on an M1 |
+| Ollama answering as Aurora in PT-PT | **VERIFIED** — answers, and asks for the capability | — | **yes**, on an M1 |
+| XTTS v2 producing PT-PT audio | **VERIFIED** — real audio, 24 kHz | — | **yes**, on an M1 |
+| XTTS v2 voice quality | **UNVERIFIED** — nobody has listened | — | **no** |
+| Local stack latency on 8 GB | **VERIFIED UNUSABLE** — 208 s for one turn | — | **yes** — see below |
+| A whole turn through Aurora on real models | **UNVERIFIED** — times out before it completes | — | **no** — see below |
 | Voice session model, grants, budgets, lifecycle | IMPLEMENTED | 13 | not applicable — local |
 | Authorization decision (grant, expiry, budget, stop) | IMPLEMENTED | 26 | not applicable — local |
 | Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
@@ -119,13 +121,53 @@ rather than operating systems, because that is where the risk is.
 tests run against deterministic fakes and a fake transport that can be told to disconnect — which is
 worth having, and is not verification.
 
-**And no model has ever run.** The local stack is the default provider and none of its three
-engines is installed on this machine: no Faster-Whisper, no Ollama, no Coqui, no torch — about
-thirteen gigabytes the owner has not chosen to install. `whisper.cpp` and macOS `say` are present
-and would serve as recogniser and synthesiser today; Ollama has no substitute, so no local
-conversation has been held. What is proved is that every piece is connected to the next one and
-that the Kernel is in the middle of it. What is not proved is that any of it sounds like anything,
-or that a turn completes in under a second.
+**The models have now run, and the machine cannot hold them.** All three engines were installed
+and measured on a MacBook Air M1 with 8 GB. Each works on its own; together they take about eight
+gigabytes and one turn takes 208 seconds. No conversation has been held, and none can be on this
+hardware. The measurements are below.
+
+### What running it on an 8 GB M1 settled
+
+Measured on a MacBook Air M1, 8 GB unified memory, 7-core GPU, macOS 26.2, with all three engines
+actually installed — Ollama 0.33.2 with `llama3.1:8b`, `faster-whisper` large-v3-turbo, Coqui XTTS
+v2 through the maintained `coqui-tts` 0.27.5 fork.
+
+| | measured |
+| --- | --- |
+| Ollama, model warm | **5.1 tokens/second** (30 of 33 layers on the GPU) |
+| Faster-Whisper, ~1 s of speech | **~4.0 s**, transcripts correct |
+| XTTS v2, one short sentence | **8.3 s** for 2.9 s of audio, 2.5 GB resident |
+| One whole turn, all three loaded | **207.8 s** |
+
+**Each engine works. Together they do not fit.** Ollama holds about 4 GB, XTTS 2.5 GB and Whisper
+1.5 GB — eight gigabytes of models on an eight gigabyte machine, so the turn that takes four seconds
+of compute spends the rest of two hundred paging. During the runs the machine sat at 7% free memory
+with 7.2 GB of swap in use, and one attempt to load XTTS while Ollama was resident was killed
+outright.
+
+Two things worth separating from the arithmetic. The recognition was **accurate** — "Que horas
+são?" came back exactly, at 0.93 confidence — and the model **asked for `clock.now` rather than
+inventing a time**, which is the behaviour the whole governance design depends on. What failed here
+is the hardware, not the arrangement.
+
+Also worth recording: `faster-whisper` cannot use this GPU at all. CTranslate2 has no Metal backend,
+so it runs on the same CPU cores Ollama is competing for. `whisper.cpp`, already installed, does use
+the GPU — and still took 6 s, for the same reason.
+
+### A defect this found, which fakes could not
+
+The local provider runs recognition and the language model **synchronously inside `append_audio`**,
+so a single `voice.listen` call carries the whole turn. That capability declares a **10-second
+timeout** in `plugin.json`, sized for a remote interaction layer where appending audio only forwards
+bytes.
+
+On real engines the call blocked for 208 seconds and Aurora gave up at ten, four times over, while
+the plugin was still working — the session was live, the audio had arrived, and nothing was ever
+heard. Against scripted engines that return instantly this is invisible, which is why eight tests
+through the real host and the real Kernel all pass and none of them saw it.
+
+It is recorded rather than fixed: on hardware that can hold the models, a turn still has to complete
+inside the timeout its own manifest declares, and that is a design question rather than a patch.
 
 ### What a machine with the models would settle
 
