@@ -23,6 +23,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import time
 
 SAMPLE_RATE = 24000
 SAMPLE_WIDTH = 2
@@ -386,10 +387,17 @@ class ScriptedRecogniser:
 
     name = "scripted"
 
-    def __init__(self, transcripts):
+    def __init__(self, transcripts, delay_ms=0):
         self._transcripts = list(transcripts)
 
+        # A recogniser that takes a known amount of time. Real ones take seconds and no two runs
+        # agree; a test about what happens *while* recognition is running needs a number it chose.
+        self._delay_ms = int(delay_ms or 0)
+
     def transcribe(self, pcm16):
+        if self._delay_ms:
+            time.sleep(self._delay_ms / 1000.0)
+
         text = self._transcripts.pop(0) if self._transcripts else ""
 
         return {
@@ -405,7 +413,13 @@ class ScriptedSpeaker:
 
     name = "scripted"
 
+    def __init__(self, delay_ms=0):
+        self._delay_ms = int(delay_ms or 0)
+
     def speak(self, text):
+        if self._delay_ms:
+            time.sleep(self._delay_ms / 1000.0)
+
         # A tenth of a second per word, which is roughly speech and is entirely arbitrary. What
         # matters downstream is that audio of a plausible length arrives.
         samples = int(SAMPLE_RATE * 0.1 * max(1, len(text.split())))
@@ -418,7 +432,8 @@ def best_recogniser(settings):
     wanted = (settings or {}).get("engine")
 
     if wanted == "scripted":
-        return ScriptedRecogniser((settings or {}).get("transcripts") or [])
+        return ScriptedRecogniser(
+            (settings or {}).get("transcripts") or [], (settings or {}).get("delay_ms"))
 
     if wanted == "faster-whisper" or (wanted is None and FasterWhisperRecogniser.available()):
         if FasterWhisperRecogniser.available():
@@ -439,7 +454,7 @@ def best_speaker(settings):
     wanted = (settings or {}).get("engine")
 
     if wanted == "scripted":
-        return ScriptedSpeaker()
+        return ScriptedSpeaker((settings or {}).get("delay_ms"))
 
     if wanted in (None, "xtts") and XttsSpeaker.available():
         return XttsSpeaker(language=(settings or {}).get("language", "pt"))

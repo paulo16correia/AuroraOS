@@ -120,6 +120,11 @@ class Thinking:
         self.completion_tokens = 0
         self.calls = 0
 
+        # What the last response said about itself. Ollama reports how long it spent reading the
+        # prompt and how long generating, separately — which is the difference between a model
+        # that is slow to start and one that is slow to speak, and there is no other way to know.
+        self._last = {}
+
     @property
     def tool_names(self):
         return [t["function"]["name"] for t in self._tools]
@@ -222,6 +227,17 @@ class Thinking:
         self.prompt_tokens += int(decoded.get("prompt_eval_count") or 0)
         self.completion_tokens += int(decoded.get("eval_count") or 0)
 
+        # Nanoseconds from Ollama, milliseconds here, and absent rather than zero when it did not
+        # say — a measurement nobody took should not read as a measurement of nothing.
+        self._last = {}
+
+        for reported, named in (
+                ("load_duration", "llm_load_ms"),
+                ("prompt_eval_duration", "llm_prompt_ms"),
+                ("eval_duration", "llm_generate_ms")):
+            if decoded.get(reported) is not None:
+                self._last[named] = round(int(decoded[reported]) / 1e6)
+
         return decoded
 
     def _trim(self):
@@ -237,6 +253,10 @@ class Thinking:
 
             while self._messages and self._messages[0].get("role") in ("tool", "assistant"):
                 self._messages.pop(0)
+
+    def last_call(self):
+        """What the model said about its own last answer. Empty when it said nothing."""
+        return dict(self._last)
 
     def telemetry(self):
         return {

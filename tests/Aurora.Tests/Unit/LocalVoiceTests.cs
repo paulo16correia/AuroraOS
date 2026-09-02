@@ -52,6 +52,9 @@ public sealed class LocalVoiceTests : IDisposable
     private readonly List<string> _roots = [];
     private string _executable = string.Empty;
 
+    /// <summary>How long the scripted recogniser should take. Zero for every test but two.</summary>
+    private int _recognitionMs;
+
     public void Dispose()
     {
         _ollama.Dispose();
@@ -141,7 +144,7 @@ public sealed class LocalVoiceTests : IDisposable
                 {
                     // `scripted` is never selected by anything an installation ships with — the
                     // engine has to be named, the way the interaction layer's stand-in does.
-                    stt = new { engine = "scripted", transcripts },
+                    stt = new { engine = "scripted", transcripts, delay_ms = _recognitionMs },
                     tts = new { engine = "scripted" },
                     llm = new
                     {
@@ -376,6 +379,57 @@ public sealed class LocalVoiceTests : IDisposable
         Assert.True(await runtime.ListenAsync(sessionId, Silence(), Ct));
     }
 
+    /// <summary>
+    /// Drains until the conversation has produced what is being waited for.
+    /// </summary>
+    /// <remarks>
+    /// The plugin queues and Aurora drains, and the queuing happens off the path the audio
+    /// arrives on — so what a turn produced is there on some later round rather than the one that
+    /// delivered the last of the sound. A single pump would be asserting on how quickly a worker
+    /// thread happened to be scheduled.
+    /// </remarks>
+    private static async Task<VoicePump> PumpUntilAsync(
+        VoiceRuntime runtime, string sessionId, Func<VoicePump, bool> until, int seconds = 20)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(seconds);
+
+        var handled = 0;
+        var refused = 0;
+        var audio = new List<string>();
+        var stopped = false;
+
+        while (true)
+        {
+            VoicePump round = await runtime.PumpAsync(sessionId, Ct);
+
+            handled += round.Handled;
+            refused += round.Refused;
+            audio.AddRange(round.Audio);
+            stopped |= round.Stopped;
+
+            var far = new VoicePump(handled, refused, stopped, audio);
+
+            if (until(far) || DateTimeOffset.UtcNow >= deadline)
+            {
+                return far;
+            }
+
+            await Task.Delay(25, Ct);
+        }
+    }
+
+    /// <summary>Everything the plugin reported, once it has stopped reporting anything.</summary>
+    private static async Task SettleAsync(VoiceRuntime runtime, string sessionId, int seconds = 3)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(seconds);
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            await runtime.PumpAsync(sessionId, Ct);
+            await Task.Delay(50, Ct);
+        }
+    }
+
     /// <summary>The text of one thing the plugin reported, decoded.</summary>
     private static string Reported(Rig rig, string kind) =>
         JsonNode.Parse(rig.Reported.Seen.Single(o => o.Kind == kind).PayloadJson)!["text"]!
@@ -397,20 +451,18 @@ public sealed class LocalVoiceTests : IDisposable
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
-        // First round: the recogniser produced a transcript, the model asked for a capability, the
-        // bridge put it through the grant and the Kernel, and the real clock capability ran.
-        VoicePump asked = await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+        // The recogniser produced a transcript, the model asked for a capability, the bridge put
+        // it through the grant and the Kernel, and the real clock capability ran — then the
+        // outcome went back to the model and the synthesiser turned its sentence into audio.
+        VoicePump whole = await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Audio.Count > 0);
 
-        Assert.Equal(1, asked.Handled);
-        Assert.Equal(0, asked.Refused);
+        Assert.Equal(1, whole.Handled);
+        Assert.Equal(0, whole.Refused);
         Assert.Contains(_audit.Entries, e => e.ActionId == "clock.now");
 
-        // Second round: the outcome went back to the model, the model produced a sentence, and the
-        // synthesiser turned it into audio that reached Aurora.
-        VoicePump answeredBack = await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
-
-        Assert.NotEmpty(answeredBack.Audio);
-        Assert.NotEmpty(Convert.FromBase64String(answeredBack.Audio[0]));
+        Assert.NotEmpty(whole.Audio);
+        Assert.NotEmpty(Convert.FromBase64String(whole.Audio[0]));
 
         Assert.Equal("Que horas são?", Reported(rig, "voice.heard"));
         Assert.Equal("São duas e meia da tarde.", Reported(rig, "voice.said"));
@@ -436,7 +488,9 @@ public sealed class LocalVoiceTests : IDisposable
         VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
-        await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+
+        await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Audio.Count > 0);
 
         // One conversation, and the only thing it asked of anything outside the process was the
         // model on loopback. No speech service, no key, nobody's API.
@@ -458,7 +512,8 @@ public sealed class LocalVoiceTests : IDisposable
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
-        VoicePump pump = await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+        VoicePump pump = await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Refused > 0);
 
         Assert.Equal(1, pump.Refused);
         Assert.DoesNotContain(_audit.Entries, e => e.ActionId == "files.write_sandbox");
@@ -480,7 +535,8 @@ public sealed class LocalVoiceTests : IDisposable
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
-        VoicePump pump = await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+        VoicePump pump = await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Refused > 0);
 
         Assert.Equal(1, pump.Refused);
         Assert.DoesNotContain(
@@ -504,11 +560,10 @@ public sealed class LocalVoiceTests : IDisposable
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
-        VoicePump pump = await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+        VoicePump pump = await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Audio.Count > 0);
 
         Assert.Equal(1, pump.Refused);
-
-        await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
 
         // A model handed nothing would narrate a success. It is told, in the tool message, that
         // the request was refused — which is the only reason it can say so out loud.
@@ -549,7 +604,9 @@ public sealed class LocalVoiceTests : IDisposable
         VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
-        await rig.Runtime.PumpAsync(answered.Session.SessionId, Ct);
+
+        await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Audio.Count > 0);
 
         PluginResult polled = await rig.Host.InvokeAsync(
             Manifest(),
@@ -597,5 +654,85 @@ public sealed class LocalVoiceTests : IDisposable
         Assert.Equal("local", answer["provider_kind"]!.GetValue<string>());
         Assert.True(answer["can_hold_a_conversation"]!.GetValue<bool>());
         Assert.Empty(_ollama.Seen);
+    }
+
+    // ---- the lifecycle defect real engines found ----
+
+    [Fact]
+    public async Task ATurnSlowerThanTheListenTimeoutNoLongerLosesTheConversation()
+    {
+        // Longer than `voice.listen` is allowed to take. On real engines this was 208 seconds
+        // against a ten-second timeout: Aurora abandoned a turn it had already been told about,
+        // four times over, while the plugin was still working on it.
+        _recognitionMs = 12_000;
+
+        ModelAsksFor("clock__now");
+        ModelSays("São duas e meia.");
+
+        Rig rig = Build(transcripts: "Que horas são?");
+        await using ServicePluginHost host = rig.Host;
+
+        TimeSpan declared = Manifest().Capabilities
+            .First(c => c.Key == "voice.listen").Timeout;
+
+        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        var session = answered.Session!.SessionId;
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await SaySomethingAsync(rig.Runtime, session);
+        clock.Stop();
+
+        // The call that ends the turn came back well inside its own budget, with twelve seconds
+        // of recognition still to run. That is the property; the rest is that it still works.
+        Assert.True(
+            clock.Elapsed < declared,
+            $"delivering audio took {clock.Elapsed.TotalSeconds:F1}s against a "
+            + $"{declared.TotalSeconds:F0}s budget");
+
+        // And the plugin is answering while its worker is busy. A protocol loop blocked behind a
+        // turn would not: that is what made `voice.poll` and `voice.hangup` unreachable too.
+        PluginResult status = await rig.Host.InvokeAsync(
+            Manifest(),
+            new PluginInvocation("plugin/voice", "voice.status", "{}", Sensitivity.Private),
+            Ct);
+
+        Assert.True(status.Ok, $"{status.Refusal}: {status.Detail}");
+
+        VoicePump whole = await PumpUntilAsync(rig.Runtime, session, p => p.Audio.Count > 0, 40);
+
+        // The slow turn arrived in the end, whole: the Kernel ran the capability and Aurora spoke.
+        Assert.Equal(1, whole.Handled);
+        Assert.NotEmpty(whole.Audio);
+        Assert.Contains(_audit.Entries, e => e.ActionId == "clock.now");
+    }
+
+    [Fact]
+    public async Task HangingUpDuringASlowTurnAnswersAtOnceAndSaysNothingAfterwards()
+    {
+        _recognitionMs = 8_000;
+
+        ModelSays("Uma resposta que ninguém vai ouvir.");
+
+        Rig rig = Build(transcripts: "Olá.");
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        var session = answered.Session!.SessionId;
+
+        await SaySomethingAsync(rig.Runtime, session);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        VoiceSession? ended = await rig.Runtime.HangUpAsync(session, "the caller hung up", Ct);
+        clock.Stop();
+
+        // Being unable to hang up is worse than hanging up unexpectedly, so this may not wait on
+        // a recogniser still thinking about a turn nobody is left to hear.
+        Assert.Equal(VoiceSessionState.Ended, ended!.State);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"hanging up took {clock.Elapsed}");
+
+        await Task.Delay(TimeSpan.FromSeconds(10), Ct);
+
+        // And nothing was said into the call after it ended.
+        Assert.DoesNotContain(rig.Reported.Seen, o => o.Kind == "voice.said");
     }
 }

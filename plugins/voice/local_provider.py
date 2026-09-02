@@ -22,9 +22,24 @@ Kernel by the same path either way — which is what the provider abstraction wa
 **No engine here decides anything.** The recogniser turns air into words, the model turns words
 into a request or a sentence, the speaker turns a sentence into air. Whether the request is allowed
 is decided in Aurora, by the Kernel, after this file has reported it.
+
+**The work does not happen where the audio arrives.** `append_audio` buffers, notices that somebody
+stopped talking, hands the turn to a worker and returns; the worker does recognition, thinking and
+synthesis and leaves what it produced on the same queue `poll` already drains. This is the shape the
+Discord plugin has used since it was the only voice Aurora had — for the reason its own comment
+gives, that recognition takes as long as it takes and doing it on the arrival path stops the
+audio being drained while somebody is still speaking.
+
+Locally the consequence is sharper than a stalled socket. Every capability declares a timeout, and
+`voice.listen` declares ten seconds because appending audio to a remote service is a forwarding
+operation. Recognition and an 8B model on this machine are not, and doing them inside that call
+made Aurora abandon a turn it had already been told about, four times over, while the plugin was
+still working on it.
 """
 
 import base64
+import queue
+import threading
 import time
 
 import speech
@@ -44,6 +59,11 @@ MIN_TURN_MS = 400
 
 # And a ceiling, so a stuck microphone does not buffer until memory runs out.
 MAX_TURN_MS = 30000
+
+# How long a hang-up waits for the worker to notice. Short: the thing being waited on may be a
+# model mid-sentence, and a session that cannot end is worse than a thread that outlives it by a
+# moment. The generation check is what makes anything it produces after this harmless.
+WORKER_JOIN_MS = 2000
 
 
 class LocalUnavailable(Exception):
@@ -68,7 +88,21 @@ class LocalSession:
         self._spoken_ms = 0.0
         self._quiet_ms = 0.0
 
+        # Written by the worker, drained by whoever is polling. Two threads, so a lock.
         self._events = []
+        self._events_lock = threading.Lock()
+
+        # Turns waiting to be thought about, and what does the thinking. One worker, so a session
+        # can only ever be working on one turn — which is what makes a turn happen exactly once.
+        self._work = queue.Queue()
+        self._worker = None
+        self._stopping = threading.Event()
+
+        # Bumped when somebody interrupts or the session ends. Work carrying an older number is
+        # dropped rather than spoken: cancelling has to mean the sentence does not arrive later.
+        self._generation = 0
+        self._lock = threading.Lock()
+
         self.state = "pending"
 
         # Set while Aurora is speaking, so a new turn arriving can cut it off rather than queueing
@@ -90,6 +124,12 @@ class LocalSession:
 
         self.state = "active"
 
+        # A daemon, so a plugin that is killed does not wait on it. `close` still joins it, which
+        # is the path that actually runs.
+        self._worker = threading.Thread(
+            target=self._work_loop, name="aurora-voice-turn", daemon=True)
+        self._worker.start()
+
     def append_audio(self, base64_pcm16):
         """A slice of microphone audio. Turn detection happens here, in the plugin.
 
@@ -105,58 +145,97 @@ class LocalSession:
         lasted = speech.duration_ms(chunk)
         loud = speech.energy(chunk) >= SPEECH_FLOOR
 
-        if loud:
-            if self._spoken_ms == 0.0 and self._speaking:
-                # Somebody started while Aurora was talking. Reported now, so the runtime can stop
-                # the audio before the rest of the sentence is produced.
-                self._events.append({"kind": "interrupted"})
+        # Everything under here is arithmetic on a buffer. No engine is touched, nothing is waited
+        # on, and the call returns in the time it takes to add up some samples.
+        with self._lock:
+            if loud:
+                if self._spoken_ms == 0.0 and self._speaking:
+                    # Somebody started while Aurora was talking. Reported now, so the runtime can
+                    # stop the audio before the rest of the sentence is produced.
+                    self._emit({"kind": "interrupted"})
 
-            self._quiet_ms = 0.0
-            self._spoken_ms += lasted
+                self._quiet_ms = 0.0
+                self._spoken_ms += lasted
+                self._buffer += chunk
+
+                if self._spoken_ms >= MAX_TURN_MS:
+                    # A microphone left open. Cut the turn rather than buffering until memory
+                    # runs out.
+                    self._hand_over_turn()
+
+                return
+
+            if self._spoken_ms == 0.0:
+                # Silence before anybody spoke. Nothing to keep.
+                return
+
             self._buffer += chunk
+            self._quiet_ms += lasted
 
-            if self._spoken_ms >= MAX_TURN_MS:
-                # A microphone left open. Cut the turn rather than buffering until memory runs out.
-                self._end_turn()
-
-            return
-
-        if self._spoken_ms == 0.0:
-            # Silence before anybody spoke. Nothing to keep.
-            return
-
-        self._buffer += chunk
-        self._quiet_ms += lasted
-
-        if self._quiet_ms >= SILENCE_MS:
-            self._end_turn()
+            if self._quiet_ms >= SILENCE_MS:
+                self._hand_over_turn()
 
     def poll(self):
-        drained, self._events = self._events, []
+        with self._events_lock:
+            drained, self._events = self._events, []
+
         return drained
 
     def deliver(self, request_id, outcome):
-        """What Aurora decided. Back to the model, then out as speech."""
-        if self._turn is not None:
-            self._turn["tool_returned"] = self._now()
+        """What Aurora decided, handed to the worker.
 
-        self._brain.tool_answered(
-            self._turn["tool_name"] if self._turn else "unknown", outcome)
+        Answering the model and saying the answer out loud is another model call and another pass
+        of the synthesiser, which is the same reason `append_audio` does not do its own work. This
+        records the outcome and returns; the sentence arrives on the queue when it exists.
+        """
+        with self._lock:
+            if self._turn is not None:
+                self._turn["tool_returned"] = self._now()
 
-        self._think()
+            self._work.put(("tool", self._generation, request_id, outcome))
 
     def interrupt(self):
-        """Stop talking. The audio already handed over is the runtime's to drop."""
-        self._speaking = False
-        self._events.append({"kind": "cancelled"})
+        """Stop talking. The audio already handed over is the runtime's to drop.
+
+        Bumping the generation is what makes this mean something now that the sentence is produced
+        somewhere else: work already queued, and a turn the worker is part way through, belong to
+        the old number and are dropped rather than spoken after the interruption.
+        """
+        with self._lock:
+            self._generation += 1
+            self._speaking = False
+
+        self._emit({"kind": "cancelled"})
 
     def close(self, reason):
+        """Ends the session and the work it owns.
+
+        A session that returned while its worker was still thinking would speak into a call that
+        had ended, so this waits — briefly, because the thing being waited for is a model that may
+        be slow, and a hang-up that cannot complete is worse than one that leaves a thread to die
+        with the process.
+        """
+        with self._lock:
+            self._generation += 1
+            self._buffer = bytearray()
+
         self.state = "closed"
-        self._buffer = bytearray()
+        self._stopping.set()
+        self._work.put(None)
+
+        worker, self._worker = self._worker, None
+
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(timeout=WORKER_JOIN_MS / 1000.0)
 
     # ---- the loop ----
 
-    def _end_turn(self):
+    def _emit(self, event):
+        with self._events_lock:
+            self._events.append(event)
+
+    def _hand_over_turn(self):
+        """Closes the buffer and gives the turn to the worker. Called holding the lock."""
         audio, self._buffer = bytes(self._buffer), bytearray()
         spoken_ms, self._spoken_ms, self._quiet_ms = self._spoken_ms, 0.0, 0.0
 
@@ -164,19 +243,73 @@ class LocalSession:
             # A cough, a chair, a keystroke. Transcribing it produces words nobody said.
             return
 
-        self._turn = {"speech_ended": self._now(), "spoken_ms": round(spoken_ms)}
+        # Handed over once, with the number it was handed over under. The buffer is emptied in the
+        # same breath, so the same audio cannot become a second turn however often this is called.
+        self._work.put(("turn", self._generation, audio, spoken_ms, self._now()))
+
+    def _work_loop(self):
+        """Everything that takes time, off the path the audio arrives on."""
+        while not self._stopping.is_set():
+            try:
+                item = self._work.get(timeout=0.05)
+            except queue.Empty:
+                continue
+
+            if item is None:
+                return
+
+            kind, generation = item[0], item[1]
+
+            with self._lock:
+                current = self._generation
+
+            if generation != current:
+                # Interrupted, or the session ended, between being queued and being reached.
+                continue
+
+            try:
+                if kind == "turn":
+                    self._process_turn(item[2], item[3], item[4], generation)
+                elif kind == "tool":
+                    self._process_tool(item[2], item[3], generation)
+            except Exception as broken:
+                # A worker that dies takes the conversation with it and says nothing about why.
+                self._emit({
+                    "kind": "failed",
+                    "detail": "the turn could not be completed (%s)" % type(broken).__name__,
+                })
+
+    def _still(self, generation):
+        """Whether the work in hand is still wanted."""
+        if self._stopping.is_set():
+            return False
+
+        with self._lock:
+            return generation == self._generation
+
+    def _process_turn(self, audio, spoken_ms, ended_at, generation):
+        self._turn = {
+            "speech_ended": ended_at,
+            "spoken_ms": round(spoken_ms),
+            "queued_ms": round(self._now() - ended_at),
+        }
         self._turn["stt_started"] = self._now()
 
         try:
             heard = self._recogniser.transcribe(audio)
         except Exception as unheard:
-            self._events.append({
+            self._emit({
                 "kind": "failed",
                 "detail": "the recogniser failed (%s)" % type(unheard).__name__,
             })
             return
 
         self._turn["stt_completed"] = self._now()
+
+        # Checked after every stage that takes time, because each of them is long enough for a
+        # hang-up to arrive. What was said into a call that has ended is not said.
+        if not self._still(generation):
+            return
 
         text = (heard.get("text") or "").strip()
 
@@ -185,7 +318,7 @@ class LocalSession:
             # when it has nothing — which is worse than saying nothing.
             return
 
-        self._events.append({
+        self._emit({
             "kind": "heard",
             "text": text[:4000],
             "confidence": heard.get("confidence"),
@@ -193,9 +326,16 @@ class LocalSession:
         })
 
         self._brain.heard(text)
-        self._think()
+        self._think(generation)
 
-    def _think(self):
+    def _process_tool(self, request_id, outcome, generation):
+        """Aurora's answer, back to the model and out as speech."""
+        self._brain.tool_answered(
+            (self._turn or {}).get("tool_name", "unknown"), outcome)
+
+        self._think(generation)
+
+    def _think(self, generation):
         """One pass of the language layer: either a request for Aurora, or something to say."""
         self._turn = self._turn or {}
         self._turn["llm_started"] = self._now()
@@ -203,10 +343,14 @@ class LocalSession:
         try:
             decided = self._brain.respond()
         except thinking.ThinkingUnavailable as unavailable:
-            self._events.append({"kind": "failed", "detail": unavailable.message})
+            self._emit({"kind": "failed", "detail": unavailable.message})
             return
 
         self._turn["llm_completed"] = self._now()
+        self._turn.update(self._brain.last_call())
+
+        if not self._still(generation):
+            return
 
         if decided["kind"] == "tool":
             action = thinking.action_of(decided["name"])
@@ -214,7 +358,7 @@ class LocalSession:
             self._turn["tool_requested"] = self._now()
 
             # Reported, never executed. Aurora decides and calls back through `deliver`.
-            self._events.append({
+            self._emit({
                 "kind": "tool_requested",
                 "request_id": "local-%d" % int(self._now()),
                 "action_id": action,
@@ -222,9 +366,9 @@ class LocalSession:
             })
             return
 
-        self._say(decided["text"])
+        self._say(decided["text"], generation)
 
-    def _say(self, text):
+    def _say(self, text, generation):
         if not text:
             return
 
@@ -234,7 +378,7 @@ class LocalSession:
         try:
             audio = self._speaker.speak(text)
         except Exception as unspeakable:
-            self._events.append({
+            self._emit({
                 "kind": "failed",
                 "detail": "the synthesiser failed (%s)" % type(unspeakable).__name__,
             })
@@ -242,10 +386,18 @@ class LocalSession:
 
         self._turn["tts_completed"] = self._now()
         self._turn["turn_completed"] = self._now()
+
+        if not self._still(generation):
+            # Synthesised into a call that ended while it was being synthesised. The measurement
+            # is still worth keeping; the audio is not.
+            self.turns.append(_latency(self._turn))
+            self._turn = None
+            return
+
         self._speaking = True
 
-        self._events.append({"kind": "said", "text": text[:4000]})
-        self._events.append({"kind": "audio", "audio": base64.b64encode(audio).decode()})
+        self._emit({"kind": "said", "text": text[:4000]})
+        self._emit({"kind": "audio", "audio": base64.b64encode(audio).decode()})
 
         self.turns.append(_latency(self._turn))
         self._turn = None
@@ -280,6 +432,10 @@ def _latency(turn):
 
     measured = {
         "spoken_ms": turn.get("spoken_ms"),
+        "queued_ms": turn.get("queued_ms"),
+        "llm_load_ms": turn.get("llm_load_ms"),
+        "llm_prompt_ms": turn.get("llm_prompt_ms"),
+        "llm_generate_ms": turn.get("llm_generate_ms"),
         "stt_ms": span("stt_started", "stt_completed"),
         "llm_ms": span("llm_started", "llm_completed"),
         "tts_ms": span("tts_started", "tts_completed"),
