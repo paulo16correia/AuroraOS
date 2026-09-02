@@ -24,6 +24,7 @@ import mail
 import msauth
 import people
 import tasks
+import teams
 
 # Refusals that are about this plugin rather than about Microsoft.
 E_UNSUPPORTED = "unsupported_capability"
@@ -139,6 +140,7 @@ READS = {
     **files.READS,
     **tasks.READS,
     **people.READS,
+    **teams.READS,
 }
 
 WRITES = {
@@ -146,6 +148,7 @@ WRITES = {
     **calendar.WRITES,
     **files.WRITES,
     **tasks.WRITES,
+    **teams.WRITES,
 }
 
 

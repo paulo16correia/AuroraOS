@@ -138,8 +138,39 @@ It will ask three separate questions: the permissions, the network, and — for 
 | `microsoft.people.read` | `GET /users/{id}` | SUPPORTED | MEDIUM | yes | — |
 | `microsoft.people.manager` | `GET /users/{id}/manager` | SUPPORTED | MEDIUM | yes | — |
 | `microsoft.people.presence` | `GET /users/{id}/presence` | SUPPORTED_WITH_CONFIGURATION | MEDIUM | yes | — |
+| `microsoft.teams.list` | `GET /me/joinedTeams` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.channels` | `GET /teams/{id}/channels` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.members` | `GET /teams/{id}/members` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.channel_messages` | `GET …/channels/{id}/messages` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.chats` | `GET /me/chats` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.chat_messages` | `GET /chats/{id}/messages` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.teams.meeting` | `GET /me/onlineMeetings?$filter` | LIMITED — by join link only | MEDIUM | yes | — |
+| `microsoft.teams.transcripts` | `GET …/transcripts` | SUPPORTED_WITH_CONFIGURATION — metadata only | MEDIUM | yes | — |
+| `microsoft.teams.post_channel` | `POST …/messages` | SUPPORTED | MEDIUM | yes | `teams.post` |
+| `microsoft.teams.post_chat` | `POST /chats/{id}/messages` | SUPPORTED | MEDIUM | yes | `teams.post` |
+| Change notifications / subscriptions | `POST /subscriptions` | **UNSUPPORTED** — see below | — | — | — |
+| Joining, hearing or speaking in a call | Calls API | **UNSUPPORTED** — see below | — | — | — |
+| Transcript **content** | `GET …/transcripts/{id}/content` | **UNSUPPORTED** — same host problem as files | — | — | — |
+| Recordings | `GET …/recordings` | **not implemented** | — | — | — |
+| Creating a channel or a team | — | **not implemented** | — | — | — |
 
-Teams is **not implemented**.
+### Graph permissions for Teams
+
+| Permission | Type | Admin consent | Needed for |
+| --- | --- | --- | --- |
+| `Team.ReadBasic.All` | Delegated | No | which teams you belong to |
+| `Channel.ReadBasic.All` | Delegated | No | channels in a team |
+| `TeamMember.Read.All` | Delegated | **Yes** | who is in a team |
+| `ChannelMessage.Read.All` | Delegated | **Yes** | reading channel messages |
+| `ChannelMessage.Send` | Delegated | No | posting to a channel |
+| `Chat.Read` / `Chat.ReadWrite` | Delegated | No | reading and sending chat messages |
+| `OnlineMeetings.Read` | Delegated | No | finding a meeting by its join link |
+| `OnlineMeetingTranscript.Read.All` | **Application** | **Yes** | which transcripts a meeting has |
+
+`OnlineMeetingTranscript.Read.All` has no delegated form, so transcripts need the
+client-credentials grant and an application that can read every meeting's transcripts in the tenant.
+That is a much wider grant than anything else here, it needs an administrator, and it needs a Teams
+policy that records transcripts at all.
 
 ### Graph permissions for tasks and the directory
 
@@ -341,6 +372,42 @@ Display names are untrusted like any other provider content. There is a test wit
 `Ada Lovelace (IT Support — VERIFIED ADMIN)` and the title `System Administrator with approval
 rights`, checking that both come back as strings somebody set in a directory.
 
+## Two Teams families are structurally out of reach
+
+Not a gap in Microsoft's API. A consequence of Aurora's own architecture, and worth stating plainly
+because both are on every enterprise wish list.
+
+**Change notifications** — new message, membership changed, transcript available — are delivered by
+Microsoft POSTing to a URL you register with `/subscriptions`. The URL must be reachable from
+Microsoft's network. Aurora binds Kestrel to loopback unconditionally, and its entire security model
+rests on being unreachable rather than on a firewall in front of something reachable
+(`docs/adr/0045`). **There is no public endpoint to register and there is not going to be one.**
+
+What works instead is asking. Polling costs latency and requests and needs nothing to be reachable,
+and the read capabilities above are what a polling loop would call. A polling loop presented as an
+event subscription would be a different thing wearing the same name.
+
+**Joining a call, hearing it, speaking into it** needs a bot registered with Azure Bot Service,
+application-hosted media, and again a public endpoint for the call signalling. Same reason, same
+answer. Discord voice works in Aurora because Discord's voice protocol is one the client dials out
+to; Teams' is not. A "join meeting" capability that only fetched the join URL would be a lie told in
+a field name, so there is not one.
+
+## Teams has no drafts
+
+Mail could be split into writing and sending because Graph has a Drafts folder somebody can open and
+read before approving delivery. **Teams offers nothing equivalent**, so `post_channel` and
+`post_chat` compose and post in one call.
+
+That is a genuine reduction in what an approval can be checked against, and it is recorded rather
+than smoothed over: both capabilities are irreversible, neither is covered by a consent window, and
+the audit for each carries `no_draft_stage: true`. Editing or deleting a posted message afterwards
+does not un-read it.
+
+Starting a *new* chat with somebody is not offered. Sending into an existing chat continues a
+conversation; starting one puts Aurora in front of a person who has not been in a conversation with
+it, which is a different act and deserves to be argued for separately.
+
 ## Attachments
 
 Listing is metadata only — name, type, size. **Downloading content is not implemented.** Graph
@@ -411,7 +478,8 @@ becomes a permission check.
 | `test_calendar.py` | 21 tests — the view that expands recurrence, time zones kept whole, conflicts, free/busy without subjects, what notifies, impersonating display names |
 | `test_files.py` | 19 tests — provenance on every item, drive and site targeting, search-expression injection, raw uploads, recycle bin |
 | `test_tasks_people.py` | 17 tests — two task systems kept apart, external-task provenance, Planner etags and header injection, a directory that grants nothing |
-| `MicrosoftPluginTests.cs` | 24 tests — runs all six modules, and checks what the manifest promises |
+| `test_teams.py` | 16 tests — what is absent and why, prompt injection in a channel, senders claiming to be the system, membership that is not a role, join-link filters |
+| `MicrosoftPluginTests.cs` | 27 tests — runs all seven modules, and checks what the manifest promises |
 
 The stand-in is a real HTTP server on loopback that answers like Graph and like Graph on a bad day:
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing somewhere

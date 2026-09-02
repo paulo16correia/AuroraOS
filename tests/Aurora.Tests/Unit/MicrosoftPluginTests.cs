@@ -106,6 +106,12 @@ public sealed class MicrosoftPluginTests
         RunPython("test_tasks_people", 17);
     }
 
+    [Fact]
+    public void TheTeamsRulesHold()
+    {
+        RunPython("test_teams", 16);
+    }
+
     // ---- what the manifest promises ----
 
     [Fact]
@@ -377,6 +383,45 @@ public sealed class MicrosoftPluginTests
             // looks like one. Nothing here is named as though it were.
             Assert.DoesNotContain("role", capability.Key, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("permission", capability.Key, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // ---- what Teams cannot do here, and why it is Aurora's reason rather than Microsoft's ----
+
+    [Fact]
+    public void NothingSubscribesToChangeNotificationsOrJoinsACall()
+    {
+        foreach (PluginCapability capability in Manifest().Capabilities)
+        {
+            // Microsoft delivers change notifications by POSTing to a URL you register, and a
+            // Teams call needs a bot with a public endpoint for its signalling. Aurora binds
+            // loopback unconditionally and its security model rests on being unreachable
+            // (docs/adr/0045) — so there is no endpoint to register, and a capability claiming
+            // otherwise would be naming something that cannot happen.
+            foreach (var absent in new[]
+                { "subscribe", "webhook", "notification", "join_call", "listen", "speak" })
+            {
+                Assert.DoesNotContain(absent, capability.Key, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
+    public void PostingToTeamsIsIrreversibleAndUncovered()
+    {
+        IEnumerable<PluginCapability> posts = Manifest().Capabilities
+            .Where(c => c.Effects.Contains("microsoft.teams.post"));
+
+        Assert.Equal(2, posts.Count());
+
+        foreach (PluginCapability post in posts)
+        {
+            // Teams has no drafts. Mail could be split into writing and sending because Graph has
+            // a Drafts folder somebody can read first; here composing and posting happen together,
+            // so the approval covers less and every post costs its own.
+            Assert.False(post.Reversible, post.Key);
+            Assert.True(post.ApprovalRequired, post.Key);
+            Assert.Null(post.OpensWindow);
         }
     }
 

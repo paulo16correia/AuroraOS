@@ -110,9 +110,16 @@ and what matters is whether it has met the provider rather than which operating 
 | Planner — plans, buckets, tasks, create, update | IMPLEMENTED | 7 | **no** |
 | Directory — search, people, entry, manager | IMPLEMENTED | 4 | **no** |
 | Directory — presence | IMPLEMENTED | 1 | **no** |
+| Teams — teams, channels, members | IMPLEMENTED | 2 | **no** |
+| Teams — channel and chat messages | IMPLEMENTED | 5 | **no** |
+| Teams — posting | IMPLEMENTED | 3 | **no** |
+| Teams — meeting lookup by join link | IMPLEMENTED | 3 | **no** |
+| Teams — transcript metadata | IMPLEMENTED | 2 | **no** |
+| Teams — change notifications | **UNSUPPORTED** — Aurora has no reachable endpoint | 1 | — |
+| Teams — joining or hearing a call | **UNSUPPORTED** — same reason | 1 | — |
+| Teams — transcript content | **UNSUPPORTED** — host cannot be disclosed | — | — |
 | Permanent delete | **UNSUPPORTED** — deliberately not offered | — | — |
 | Creating a recurring series | **UNSUPPORTED** — not written | — | — |
-| Teams | **not implemented** | — | — |
 
 **Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
 no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —
