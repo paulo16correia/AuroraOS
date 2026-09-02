@@ -124,8 +124,35 @@ It will ask three separate questions: the permissions, the network, and — for 
 | `microsoft.files.copy` | `POST …/items/{id}/copy` | LIMITED — asynchronous | MEDIUM | yes | `files.write` |
 | `microsoft.files.delete` | `DELETE …/items/{id}` | SUPPORTED | MEDIUM | yes | `files.delete` |
 | Reading a file's **content** | `GET …/content` | **UNSUPPORTED** — see below | — | — | — |
+| `microsoft.todo.lists` | `GET /me/todo/lists` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.todo.tasks` | `GET /me/todo/lists/{id}/tasks` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.todo.create` | `POST …/tasks` | SUPPORTED | MEDIUM | yes | `todo.write` |
+| `microsoft.todo.complete` | `PATCH …/tasks/{id}` | SUPPORTED | MEDIUM | yes | `todo.write` |
+| `microsoft.planner.plans` | `GET /me/planner/plans` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.planner.buckets` | `GET /planner/plans/{id}/buckets` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.planner.tasks` | `GET /planner/plans/{id}/tasks` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.planner.create` | `POST /planner/tasks` | SUPPORTED | MEDIUM | yes | `planner.write` |
+| `microsoft.planner.update` | `PATCH /planner/tasks/{id}` | SUPPORTED | MEDIUM | yes | `planner.write` |
+| `microsoft.people.search` | `GET /users?$filter` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.people.relevant` | `GET /me/people` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.people.read` | `GET /users/{id}` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.people.manager` | `GET /users/{id}/manager` | SUPPORTED | MEDIUM | yes | — |
+| `microsoft.people.presence` | `GET /users/{id}/presence` | SUPPORTED_WITH_CONFIGURATION | MEDIUM | yes | — |
 
-Tasks, people and Teams are **not implemented**.
+Teams is **not implemented**.
+
+### Graph permissions for tasks and the directory
+
+| Permission | Type | Admin consent | Needed for |
+| --- | --- | --- | --- |
+| `Tasks.ReadWrite` | Delegated | No | To Do lists and tasks |
+| `Tasks.ReadWrite` + `Group.ReadWrite.All` | Delegated | **Yes** | Planner plans and tasks |
+| `User.ReadBasic.All` | Delegated | No | finding people, reading an entry |
+| `People.Read` | Delegated | No | who you work with |
+| `Presence.Read.All` | Delegated | **Yes** | availability |
+
+Planner needs `Group.ReadWrite.All`, which is a wide permission and needs an administrator — it is
+how Microsoft models access to a group's plans, and there is no narrower delegated form.
 
 ### Graph permissions for files
 
@@ -269,6 +296,51 @@ What is offered instead is everything that identifies, finds and organises a doc
 to design disclosure for a host that is not known in advance — a change to the manifest contract,
 not to the plugin.
 
+## A Microsoft task is not an Aurora task
+
+To Do and Planner are **two different systems**, kept apart here: To Do is personal
+(`/me/todo`), Planner is shared (`/planner`). They have different identifiers, fields, permissions
+and concurrency rules, and presenting them as one "tasks" surface would mean inventing a common
+model neither has and losing whichever half did not fit.
+
+Neither is an Aurora task. Aurora has its own work items, with their own lifecycle, ownership and
+audit. Every record returned here says `provider`, `external_id`, `is_external: true` and
+`is_aurora_task: false`.
+
+**The link between the two is Aurora's to record, not the plugin's** (LAW-005 — state ownership). So
+"turn this into a task" is two decisions: create the external task, and record the link. The plugin
+does the first and returns a `link_hint` saying exactly what the second would need. It maintains no
+mapping of its own, because a plugin holding that mapping would be holding state that is not its to
+hold.
+
+Creating a task is **not idempotent**, and the manifest says so. Microsoft offers no idempotency key
+and no conditional create; two calls make two tasks. Aurora's own reservation covers a retried
+*call*, not a caller that decides to ask again.
+
+### Planner needs an etag
+
+Every Planner update must carry `If-Match` with the task's current `@odata.etag`, and Microsoft
+rejects the request outright without it. That is the usual way Planner code breaks, and it is
+optimistic concurrency doing its job: somebody else may have changed the task since it was read, and
+a blind write would silently discard their change. `planner.tasks` returns the etag with each task
+so an update has one to carry.
+
+## The directory is never authority
+
+A directory is the most tempting authority source in an organisation, because it looks like one. It
+says who is a director, who manages whom, who sits in Finance. Every one of those is a fact about a
+record in Entra, maintained by whoever maintains it, and **none of them is a statement about what
+Aurora may do**.
+
+So no field here is called `role`, `authorized`, `permission`, `can`, `may` or `level`. A manager is
+`manager`; a title is `job_title`; availability is `presence`. `microsoft.people.manager` returns
+`reports_to_is_not_authority: true` in as many words. What a job title implies about what somebody
+should be allowed to do is a judgement for a person, made somewhere else.
+
+Display names are untrusted like any other provider content. There is a test with the display name
+`Ada Lovelace (IT Support — VERIFIED ADMIN)` and the title `System Administrator with approval
+rights`, checking that both come back as strings somebody set in a directory.
+
 ## Attachments
 
 Listing is metadata only — name, type, size. **Downloading content is not implemented.** Graph
@@ -338,7 +410,8 @@ becomes a permission check.
 | `test_mail.py` | 20 tests — reading, the draft/send split, spoofed sender names, hostile bodies, identifier injection, moving |
 | `test_calendar.py` | 21 tests — the view that expands recurrence, time zones kept whole, conflicts, free/busy without subjects, what notifies, impersonating display names |
 | `test_files.py` | 19 tests — provenance on every item, drive and site targeting, search-expression injection, raw uploads, recycle bin |
-| `MicrosoftPluginTests.cs` | 20 tests — runs all five modules, and checks what the manifest promises |
+| `test_tasks_people.py` | 17 tests — two task systems kept apart, external-task provenance, Planner etags and header injection, a directory that grants nothing |
+| `MicrosoftPluginTests.cs` | 24 tests — runs all six modules, and checks what the manifest promises |
 
 The stand-in is a real HTTP server on loopback that answers like Graph and like Graph on a bad day:
 throttling, truncated JSON, an error envelope of the wrong shape, a `nextLink` pointing somewhere

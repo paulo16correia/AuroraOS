@@ -106,9 +106,13 @@ and what matters is whether it has met the provider rather than which operating 
 | Files — delete to recycle bin | IMPLEMENTED | 2 | **no** |
 | Reading a file's content | **UNSUPPORTED** — host cannot be disclosed | — | — |
 | Attachment content download | **UNSUPPORTED** — same reason | — | — |
+| To Do — lists, tasks, create, complete | IMPLEMENTED | 5 | **no** |
+| Planner — plans, buckets, tasks, create, update | IMPLEMENTED | 7 | **no** |
+| Directory — search, people, entry, manager | IMPLEMENTED | 4 | **no** |
+| Directory — presence | IMPLEMENTED | 1 | **no** |
 | Permanent delete | **UNSUPPORTED** — deliberately not offered | — | — |
 | Creating a recurring series | **UNSUPPORTED** — not written | — | — |
-| Tasks, people, Teams | **not implemented** | — | — |
+| Teams | **not implemented** | — | — |
 
 **Nothing here has met Microsoft.** No credentials and no tenant were available, so every row says
 no. The tests run against a loopback stand-in that answers like Graph and like Graph on a bad day —

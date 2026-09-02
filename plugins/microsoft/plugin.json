@@ -14,7 +14,10 @@
     "microsoft.calendar.read",
     "microsoft.calendar.write",
     "microsoft.files.read",
-    "microsoft.files.write"
+    "microsoft.files.write",
+    "microsoft.tasks.read",
+    "microsoft.tasks.write",
+    "microsoft.directory.read"
   ],
   "event_subscriptions": [],
   "network_endpoints": [
@@ -1395,6 +1398,573 @@
       "rate_limit_per_minute": 10,
       "timeout_seconds": 30,
       "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.todo.lists",
+      "title": "To Do lists",
+      "description": "The signed-in person's own task lists. To Do is personal; Planner is shared, and they are different systems with different identifiers.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.todo.tasks",
+      "title": "To Do tasks",
+      "description": "Tasks in one To Do list. Each says it came from Microsoft and is not an Aurora task.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "list_id"
+        ],
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.todo.create",
+      "title": "Add a To Do task",
+      "description": "Adds a task to a personal list. Not idempotent — Microsoft offers no key that would make it so, and asking twice makes two tasks. Creating it does not link it to anything in Aurora; that is a separate, recorded decision.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "list_id",
+          "title"
+        ],
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "due": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "time_zone": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.todo.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.todo.complete",
+      "title": "Finish a To Do task",
+      "description": "Marks a task finished, or puts it back.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "list_id",
+          "task_id"
+        ],
+        "properties": {
+          "list_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "task_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "is_complete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.todo.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.planner.plans",
+      "title": "Planner plans",
+      "description": "The shared plans the signed-in person can see, or one group's plans.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.planner.buckets",
+      "title": "Planner buckets",
+      "description": "The buckets one plan is divided into.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_id"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.planner.tasks",
+      "title": "Planner tasks",
+      "description": "Tasks in one plan, each with the etag any later update must carry.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_id"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.planner.create",
+      "title": "Add a Planner task",
+      "description": "Adds a task to a shared plan, optionally assigned to somebody. Assigning is a claim about who should do the work; it grants nothing, in Microsoft or in Aurora.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_id",
+          "title"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "bucket_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "due": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "assign_to": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.planner.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.planner.update",
+      "title": "Change a Planner task",
+      "description": "Changes a shared task. Requires the etag from when it was read, so a change somebody else made in the meantime is refused rather than silently discarded.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "task_id",
+          "etag"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "etag": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "bucket_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "due": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 40
+          },
+          "percent_complete": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "microsoft.planner.write"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 20,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.people.search",
+      "title": "Find people",
+      "description": "Finds people in the organisation's directory by name or address. A job title and a department are facts about a directory record and never a reason to allow anything.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.people.relevant",
+      "title": "Who you work with",
+      "description": "The people Microsoft ranks as relevant to the signed-in person — who they actually work with, rather than everybody in the directory.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.people.read",
+      "title": "Read a directory entry",
+      "description": "One person's name, address, title and department.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.people.manager",
+      "title": "Who somebody reports to",
+      "description": "The reporting line from the directory. Not a delegation, not an approval chain, and not a reason for Aurora to act on anybody's behalf — Aurora's approvals come from its owner.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "microsoft.people.presence",
+      "title": "Whether somebody is available",
+      "description": "Teams availability. Needs Presence.Read.All, which an administrator grants. Somebody showing as Available has not agreed to anything.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": true,
       "audit_level": "FULL"
     }
   ]

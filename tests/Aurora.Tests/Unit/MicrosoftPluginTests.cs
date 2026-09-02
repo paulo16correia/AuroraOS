@@ -100,6 +100,12 @@ public sealed class MicrosoftPluginTests
         RunPython("test_files", 19);
     }
 
+    [Fact]
+    public void TheTaskAndDirectoryRulesHold()
+    {
+        RunPython("test_tasks_people", 17);
+    }
+
     // ---- what the manifest promises ----
 
     [Fact]
@@ -319,6 +325,59 @@ public sealed class MicrosoftPluginTests
         Assert.DoesNotContain(
             Manifest().Capabilities,
             c => c.Key.Contains("permanent", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ---- a Microsoft task is not an Aurora task, and a directory is not authority ----
+
+    [Fact]
+    public void NoTaskCapabilityClaimsToBeAnAuroraTask()
+    {
+        IEnumerable<PluginCapability> taskCapabilities = Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.todo.", StringComparison.Ordinal)
+                || c.Key.StartsWith("microsoft.planner.", StringComparison.Ordinal));
+
+        Assert.Equal(9, taskCapabilities.Count());
+
+        foreach (PluginCapability capability in taskCapabilities)
+        {
+            // Aurora has its own work items with their own lifecycle and their own audit. The link
+            // between one of those and a Microsoft task is Aurora's state to own (LAW-005), so a
+            // key here that read as Aurora's would be claiming something the plugin cannot do.
+            Assert.DoesNotContain("work_item", capability.Key, StringComparison.Ordinal);
+            Assert.DoesNotContain("aurora", capability.Key, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void CreatingAnExternalTaskIsNeverDeclaredIdempotent()
+    {
+        foreach (PluginCapability create in Manifest().Capabilities
+            .Where(c => c.Key is "microsoft.todo.create" or "microsoft.planner.create"))
+        {
+            // Microsoft offers no idempotency key and no conditional create, so two calls make two
+            // tasks. Declaring otherwise would tell Aurora it could safely retry.
+            Assert.False(create.IdempotencySupport, create.Key);
+        }
+    }
+
+    [Fact]
+    public void NothingInTheDirectoryFamilyChangesAnything()
+    {
+        IEnumerable<PluginCapability> directory = Manifest().Capabilities
+            .Where(c => c.Key.StartsWith("microsoft.people.", StringComparison.Ordinal));
+
+        Assert.Equal(5, directory.Count());
+
+        foreach (PluginCapability capability in directory)
+        {
+            Assert.Empty(capability.Effects);
+            Assert.True(capability.ApprovalRequired);
+
+            // A directory is the most tempting authority source in an organisation because it
+            // looks like one. Nothing here is named as though it were.
+            Assert.DoesNotContain("role", capability.Key, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("permission", capability.Key, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     /// <summary>
