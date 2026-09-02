@@ -757,6 +757,30 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_session_live
           ON consent_session(principal_client_id, server_boot_id, policy_version, status);
 
+        CREATE TABLE IF NOT EXISTS voice_session (
+          session_id TEXT PRIMARY KEY,
+          channel TEXT NOT NULL,
+          provider TEXT NOT NULL,
+          direction TEXT NOT NULL,
+          participant_json TEXT NOT NULL,
+          grant_json TEXT NOT NULL,
+          state TEXT NOT NULL,
+          started_at_utc TEXT NOT NULL,
+          correlation_id TEXT NOT NULL,
+          external_ref TEXT NULL,
+          ended_at_utc TEXT NULL,
+          ended_reason TEXT NULL,
+          tool_calls_used INTEGER NOT NULL DEFAULT 0,
+          intent_json TEXT NULL
+        );
+
+        -- One call arrives as several provider events. This is what makes the second and third
+        -- resolve to the session the first created rather than opening more.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_external
+          ON voice_session(provider, external_ref) WHERE external_ref IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_voice_live ON voice_session(state);
+
         CREATE TABLE IF NOT EXISTS schedule (
           id TEXT PRIMARY KEY,
           owner_id TEXT NOT NULL,
@@ -1155,7 +1179,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 16;
+    public const int TargetSchemaVersion = 17;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1582,6 +1606,32 @@ public sealed class SqliteDatabase
             );
 
             CREATE INDEX IF NOT EXISTS idx_plugin_status ON plugin_installation(status);
+            """,
+
+        // v17 — voice sessions (docs/adr/0073). One table for every channel, because the operator's
+        // stop, the concurrency limit and the audit's correlation each have to see all of them.
+        [17] = """
+            CREATE TABLE IF NOT EXISTS voice_session (
+              session_id TEXT PRIMARY KEY,
+              channel TEXT NOT NULL,
+              provider TEXT NOT NULL,
+              direction TEXT NOT NULL,
+              participant_json TEXT NOT NULL,
+              grant_json TEXT NOT NULL,
+              state TEXT NOT NULL,
+              started_at_utc TEXT NOT NULL,
+              correlation_id TEXT NOT NULL,
+              external_ref TEXT NULL,
+              ended_at_utc TEXT NULL,
+              ended_reason TEXT NULL,
+              tool_calls_used INTEGER NOT NULL DEFAULT 0,
+              intent_json TEXT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_external
+              ON voice_session(provider, external_ref) WHERE external_ref IS NOT NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_voice_live ON voice_session(state);
             """,
     };
 
