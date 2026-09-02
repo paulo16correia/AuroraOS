@@ -82,6 +82,62 @@ the wrong one for anything installed, and Aurora says so in the refusal.
 plugin-sandbox PASS — plugins confined by sandbox-exec
 ```
 
+## Voice presence
+
+Aurora's voice is one presence with several transports (`docs/adr/0073`). The table is about
+providers rather than operating systems, because that is where the risk is.
+
+| | Status | Tests | Verified against the real thing |
+| --- | --- | --- | --- |
+| Voice session model, grants, budgets, lifecycle | IMPLEMENTED | 13 | not applicable — local |
+| Authorization decision (grant, expiry, budget, stop) | IMPLEMENTED | 26 | not applicable — local |
+| Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
+| Tool bridge through the real Kernel | IMPLEMENTED | 14 | not applicable — local |
+| Operator stop across every channel | IMPLEMENTED | 3 | not applicable — local |
+| Provider webhook validation (signature, replay, schema) | IMPLEMENTED | 16 | **no** |
+| Interaction layer protocol and outcome truthfulness | IMPLEMENTED | 18 | **no** |
+| OpenAI Realtime — a real session | **UNVERIFIED** | fakes only | **no** |
+| Twilio — a real outbound call | **UNVERIFIED** | fakes only | **no** |
+| A real +351 number | **UNVERIFIED** | — | **no** |
+| Audio, end to end | **UNVERIFIED** | — | **no** |
+| Inbound PSTN calls | **UNSUPPORTED** — see below | — | — |
+| Teams voice | **not implemented** | — | — |
+| Discord voice on the shared session model | **not migrated** — see below | — | — |
+
+**Nothing here has met a telephone, Twilio or OpenAI.** No credentials, no number, no calls. The
+tests run against deterministic fakes and a fake transport that can be told to disconnect — which is
+worth having, and is not verification.
+
+### Inbound calls are blocked by Aurora, not by the provider
+
+Twilio delivers an inbound call by POSTing a webhook to a public URL, and its media streams need
+Twilio to dial a WebSocket. Aurora binds Kestrel to loopback unconditionally (`docs/adr/0045`).
+**There is no reachable endpoint and there will not be one.**
+
+This is the same wall that makes Microsoft Teams change notifications UNSUPPORTED. The plugin
+validates what arrives *if* an owner puts ingress in front of it — a tunnel, a forwarded port —
+which is a decision about their own network, made outside Aurora, with a plugin that holds no
+Aurora keys behind it. The plugin ships no listener of its own.
+
+So phone is **outbound-capable in code and inbound-blocked in deployment**.
+
+### Discord voice is not migrated
+
+It works and it is the only voice Aurora has actually used. `VoiceChannel.Discord` exists and the
+operator's stop is tested across a phone session and a Discord session together, so the abstraction
+demonstrably fits — but the Discord plugin still holds its own conversation window and has not been
+moved onto the shared store. Replacing verified working code with unverified code would be a bad
+trade, and that migration is a separate change with its own verification.
+
+### What a real environment would settle
+
+- whether an OpenAI Realtime session accepts the session configuration as written;
+- whether the function-call frames match what the adapter parses;
+- whether Twilio's signature verification passes against real requests;
+- whether an outbound call reaches a +351 number at all;
+- whether PT-PT speech recognition and the chosen voice are usable;
+- what any of it sounds like, which no test on this machine can say.
+
 ## Microsoft 365
 
 A different table, because the question is different: this is one provider reached from a plugin,
