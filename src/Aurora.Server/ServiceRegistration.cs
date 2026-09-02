@@ -45,6 +45,7 @@ using Aurora.Adapters.Planning;
 using Aurora.Adapters.Plugins;
 using Aurora.Adapters.Plugins.Sandboxes;
 using Aurora.Adapters.Policy;
+using Aurora.Adapters.Presence;
 using Aurora.Adapters.Reasoning;
 using Aurora.Adapters.Relationships;
 using Aurora.Adapters.Time;
@@ -91,6 +92,34 @@ public static class ServiceRegistration
         services.AddSingleton(ConsentSessionOptions.Default);
         services.AddSingleton<IConsentSessionStore, SqliteConsentSessionStore>();
         services.AddSingleton<INoteStore, SqliteNoteStore>();
+
+        // Voice (docs/adr/0073). One presence across channels, so one store, one policy and one
+        // stop — and the tool bridge is what keeps a conversation from having an authority path of
+        // its own: it checks the session's grant and then asks the same Kernel as everything else.
+        //
+        // Settings are read here rather than defaulted, and default to answering nobody and
+        // calling nobody. Having a number is not a decision to ring people with it.
+        services.AddSingleton(options.Voice);
+        services.AddSingleton<IVoiceSessionStore, SqliteVoiceSessionStore>();
+        services.AddSingleton<IVoicePolicy, VoicePolicyService>();
+        services.AddSingleton<IVoiceToolBridge>(sp => new VoiceToolBridge(
+            sp.GetRequiredService<IVoiceSessionStore>(),
+            sp.GetRequiredService<IVoicePolicy>(),
+            sp.GetRequiredService<AuroraKernel>(),
+            sp.GetRequiredService<IClock>(),
+
+            // Aurora acting on its own account. Not the caller: somebody on a telephone is not a
+            // principal here, and treating them as one would make caller ID an authentication
+            // mechanism.
+            new Principal("voice", Environment.UserName)));
+        services.AddSingleton(sp => new VoiceRuntime(
+            sp.GetRequiredService<IVoiceSessionStore>(),
+            sp.GetRequiredService<IVoicePolicy>(),
+            sp.GetRequiredService<IVoiceToolBridge>(),
+            sp.GetRequiredService<IPluginRegistry>(),
+            sp.GetRequiredService<IPersonalityService>(),
+            sp.GetRequiredService<IClock>(),
+            new Principal("voice", Environment.UserName)));
 
         // Runtime.
         services.AddSingleton<IClock, SystemClock>();
@@ -456,4 +485,5 @@ public static class ServiceRegistration
 
         return new StaticCapabilityRegistry(capabilities);
     }
+
 }

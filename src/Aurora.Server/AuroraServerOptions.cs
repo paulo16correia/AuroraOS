@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Aurora.Adapters.Reasoning;
 
 using Aurora.Adapters.Files;
+using Aurora.Core.Abstractions;
 
 namespace Aurora.Server;
 
@@ -97,6 +98,16 @@ public sealed class AuroraServerOptions
     /// <summary>File mirroring the audit head, so a truncated tail is detectable.</summary>
     public required string AuditAnchorPath { get; init; }
 
+    /// <summary>
+    /// What voice may do here (docs/adr/0073).
+    /// </summary>
+    /// <remarks>
+    /// Answering and calling are separate switches and both are off unless somebody turned them
+    /// on, because having a telephone number is not a decision to ring people with it. The
+    /// destination allowlist is empty unless somebody writes one, and empty allows nothing.
+    /// </remarks>
+    public required VoiceSettings Voice { get; init; }
+
     public static AuroraServerOptions FromConfiguration(IConfiguration config)
     {
         var token = config["Aurora:BearerToken"]
@@ -173,8 +184,21 @@ public sealed class AuroraServerOptions
         var auditAnchorPath = config["Aurora:AuditAnchorPath"]
             ?? Path.GetFullPath(dbPath) + ".anchor";
 
+        var voice = VoiceSettings.Default with
+        {
+            InboundEnabled = config.GetValue<bool?>("Aurora:Voice:InboundEnabled") ?? false,
+            OutboundEnabled = config.GetValue<bool?>("Aurora:Voice:OutboundEnabled") ?? false,
+            AllowedDestinations =
+                config.GetSection("Aurora:Voice:AllowedDestinations").Get<string[]>() ?? [],
+            MaxConcurrentSessions =
+                config.GetValue<int?>("Aurora:Voice:MaxConcurrentSessions") ?? 2,
+            MaxCallDuration =
+                config.GetValue<TimeSpan?>("Aurora:Voice:MaxCallDuration") ?? TimeSpan.FromMinutes(15),
+        };
+
         var options = new AuroraServerOptions
         {
+            Voice = voice,
             BearerToken = token,
             Port = port,
             DbPath = dbPath,

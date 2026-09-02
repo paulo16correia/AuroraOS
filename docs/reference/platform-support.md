@@ -89,6 +89,7 @@ providers rather than operating systems, because that is where the risk is.
 
 | | Status | Tests | Verified against the real thing |
 | --- | --- | --- | --- |
+| Voice runtime, end to end through the real host and Kernel | IMPLEMENTED · TESTED | 14 | not applicable — local |
 | Voice session model, grants, budgets, lifecycle | IMPLEMENTED | 13 | not applicable — local |
 | Authorization decision (grant, expiry, budget, stop) | IMPLEMENTED | 26 | not applicable — local |
 | Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
@@ -99,7 +100,7 @@ providers rather than operating systems, because that is where the risk is.
 | OpenAI Realtime — a real session | **UNVERIFIED** | fakes only | **no** |
 | Twilio — a real outbound call | **UNVERIFIED** | fakes only | **no** |
 | A real +351 number | **UNVERIFIED** | — | **no** |
-| Audio, end to end | **UNVERIFIED** | — | **no** |
+| Audio, end to end | **not implemented** — this milestone is protocol correctness | — | — |
 | Inbound PSTN calls | **UNSUPPORTED** — see below | — | — |
 | Teams voice | **not implemented** | — | — |
 | Discord voice on the shared session model | **not migrated** — see below | — | — |

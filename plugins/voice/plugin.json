@@ -1,0 +1,377 @@
+{
+  "plugin_id": "plugin/voice",
+  "version": "0.1.0",
+  "publisher": "aurora",
+  "executable": "voice_service.py",
+  "min_platform_version": 1,
+  "max_data_class": "PRIVATE",
+  "documentation_ref": "docs/guides/voice.md",
+  "required_permissions": [
+    "voice.session",
+    "voice.speak"
+  ],
+  "event_subscriptions": [],
+  "network_endpoints": [
+    "api.openai.com",
+    "api.twilio.com"
+  ],
+  "service": {
+    "start_timeout_seconds": 20,
+    "max_consecutive_failures": 5
+  },
+  "required_secrets": [
+    {
+      "name": "provider_auth_token",
+      "purpose": "Signs in to the telephone provider and validates the events it sends. Anything Aurora does on the telephone is done with this and is attributable to your account."
+    }
+  ],
+  "requires_gpu": false,
+  "capabilities": [
+    {
+      "key": "voice.status",
+      "title": "Voice status",
+      "description": "Whether this machine can carry a voice conversation at all, and how many are running. Contacts nobody, so it is safe to ask before anything has been approved.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.poll",
+      "title": "What the conversation is waiting on",
+      "description": "Drains what the interaction layer has said since Aurora last asked, including anything it wants Aurora to do. Reading this is how a request reaches Aurora at all — the plugin has no way to ask.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 600,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.inbound",
+      "title": "A call arrived",
+      "description": "Validates a provider event — signature, freshness, replay — and reports who it claims is calling. Creates no session: Aurora decides whether there is to be one. Caller identity here is a claim the telephone network carried, never evidence.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "form",
+          "signature",
+          "url",
+          "event_id"
+        ],
+        "properties": {
+          "form": {
+            "type": "object"
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "event_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "timestamp": {
+            "type": "string",
+            "maxLength": 40
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.session.start",
+      "title": "Begin a conversation",
+      "description": "Starts the interaction layer for a session Aurora has already authorised, with instructions and a tool list Aurora composed. The plugin writes neither, which is what keeps there being one Aurora rather than a second one living in a voice adapter.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "instructions"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 40000
+          },
+          "tools": {
+            "type": "array",
+            "maxItems": 64
+          },
+          "participant": {
+            "type": "object"
+          },
+          "voice": {
+            "type": "string",
+            "maxLength": 60
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 20
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "voice.session"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": true,
+      "rate_limit_per_minute": 30,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.tool_result",
+      "title": "Hand back what Aurora decided",
+      "description": "Delivers the outcome of a capability request to the interaction layer, in one of four words. The plugin carries it exactly as given: it does not retry a refusal, and does not turn an unknown outcome into anything else.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "request_id",
+          "outcome"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "outcome": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "result_json": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "voice.speak"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 120,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.interrupt",
+      "title": "Stop talking",
+      "description": "Cuts off whatever is being said, immediately. Only ever reduces what is happening.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 120,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.hangup",
+      "title": "End a call",
+      "description": "Ends a session and lets go of its transport. Asks nobody: being unable to hang up is worse than hanging up unexpectedly.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 300
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": false,
+      "rate_limit_per_minute": 60,
+      "timeout_seconds": 30,
+      "idempotent": true,
+      "audit_level": "FULL"
+    },
+    {
+      "key": "voice.outbound",
+      "title": "Place a call",
+      "description": "Dials a number, having been told by Aurora that it may. The purpose, the approval, the destination policy and the expiry were all decided in Aurora before this was called; what arrives here is a decision, and this only dials.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "session_id",
+          "to",
+          "from"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "to": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 16
+          },
+          "from": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 16
+          }
+        }
+      },
+      "output_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "effects": [
+        "voice.call"
+      ],
+      "risk": "MEDIUM",
+      "approval_required": true,
+      "reversible": false,
+      "rate_limit_per_minute": 6,
+      "timeout_seconds": 30,
+      "idempotent": false,
+      "audit_level": "FULL"
+    }
+  ]
+}

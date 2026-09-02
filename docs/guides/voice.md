@@ -1,7 +1,10 @@
 # Voice
 
-**Status:** IMPLEMENTED · TESTED against fakes · **UNVERIFIED** — no call has been made or answered,
-no Realtime session opened, no telephone number exists. See `docs/reference/platform-support.md`.
+**Status:** the runtime is **IMPLEMENTED · TESTED** — a whole conversation executes end to end
+through Aurora's real plugin host, the real `VoiceToolBridge` and the real Kernel, with only the
+telephone provider and the speech layer faked. Real OpenAI Realtime, real Twilio and a real +351
+number remain **UNVERIFIED**; inbound PSTN remains **UNSUPPORTED**. See
+`docs/reference/platform-support.md`.
 
 ## What this is
 
@@ -94,12 +97,31 @@ listener, and inbound is UNSUPPORTED until you do.
 | Webhooks | Signature, freshness, replay — in that order, before the payload is read. |
 | Stop | One switch, every channel, every live session, audited. |
 
+## The runtime
+
+`plugins/voice/voice_service.py` carries words; `VoiceRuntime` decides. Both exist, and the store,
+the policy, the bridge and the runtime are all registered in `ServiceRegistration`.
+
+One round of a conversation:
+
+1. a provider event arrives → `voice.inbound` validates signature, freshness and replay;
+2. `VoiceRuntime` checks policy — stopped, inbound enabled, concurrency — and opens a
+   `VoiceSession` with its grant;
+3. `VoiceIdentity` composes the instructions from the active `PersonalityProfile`;
+4. `voice.session.start` begins the interaction with those instructions and only the granted tools;
+5. the speech layer asks for a capability → the plugin queues it and says so;
+6. `VoiceRuntime.PumpAsync` drains it → `VoiceToolBridge` → session grant → **the real Kernel**;
+7. the outcome goes back through `voice.tool_result`, in one of four words, never embellished.
+
+**Pumped rather than pushed.** The plugin queues and Aurora drains, which is how the Discord
+plugin's pending turns already work — the one voice design here that has met a real service. A
+callback would need the plugin to call into Aurora, which the plugin protocol exists to prevent.
+
 ## Known gaps
 
-- **The runtime does not exist.** `voice_service.py` has not been written, and none of
-  `SqliteVoiceSessionStore`, `VoicePolicyService` or `VoiceToolBridge` is registered in
-  `ServiceRegistration`. The foundation is implemented and tested; nothing constructs it, no MCP
-  tool reaches it, and no audio flows. Everything below follows from that.
+- **No audio.** This milestone is protocol and runtime correctness. The speech layer's real
+  transport is not implemented, and the plugin refuses rather than pretending: with no transport
+  configured, `voice.session.start` returns "nothing can carry a conversation".
 - Nothing has met a real provider, a real number or a real Realtime session.
 - Inbound PSTN is unsupported without owner-supplied ingress.
 - Discord voice is not yet on the shared session model.
