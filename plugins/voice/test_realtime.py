@@ -324,7 +324,13 @@ class ThePluginOverTheRealTransport(unittest.TestCase):
         here = os.path.dirname(os.path.abspath(__file__))
 
         with open(os.path.join(here, "config.json"), "w") as handle:
-            json.dump({"realtime": {"url": server.url, "model": "gpt-realtime"}}, handle)
+            # Named explicitly. `local` is the default provider now, so a test that wants the
+            # remote one has to say so — which is the right way round: the stack that needs
+            # nobody's network is what an unconfigured installation gets.
+            json.dump({
+                "provider_kind": "realtime",
+                "realtime": {"url": server.url, "model": "gpt-realtime"},
+            }, handle)
 
         process = subprocess.Popen(
             [sys.executable, os.path.join(here, "voice_service.py")],

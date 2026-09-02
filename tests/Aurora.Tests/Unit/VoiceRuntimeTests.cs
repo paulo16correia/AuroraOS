@@ -97,6 +97,10 @@ public sealed class VoiceRuntimeTests : IDisposable
             JsonSerializer.Serialize(new
             {
                 provider = new { kind = "fake" },
+
+                // Named, because the local stack is what an unconfigured installation gets now.
+                // A test that wants the remote interaction layer has to ask for it.
+                provider_kind = "realtime",
                 realtime = new { transport = "fake", script = realtimeScript },
             }));
 

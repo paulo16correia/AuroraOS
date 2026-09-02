@@ -173,6 +173,17 @@ class InteractionSession:
         self.state = "closed"
         self._transport.close(reason)
 
+    def telemetry(self):
+        """What the conversation cost, asked of whatever is carrying it.
+
+        Offered here as well as on the transport so both providers answer the same question at the
+        same level — the local one counts turns and tokens, this one counts audio and frames, and
+        the runtime does not have to know which it is holding.
+        """
+        counted = self._transport.telemetry() if hasattr(self._transport, "telemetry") else {}
+
+        return {"provider": "realtime", **counted}
+
     def append_audio(self, base64_pcm16):
         """Puts microphone audio into the buffer the model is listening to.
 

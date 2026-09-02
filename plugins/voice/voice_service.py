@@ -21,6 +21,7 @@ import threading
 import time
 
 import interaction
+import local_provider
 import provider
 import realtime
 from fake_realtime import FakeTransport
@@ -55,6 +56,40 @@ def _settings():
             return json.load(handle) or {}
     except (OSError, ValueError):
         return {}
+
+
+def _session_for(settings, api_key, instructions, tools):
+    """The conversation this installation can actually hold.
+
+    Two providers behind one contract: the local stack — recogniser, model, synthesiser, all on
+    this machine — and OpenAI Realtime. Chosen by configuration, and `local` is the default,
+    because the point of the local stack is that it needs nobody's permission and no network.
+
+    Whichever is chosen, everything above is identical: the runtime pumps it, the tool request
+    reaches VoiceToolBridge, and the Kernel decides.
+    """
+    which = (settings.get("provider_kind") or "local").lower()
+
+    if which == "local":
+        return local_provider.build(
+            settings.get("local") or {},
+            identity=instructions,
+            action_ids=[t.get("name", "").replace("__", ".") for t in tools])
+
+    transport = _transport_for(settings, api_key)
+
+    if transport is None:
+        return None
+
+    config = settings.get("realtime") or {}
+
+    return interaction.InteractionSession(
+        transport,
+        instructions=instructions,
+        tools=tools,
+        voice=str(config.get("voice") or "alloy"),
+        model=str(config.get("model") or DEFAULT_MODEL),
+        locale=str(config.get("locale") or "pt-PT"))
 
 
 def _transport_for(settings, api_key):
@@ -104,15 +139,45 @@ class Session:
 
 
 def status(state, args):
+    import speech
+
     settings = _settings()
     config = settings.get("realtime") or {}
+    which = (settings.get("provider_kind") or "local").lower()
+
+    if which == "local":
+        local = settings.get("local") or {}
+        recogniser = speech.best_recogniser(local.get("stt"))
+        speaker = speech.best_speaker(local.get("tts"))
+
+        return {
+            "sessions": len(state["sessions"]),
+
+            # Two different providers, named apart. `provider_kind` is what carries the
+            # conversation; `call_provider` is who owns the telephone line, and they were both
+            # called "provider" until one silently overwrote the other in this answer.
+            "provider_kind": "local",
+            "call_provider": (settings.get("provider") or {}).get("kind") or "none",
+            "recogniser": getattr(recogniser, "name", None),
+            "speaker": getattr(speaker, "name", None),
+            "model": (local.get("llm") or {}).get("model") or "llama3.1:8b",
+
+            # Whether the pieces are here, answered without starting any of them. An owner finds
+            # out what is missing before approving something that would find out by failing.
+            "can_hold_a_conversation": recogniser is not None and speaker is not None,
+            "missing": (
+                ([] if recogniser else ["speech recogniser"])
+                + ([] if speaker else ["speech synthesiser"])),
+        }
+
     transport = _transport_for(settings, state.get("api_key"))
 
     return {
         "sessions": len(state["sessions"]),
+        "provider_kind": which,
+        "call_provider": (settings.get("provider") or {}).get("kind") or "none",
         "transport": config.get("transport") or ("openai" if state.get("api_key") else "none"),
         "model": config.get("model") or DEFAULT_MODEL,
-        "provider": (settings.get("provider") or {}).get("kind") or "none",
 
         # Said plainly, and without contacting anybody: a caller deserves to know there is no
         # speech layer before approving something that would find out by failing.
@@ -170,24 +235,24 @@ def session_start(state, args):
         raise provider.ProviderRefused(E_ALREADY, "that session is already running")
 
     settings = _settings()
-    transport = _transport_for(settings, state.get("api_key"))
 
-    if transport is None:
+    try:
+        conversation = _session_for(
+            settings, state.get("api_key"),
+            instructions=str(args["instructions"]),
+            tools=args.get("tools") or [])
+    except local_provider.LocalUnavailable as incomplete:
+        # Named engines rather than a shrug. "Nothing can carry a conversation" sends somebody
+        # looking in the wrong place; "no speech recogniser is installed" does not.
+        raise provider.ProviderRefused(incomplete.code, incomplete.message)
+
+    if conversation is None:
         raise provider.ProviderRefused(
             provider.E_UNSUPPORTED,
-            "no interaction transport is configured, so nothing can carry a conversation")
+            "no interaction provider is configured, so nothing can carry a conversation")
 
-    session = Session(session_id, args.get("participant") or {}, transport)
-
-    session.interaction = interaction.InteractionSession(
-        transport,
-        instructions=str(args["instructions"]),
-        tools=args.get("tools") or [],
-        voice=str(args.get("voice") or "alloy"),
-        model=str(args.get("model") or (settings.get("realtime") or {}).get("model")
-                  or DEFAULT_MODEL),
-        locale=str(args.get("locale") or "pt-PT"),
-    )
+    session = Session(session_id, args.get("participant") or {}, conversation)
+    session.interaction = conversation
 
     try:
         session.interaction.start()
@@ -260,8 +325,9 @@ def poll(state, args):
         "audio": spoken,
     }
 
-    if isinstance(session.transport, realtime.RealtimeTransport):
-        # What the conversation has moved, which is the one number that predicts what it cost.
+    # What the conversation has spent. Both providers report it, in their own terms: the local one
+    # counts turns, tokens and the latency of each stage; the remote one counts audio and frames.
+    if hasattr(session.transport, "telemetry"):
         answer["telemetry"] = session.transport.telemetry()
 
     return answer

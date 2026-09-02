@@ -84,12 +84,19 @@ plugin-sandbox PASS — plugins confined by sandbox-exec
 
 ## Voice presence
 
-Aurora's voice is one presence with several transports (`docs/adr/0073`). The table is about
-providers rather than operating systems, because that is where the risk is.
+Aurora's voice is one presence with several transports (`docs/adr/0073`), and since
+`docs/adr/0074` its default speech layer runs on the owner's machine. The table is about providers
+rather than operating systems, because that is where the risk is.
 
 | | Status | Tests | Verified against the real thing |
 | --- | --- | --- | --- |
 | Voice runtime, end to end through the real host and Kernel | IMPLEMENTED · TESTED | 14 | not applicable — local |
+| Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 29 | not applicable — local |
+| Local stack, end to end: audio → STT → Ollama → Kernel → `clock.now` → TTS | IMPLEMENTED · TESTED | 8, real host and Kernel | **partly** — real HTTP to the model, scripted STT/TTS |
+| Faster-Whisper transcribing PT-PT | **UNVERIFIED** — not installed | — | **no** |
+| Ollama answering as Aurora in PT-PT | **UNVERIFIED** — not installed | — | **no** |
+| XTTS v2 speaking PT-PT | **UNVERIFIED** — not installed | — | **no** |
+| Local stack latency, spoken word to spoken answer | **UNVERIFIED** — no models on this machine | — | **no** |
 | Voice session model, grants, budgets, lifecycle | IMPLEMENTED | 13 | not applicable — local |
 | Authorization decision (grant, expiry, budget, stop) | IMPLEMENTED | 26 | not applicable — local |
 | Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
@@ -111,6 +118,22 @@ providers rather than operating systems, because that is where the risk is.
 **Nothing here has met a telephone, Twilio or OpenAI.** No credentials, no number, no calls. The
 tests run against deterministic fakes and a fake transport that can be told to disconnect — which is
 worth having, and is not verification.
+
+**And no model has ever run.** The local stack is the default provider and none of its three
+engines is installed on this machine: no Faster-Whisper, no Ollama, no Coqui, no torch — about
+thirteen gigabytes the owner has not chosen to install. `whisper.cpp` and macOS `say` are present
+and would serve as recogniser and synthesiser today; Ollama has no substitute, so no local
+conversation has been held. What is proved is that every piece is connected to the next one and
+that the Kernel is in the middle of it. What is not proved is that any of it sounds like anything,
+or that a turn completes in under a second.
+
+### What a machine with the models would settle
+
+- whether Faster-Whisper Turbo transcribes European Portuguese well enough to act on;
+- whether Llama 3.1 8B answers as Aurora rather than as a chat assistant;
+- whether XTTS v2 in PT-PT is worth listening to;
+- what the real latency of each stage is, and whether the whole turn fits in a second;
+- whether the silence window feels like a conversation or like a form.
 
 ### Inbound calls are blocked by Aurora, not by the provider
 

@@ -74,6 +74,14 @@ public sealed class VoicePluginTests
     }
 
     [Fact]
+    public void TheLocalStackHoldsItsRules()
+    {
+        // Turn detection, the loop, and what none of it may do, with the three engines faked.
+        // Whether the path exists at all is LocalVoiceTests, through the real host and Kernel.
+        RunPython("test_local", 29);
+    }
+
+    [Fact]
     public void TheVoicePluginOpensTheConnectionsSoAuroraDoesNot()
     {
         var source = File.ReadAllText(Path.Combine(PluginSource(), "provider.py"));

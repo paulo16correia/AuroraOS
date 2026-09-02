@@ -254,6 +254,38 @@ public sealed class VoiceRuntime
     }
 
     /// <summary>
+    /// Hands a slice of microphone audio to the speech layer.
+    /// </summary>
+    /// <remarks>
+    /// Only the local stack needs this. With a remote interaction layer the audio travels between
+    /// the telephone company and the provider and never enters this process at all; with the
+    /// recogniser on this machine there is no telephone, so somebody has to carry the sound, and
+    /// the only party allowed to call the plugin is Aurora.
+    /// <para>
+    /// What arrives is sound, and sound becomes words, and words are a request. Nothing about
+    /// having been spoken aloud gives them standing — the capability the words ask for still goes
+    /// through <see cref="PumpAsync"/>, the grant and the Kernel, exactly as before.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> ListenAsync(string sessionId, string base64Pcm16, CancellationToken ct)
+    {
+        VoiceSession? session = await _sessions.FindAsync(sessionId, ct).ConfigureAwait(false);
+
+        if (session is null || !session.IsLive)
+        {
+            // A session that is over is not listening. Checked here rather than in the plugin, so
+            // that a stopped conversation stops hearing without depending on the plugin agreeing.
+            return false;
+        }
+
+        PluginResult heard = await CallAsync(
+            "voice.listen", new { session_id = sessionId, audio = base64Pcm16 }, ct)
+            .ConfigureAwait(false);
+
+        return heard.Ok;
+    }
+
+    /// <summary>
     /// Drains one round of what the interaction layer said, and answers what it asked for.
     /// </summary>
     /// <remarks>
@@ -283,6 +315,15 @@ public sealed class VoiceRuntime
 
         JsonNode drained = JsonNode.Parse(polled.OutputJson!)!;
         JsonArray requests = drained["tool_requests"]?.AsArray() ?? [];
+
+        // What Aurora said this round, for whoever is playing it. With a remote interaction layer
+        // this is empty — the provider plays its own audio down the call — and with the local
+        // stack it is the only way the sound gets out of the plugin.
+        var spoken = (drained["audio"]?.AsArray() ?? [])
+            .Select(a => a?.GetValue<string>())
+            .Where(a => !string.IsNullOrEmpty(a))
+            .Select(a => a!)
+            .ToArray();
 
         var handled = 0;
         var refused = 0;
@@ -324,7 +365,7 @@ public sealed class VoiceRuntime
                 .ConfigureAwait(false);
         }
 
-        return new VoicePump(handled, refused, Stopped: false);
+        return new VoicePump(handled, refused, Stopped: false, spoken);
     }
 
     /// <summary>Ends a session, in the store and on the wire.</summary>
@@ -400,4 +441,9 @@ public sealed record VoiceOutcome(
 }
 
 /// <summary>One round of draining a conversation.</summary>
-public sealed record VoicePump(int Handled, int Refused, bool Stopped);
+public sealed record VoicePump(
+    int Handled, int Refused, bool Stopped, IReadOnlyList<string>? Audio = null)
+{
+    /// <summary>What Aurora said this round, as base64 PCM16 at 24 kHz mono.</summary>
+    public IReadOnlyList<string> Audio { get; init; } = Audio ?? [];
+}

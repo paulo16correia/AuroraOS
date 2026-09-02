@@ -1,9 +1,11 @@
 # Voice
 
-**Status:** the runtime is **IMPLEMENTED · TESTED**, and so is the real OpenAI Realtime transport —
-driven over a real socket against a Realtime service on loopback, with a real RFC 6455 handshake and
-real masked frames. **UNVERIFIED** against the real endpoint: no OpenAI key exists here. Twilio and
-a real +351 number remain UNVERIFIED; inbound PSTN remains UNSUPPORTED. See
+**Status:** the runtime is **IMPLEMENTED · TESTED**. The default speech layer is now **local** —
+Faster-Whisper, Ollama and XTTS on your own machine (`docs/adr/0074`) — and its whole path is tested
+through the real plugin host and the real Kernel. **UNVERIFIED:** none of the three models is
+installed here, so nothing has been transcribed, answered or spoken. The OpenAI Realtime transport
+is implemented and tested over a real socket, and UNVERIFIED against the real endpoint: no key
+exists here. Twilio and a real +351 number remain UNVERIFIED; inbound PSTN remains UNSUPPORTED. See
 `docs/reference/platform-support.md`.
 
 ## What this is
@@ -19,11 +21,17 @@ the voice layer arranges them and contributes nothing about who Aurora is.
 ## Where it runs
 
 ```
-telephone  →  provider  →  sandboxed voice plugin  →  OpenAI Realtime
-                                    ↓ reports
+microphone  →  Aurora  →  sandboxed voice plugin  →  Whisper → Ollama → XTTS
+                                    ↓ reports                 (all on this machine)
                               Aurora Kernel  →  capability  →  observation
                                     ↓ calls back
-                              voice plugin  →  Realtime  →  speech
+                              voice plugin  →  XTTS  →  speech  →  Aurora  →  speakers
+```
+
+With OpenAI Realtime instead, the shape is the same and the far end is somebody else's:
+
+```
+telephone  →  provider  →  sandboxed voice plugin  →  OpenAI Realtime
 ```
 
 The plugin holds both connections, because Aurora's own process opens no sockets and the build
@@ -117,7 +125,46 @@ One round of a conversation:
 plugin's pending turns already work — the one voice design here that has met a real service. A
 callback would need the plugin to call into Aurora, which the plugin protocol exists to prevent.
 
-## The speech layer
+## The local speech layer
+
+Three engines on your machine, behind the same six-method contract the Realtime session offers. The
+provider is chosen by configuration and **local is the default**, because the point of it is that it
+needs nobody's permission and no network.
+
+| | | |
+| --- | --- | --- |
+| Hearing | Faster-Whisper (Turbo, or Large-v3) | falls back to `whisper.cpp` if that is what is installed |
+| Thinking | Ollama, `llama3.1:8b` by default | `POST /api/chat`, not streamed, tools declared |
+| Speaking | Coqui XTTS v2 | falls back to macOS `say` |
+
+Audio is 24 kHz mono PCM16 throughout, resampled to 16 kHz for Whisper by averaging rather than by
+dropping samples — decimation does not fail, it transcribes confidently into words nobody said.
+
+### Nothing is installed for you
+
+The models are gigabytes and you install them deliberately:
+
+```bash
+ollama pull llama3.1:8b
+pip install faster-whisper
+pip install TTS
+```
+
+`voice.status` says which engines are present without contacting or starting anything, so you can
+find out what is missing before approving something that would find out by failing. If an engine is
+absent, a session is **refused by name** rather than quietly becoming something else.
+
+### What it settles and what it does not
+
+The path is tested end to end — audio in, `clock.now` through the real Kernel, audio out — with the
+recogniser and synthesiser scripted and the model reached over real HTTP on loopback. That proves
+every piece is connected to the next and that the Kernel is in the middle of it.
+
+It proves nothing about quality. Whether Whisper hears European Portuguese, whether Llama answers
+as Aurora rather than as a chat assistant, whether XTTS is worth listening to, and whether a turn
+completes in under a second are all questions for a machine with the models on it.
+
+## The remote speech layer
 
 `realtime.py` speaks the real OpenAI Realtime protocol over a real WebSocket — the RFC 6455 client
 vendored from the Discord plugin, which has performed a real handshake against a real service and
@@ -136,7 +183,9 @@ Audio is **appended, never committed**. With server-side turn detection the serv
 turn ended, and committing by hand takes that decision back and does it worse.
 
 **Without a key there is no session.** The plugin refuses rather than falling back to a stand-in,
-because a stand-in would let a call appear to happen.
+because a stand-in would let a call appear to happen. Choosing it at all takes
+`provider_kind: "realtime"` in the plugin's configuration; an installation that says nothing gets
+the local stack.
 
 ### The audio granularity Aurora imposes
 
@@ -169,8 +218,11 @@ Use it to hear the voice. Use the test suite to prove the governance.
 - **The microphone has never been opened from inside the sandbox.** The harness runs unsandboxed;
   whether `sandbox-exec` and macOS TCC will let a confined plugin capture audio is untried, and it
   is the next thing a real slice would hit.
-- **Audio does not yet flow through Aurora end to end.** `voice.listen` and the audio returned by
-  `voice.poll` exist and are tested; nothing is wired to a device on Aurora's side.
+- **No local model has ever run.** Ollama, Faster-Whisper and Coqui are not installed here. The
+  local stack's tests script the recogniser and the synthesiser and reach a model on loopback.
+- **Nothing is wired to a device on Aurora's side.** `VoiceRuntime.ListenAsync` carries audio in and
+  `PumpAsync` carries it back out, both tested through the real host — but no microphone or speaker
+  is connected to either end outside the harness.
 - Nothing has met a real provider or a real number.
 - Inbound PSTN is unsupported without owner-supplied ingress.
 - Discord voice is not yet on the shared session model.
