@@ -269,11 +269,20 @@ class XttsSpeaker:
 
     name = "xtts-v2"
 
+    # XTTS speaks in a voice it was given and has no voice of its own. Given neither a sample to
+    # clone nor the name of one of its own studio speakers it raises, which is what the shipped
+    # default did — it could not say a word until somebody configured a reference.
+    #
+    # So there is a default, and it is one of the model's own. An owner who wants Aurora to sound
+    # like something else configures `speaker_wav`, which is the same knob it always was.
+    DEFAULT_SPEAKER = "Sofia Hellen"
+
     def __init__(self, model="tts_models/multilingual/multi-dataset/xtts_v2",
-                 language="pt", speaker_wav=None):
+                 language="pt", speaker_wav=None, speaker=None):
         self.model_name = model
         self.language = language
         self.speaker_wav = speaker_wav
+        self.speaker = speaker or self.DEFAULT_SPEAKER
         self._tts = None
 
     @staticmethod
@@ -297,10 +306,14 @@ class XttsSpeaker:
         directory = tempfile.mkdtemp(prefix="aurora-voice-")
         target = os.path.join(directory, "said.wav")
 
+        # A cloned voice if the owner supplied a sample, and one of the model's own if not.
+        # Exactly one of the two, because XTTS refuses both and refuses neither.
+        voice = ({"speaker_wav": self.speaker_wav} if self.speaker_wav
+                 else {"speaker": self.speaker})
+
         try:
             tts.tts_to_file(
-                text=text, file_path=target,
-                language=self.language, speaker_wav=self.speaker_wav)
+                text=text, file_path=target, language=self.language, **voice)
 
             return _pcm_from_wav(open(target, "rb").read())
         finally:
@@ -457,7 +470,10 @@ def best_speaker(settings):
         return ScriptedSpeaker((settings or {}).get("delay_ms"))
 
     if wanted in (None, "xtts") and XttsSpeaker.available():
-        return XttsSpeaker(language=(settings or {}).get("language", "pt"))
+        return XttsSpeaker(
+            language=(settings or {}).get("language", "pt"),
+            speaker_wav=(settings or {}).get("speaker_wav"),
+            speaker=(settings or {}).get("speaker"))
 
     if wanted in (None, "say") and SaySpeaker.available():
         return SaySpeaker(voice=(settings or {}).get("voice", "Joana"))

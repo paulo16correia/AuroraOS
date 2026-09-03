@@ -137,8 +137,26 @@ needs nobody's permission and no network.
 | Thinking | Ollama, `llama3.1:8b` by default | `POST /api/chat`, not streamed, tools declared |
 | Speaking | Coqui XTTS v2 | falls back to macOS `say` |
 
+XTTS has no voice of its own — it speaks in one it is given. By default that is one of the model's
+own studio voices; set `speaker_wav` to a sample and it clones that instead.
+
 Audio is 24 kHz mono PCM16 throughout, resampled to 16 kHz for Whisper by averaging rather than by
 dropping samples — decimation does not fail, it transcribes confidently into words nobody said.
+
+### The turn does not happen where the audio arrives
+
+`voice.listen` buffers and returns. When somebody stops talking the turn goes to a worker, which
+recognises, thinks and synthesises, and leaves what it produced on the queue `voice.poll` already
+drains — so a caller pumps until the answer is there, exactly as it does for a remote layer.
+
+This is not an optimisation. Every capability declares a timeout, and `voice.listen` declares ten
+seconds because appending audio to a remote service is a forwarding operation. Recognition and an
+8B model are not: doing them inside that call made Aurora abandon turns it had already been told
+about, and — because the plugin reads its protocol one frame at a time — made `voice.poll` and
+`voice.hangup` unreachable while it happened.
+
+Interrupting and hanging up bump a generation. Work carrying an older number is dropped rather than
+spoken, so a sentence synthesised after a call ended never reaches anybody.
 
 ### Nothing is installed for you
 

@@ -91,14 +91,17 @@ rather than operating systems, because that is where the risk is.
 | | Status | Tests | Verified against the real thing |
 | --- | --- | --- | --- |
 | Voice runtime, end to end through the real host and Kernel | IMPLEMENTED · TESTED | 14 | not applicable — local |
-| Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 32 | not applicable — local |
+| Local stack — turn detection, loop, refusals, no shell | IMPLEMENTED · TESTED | 44 | not applicable — local |
+| Turn processing off the audio path (lifecycle) | IMPLEMENTED · TESTED | 12 + 2 through the real host | **partly** — the defect was found on real engines |
 | Local stack, end to end: audio → STT → Ollama → Kernel → `clock.now` → TTS | IMPLEMENTED · TESTED | 8, real host and Kernel | **partly** — real HTTP to the model, scripted STT/TTS |
 | Faster-Whisper transcribing PT-PT | **VERIFIED** — 3/3 correct, confidence 0.93 | — | **yes**, on an M1 |
 | Ollama answering as Aurora in PT-PT | **VERIFIED** — answers, and asks for the capability | — | **yes**, on an M1 |
-| XTTS v2 producing PT-PT audio | **VERIFIED** — real audio, 24 kHz | — | **yes**, on an M1 |
+| XTTS v2 producing PT-PT audio | **VERIFIED** — real audio, 24 kHz | 4 | **yes**, on an M1 |
 | XTTS v2 voice quality | **UNVERIFIED** — nobody has listened | — | **no** |
-| Local stack latency on 8 GB | **VERIFIED UNUSABLE** — 208 s for one turn | — | **yes** — see below |
-| A whole turn through Aurora on real models | **UNVERIFIED** — times out before it completes | — | **no** — see below |
+| Local stack latency on 8 GB | **VERIFIED UNUSABLE** — 694 s for one turn | — | **yes** — see below |
+| A whole turn on real engines, plugin side | **VERIFIED** — completed, correct answer, real audio | — | **yes** — see below |
+| A whole turn through Aurora's host on real engines | **UNVERIFIED** — never run end to end | — | **no** |
+| Microphone → speaker with a person talking | **UNVERIFIED** — no microphone has been opened | — | **no** |
 | Voice session model, grants, budgets, lifecycle | IMPLEMENTED | 13 | not applicable — local |
 | Authorization decision (grant, expiry, budget, stop) | IMPLEMENTED | 26 | not applicable — local |
 | Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
@@ -132,18 +135,40 @@ Measured on a MacBook Air M1, 8 GB unified memory, 7-core GPU, macOS 26.2, with 
 actually installed — Ollama 0.33.2 with `llama3.1:8b`, `faster-whisper` large-v3-turbo, Coqui XTTS
 v2 through the maintained `coqui-tts` 0.27.5 fork.
 
+Each engine on its own, with the others idle:
+
 | | measured |
 | --- | --- |
 | Ollama, model warm | **5.1 tokens/second** (30 of 33 layers on the GPU) |
 | Faster-Whisper, ~1 s of speech | **~4.0 s**, transcripts correct |
-| XTTS v2, one short sentence | **8.3 s** for 2.9 s of audio, 2.5 GB resident |
-| One whole turn, all three loaded | **207.8 s** |
+| XTTS v2, one short sentence | **7.6 s** for 5.3 s of audio, 2.5 GB resident |
+
+And one whole turn — "Que horas são?" — with all three loaded at once, after the lifecycle fix:
+
+| stage | measured |
+| --- | --- |
+| Audio ingestion (`voice.listen`) | **0.003 s** |
+| Recognition | 10.2 s — "Que horas são?", confidence 0.928 |
+| Model, deciding to ask for `clock.now` | **256 s** |
+| Handing back the outcome (`voice.tool_result`) | **0.012 s** |
+| The capability itself | **0.041 s** |
+| Model, turning the result into a sentence | 94.8 s (15.6 reading the prompt, 77.3 generating) |
+| Synthesis | **332.7 s** for 2.36 s of audio |
+| **Whole turn** | **694 s** |
+
+It completed, and it was right: the model asked rather than inventing, and said "São 14h30." —
+the time the Kernel returned. The audio is real, 24 kHz, 2.36 seconds.
+
+**The two engines that are not the bottleneck are Aurora's.** Ingestion is three milliseconds, the
+Kernel's own execution is forty-one, and handing the outcome back is twelve. Everything else is the
+models: 256 seconds for one model call and 333 for one sentence of speech, against 4 and 7.6 for
+the same work with the machine to themselves.
 
 **Each engine works. Together they do not fit.** Ollama holds about 4 GB, XTTS 2.5 GB and Whisper
-1.5 GB — eight gigabytes of models on an eight gigabyte machine, so the turn that takes four seconds
-of compute spends the rest of two hundred paging. During the runs the machine sat at 7% free memory
-with 7.2 GB of swap in use, and one attempt to load XTTS while Ollama was resident was killed
-outright.
+1.5 GB — eight gigabytes of models on an eight gigabyte machine. Alone they need about twenty
+seconds of compute between them; together they take six hundred and ninety-four, and the difference
+is paging. The machine reached 11 GB of swap during one run, and an early attempt to load XTTS
+while Ollama was resident was killed outright.
 
 Two things worth separating from the arithmetic. The recognition was **accurate** — "Que horas
 são?" came back exactly, at 0.93 confidence — and the model **asked for `clock.now` rather than
@@ -154,20 +179,48 @@ Also worth recording: `faster-whisper` cannot use this GPU at all. CTranslate2 h
 so it runs on the same CPU cores Ollama is competing for. `whisper.cpp`, already installed, does use
 the GPU — and still took 6 s, for the same reason.
 
-### A defect this found, which fakes could not
+### A defect this found, which fakes could not — now fixed
 
-The local provider runs recognition and the language model **synchronously inside `append_audio`**,
-so a single `voice.listen` call carries the whole turn. That capability declares a **10-second
+The local provider ran recognition and the language model **synchronously inside `append_audio`**,
+so a single `voice.listen` call carried the whole turn. That capability declares a **10-second
 timeout** in `plugin.json`, sized for a remote interaction layer where appending audio only forwards
 bytes.
 
 On real engines the call blocked for 208 seconds and Aurora gave up at ten, four times over, while
 the plugin was still working — the session was live, the audio had arrived, and nothing was ever
-heard. Against scripted engines that return instantly this is invisible, which is why eight tests
-through the real host and the real Kernel all pass and none of them saw it.
+heard. Worse: the plugin reads its protocol serially, so `voice.poll` and `voice.hangup` were
+unreachable for the same 208 seconds. Against scripted engines that return instantly none of this
+is visible, which is why eight tests through the real host and the real Kernel all passed and none
+of them saw it.
 
-It is recorded rather than fixed: on hardware that can hold the models, a turn still has to complete
-inside the timeout its own manifest declares, and that is a design question rather than a patch.
+**`append_audio` now buffers and returns**, handing the finished turn to a worker that recognises,
+thinks and synthesises, and leaves what it produced on the queue `voice.poll` already drains. So
+does `voice.tool_result`, which is another model call and another pass of the synthesiser. This is
+the shape the Discord plugin has used since it was the only voice Aurora had — no new capability,
+no new abstraction, no timeout changed, and the provider contract is the same six methods.
+
+Cancelling had to start meaning something once a sentence outlives the call that asked for it.
+Interrupting and hanging up bump a generation; work carrying an older number is dropped rather than
+spoken, and every stage that takes time is checked against it.
+
+Covered by twelve Python tests and two through the real host, one of them with recognition slower
+than the `voice.listen` timeout — the original failure, as a regression test.
+
+### A second defect, from the same run
+
+`XttsSpeaker` passed neither a voice sample to clone nor the name of one of the model's own
+speakers, and XTTS raises on that — `Neither speaker_wav nor speaker_id was specified`. **The
+shipped synthesiser could not say a word on any machine that had it installed.** The engine
+verification that called it "VERIFIED" passed a reference sample explicitly, which is why it worked
+there and nowhere else.
+
+It now defaults to one of the model's own studio voices, and an owner who wants Aurora to sound
+like something else configures `speaker_wav` — the knob that was always there. Four tests hold it,
+with a stand-in for the model, so they run on a machine with no XTTS on it.
+
+The first reading of this failure was memory pressure, which it was not. Everything around it was
+starved — 11 GB of swap, an inference that took six minutes — and it was still an ordinary missing
+argument.
 
 ### What a machine with the models would settle
 

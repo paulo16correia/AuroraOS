@@ -974,3 +974,56 @@ class WhatATurnCost(VoiceTest):
             # between a model that is slow to start and one that is slow to speak.
             self.assertIn("llm_prompt_ms", measured)
             self.assertIn("llm_generate_ms", measured)
+
+
+class TheSynthesiserIsGivenAVoice(VoiceTest):
+    """XTTS speaks in a voice it was given and has none of its own.
+
+    The shipped default passed neither a sample to clone nor the name of one of the model's own
+    speakers, and XTTS raises on that — so it could not say a word on any machine that had it
+    installed. Nothing caught it, because every test that reached a synthesiser used a stand-in.
+    """
+
+    class Recording:
+        def __init__(self):
+            self.given = None
+
+        def tts_to_file(self, **arguments):
+            self.given = arguments
+
+            with open(arguments["file_path"], "wb") as handle:
+                handle.write(speech.wav(b"\x00\x00" * 2400))
+
+    def speak_with(self, **configured):
+        speaker = speech.XttsSpeaker(**configured)
+        speaker._tts = self.Recording()
+        speaker.speak("São duas e meia.")
+
+        return speaker._tts.given
+
+    def test_one_of_the_models_own_voices_when_nobody_configured_a_sample(self):
+        given = self.speak_with()
+
+        # Named, and not None. `speaker_wav=None` is what it used to send, which is the thing XTTS
+        # refuses — so asserting the key is absent is asserting the actual fix.
+        self.assertEqual(speech.XttsSpeaker.DEFAULT_SPEAKER, given["speaker"])
+        self.assertNotIn("speaker_wav", given)
+
+    def test_the_owners_sample_when_there_is_one(self):
+        given = self.speak_with(speaker_wav="/somewhere/a-voice.wav")
+
+        self.assertEqual("/somewhere/a-voice.wav", given["speaker_wav"])
+        self.assertNotIn("speaker", given)
+
+    def test_never_both_and_never_neither(self):
+        for configured in ({}, {"speaker": "Ana Florence"},
+                           {"speaker_wav": "/a.wav"},
+                           {"speaker_wav": "/a.wav", "speaker": "Ana Florence"}):
+            given = self.speak_with(**configured)
+
+            # XTTS refuses both together and refuses neither. Exactly one, every time.
+            self.assertEqual(
+                1, len({"speaker", "speaker_wav"} & set(given)), configured)
+
+    def test_the_language_is_carried_through(self):
+        self.assertEqual("pt", self.speak_with()["language"])
