@@ -6,6 +6,11 @@
 
 Set controls to protect identity, data, secrets, integrations and decisions. Security is a property of the entire cycle, not a final module.
 
+> **The keys.** How far the audit chain's and the vault's guarantees actually reach — and where
+> they stop — is worked out against the code in
+> [`docs/reference/audit-and-vault-threat-model.md`](reference/audit-and-vault-threat-model.md).
+> Read it before relying on either in an argument.
+
 ## Architecture
 
 ```text
