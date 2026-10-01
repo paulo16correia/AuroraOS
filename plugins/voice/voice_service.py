@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Aurora's voice plugin.
 
-Holds the two connections Aurora's own process may not: the transport to whoever is carrying the
-call, and the one to whatever turns speech into words and back. Speaks Aurora's service protocol on
-stdin/stdout, one JSON object per line.
+Holds the connection Aurora's own process may not: the one to whatever turns a sentence into audio.
+There were two, while a telephone company carried the call; there is one now, and it goes to a
+speech service. Speaks Aurora's service protocol on stdin/stdout, one JSON object per line.
 
 **It decides nothing.** When the interaction layer asks for a capability this program does not run
 it, look it up, or guess at it — it puts the request in a queue and says so. Aurora reads the queue,
@@ -27,6 +27,12 @@ E_NO_SESSION = "voice_no_session"
 E_ALREADY = "voice_session_exists"
 E_SCHEMA = "voice_schema"
 E_PROVIDER = "voice_failed"
+
+# What a capability request came back as, in Aurora's words rather than this plugin's. The four
+# live in Aurora and arrive through voice.tool_result; this is the one to assume when the field is
+# missing, because a request whose outcome nobody stated did not succeed. It was interaction.FAILED
+# until that module went with the telephone, and the reference outlived the file.
+FAILED = "Failed"
 
 
 class Refused(Exception):
@@ -283,7 +289,7 @@ def tool_result(state, args):
     session = _session(state, args)
 
     outcome = {
-        "outcome": str(args.get("outcome") or interaction.FAILED),
+        "outcome": str(args.get("outcome") or FAILED),
         "result_json": args.get("result_json"),
         "detail": args.get("detail"),
     }

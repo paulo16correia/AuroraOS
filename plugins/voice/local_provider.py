@@ -1,23 +1,25 @@
-"""The local voice provider: Faster-Whisper, Ollama, XTTS — behind the contract that already exists.
+"""One conversation, assembled from whisper, the model on this machine, and ElevenLabs.
 
-`InteractionSession` wraps OpenAI Realtime and offers six methods: start, append_audio, poll,
-deliver, interrupt, close. This offers exactly the same six, and assembles them out of three local
-engines instead of one remote service.
+Six methods — start, append_audio, poll, deliver, interrupt, close — which is the whole of what a
+conversation is from outside this file. There used to be a second thing offering the same six,
+wrapping OpenAI Realtime, and `voice_service.py` chose between them. There is one now: every engine
+behind a choice is one more thing to install, keep working, and reason about when an answer comes
+back wrong.
 
-That is why nothing above this file changes. `voice_service.py` picks one or the other,
-`VoiceRuntime` pumps whichever it got, and the tool request lands on `VoiceToolBridge` and the
-Kernel by the same path either way — which is what the provider abstraction was for.
+Two of the three stay on this machine. The third does not, and the plugin says so rather than
+letting an owner assume otherwise — `voice.status` reports it, and so does every refusal that
+mentions a missing key.
 
-    append_audio → buffer → silence? → STT → transcript
-                                              ↓
-                                           Ollama
-                                          ↙      ↘
-                                   tool request   sentence
-                                        ↓            ↓
-                                  reported to      XTTS
-                                    Aurora           ↓
-                                        ↓          audio
-                                   deliver() ────────┘
+    append_audio → buffer → silence? → whisper → transcript
+                                                    ↓
+                                                  model
+                                                ↙      ↘
+                                         tool request   sentence
+                                              ↓            ↓
+                                        reported to    ElevenLabs
+                                          Aurora           ↓
+                                              ↓          audio
+                                         deliver() ────────┘
 
 **No engine here decides anything.** The recogniser turns air into words, the model turns words
 into a request or a sentence, the speaker turns a sentence into air. Whether the request is allowed
@@ -133,8 +135,9 @@ class LocalSession:
     def append_audio(self, base64_pcm16):
         """A slice of microphone audio. Turn detection happens here, in the plugin.
 
-        Realtime does this server-side; locally there is nobody else to do it, so it is done on
-        amplitude and a silence window. Crude, and enough to tell a sentence from a pause.
+        A speech service that carried the whole conversation would do this at its end. Nothing here
+        does, so it is done on amplitude and a silence window — crude, and enough to tell a
+        sentence from a pause.
 
         The windows are counted in audio rather than against the clock. Chunks arrive over a
         network and a pipe, so they stall and then catch up in a burst; a caller who has not
