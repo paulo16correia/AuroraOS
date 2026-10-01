@@ -64,7 +64,23 @@ public sealed class DiscordVoiceTests : IDisposable
     {
         // Real PCM through the real encoder, the real cipher and the real packet layout, and back
         // again. Anything wrong with the framing shows up here rather than as silence in a call.
-        RunPython("test_transport", 23);
+        //
+        // Six of these cover audio that arrives in pieces rather than all at once, which is what
+        // lets Aurora start talking before the sentence has finished being made. The piece sizes
+        // never line up with a 20ms frame, and padding each piece to a frame would sprinkle
+        // silence through the middle of words.
+        RunPython("test_transport", 29);
+    }
+
+    [Fact]
+    public void TheSpeechServiceContractHolds()
+    {
+        // Speaking is the one leg that leaves the machine, so it is the one that most needs a test
+        // that does not. A server on loopback stands in for the real service: which voice was
+        // chosen for which language, that one channel became two, that audio arrives in pieces
+        // rather than in one lump at the end, and that a refusal says why instead of returning
+        // silence somebody would mistake for a quiet room.
+        RunPython("test_speech_service", 15);
     }
 
     [Fact]
@@ -98,7 +114,11 @@ public sealed class DiscordVoiceTests : IDisposable
     {
         // What the confined plugin can reach is its own directory, so a program found only on the
         // owner's PATH is one that readiness reports and the call never gets (docs/adr/0080).
-        RunPython("test_engine_discovery", 4);
+        // Three, not four: the fourth checked that a bundled piper made find_tts report it, and
+        // there is no local text-to-speech any more. What these still cover is how whisper and
+        // libopus are found inside the plugin's own bin/, which a confined plugin depends on
+        // because its PATH is System32 and nothing else.
+        RunPython("test_engine_discovery", 3);
     }
 
     [Fact]
@@ -107,7 +127,10 @@ public sealed class DiscordVoiceTests : IDisposable
         // mkdtemp's 0700 became a real Windows ACL in Python 3.13, replacing the inherited
         // protection and blocking inheritance — so every utterance came back as a PermissionError
         // dressed up as a recogniser that could not understand anybody (docs/adr/0080).
-        RunPython("test_workspace", 14);
+        // Eleven, not fourteen: three measured piper's --length_scale and the sample-trimming that
+        // came with it. There is no piper to slow down any more, and a voice's pace is now the
+        // speech service's business rather than this plugin's.
+        RunPython("test_workspace", 11);
     }
 
     [Fact]

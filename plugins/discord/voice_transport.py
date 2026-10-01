@@ -146,6 +146,37 @@ RTCP_TYPES = range(200, 205)
 FRAME_INTERVAL = opus_codec.FRAME_MS / 1000.0
 
 
+def _frames_of(pcm):
+    """Exactly-sized Opus frames, from all the audio at once or from it arriving in pieces.
+
+    Discord's frame is 20 milliseconds and not negotiable, and nothing that produces audio hands
+    it over in 20 millisecond pieces — a file arrives whole, and a network stream arrives in
+    whatever sizes the other end felt like sending. So what does not fill a frame is held back
+    until the next piece completes it, rather than padded, because padding mid-sentence would
+    insert silence into the middle of a word.
+
+    The last frame is the exception: there is nothing coming to complete it, so it is padded, which
+    is what the whole-buffer path always did.
+    """
+    if isinstance(pcm, (bytes, bytearray, memoryview)):
+        pcm = (bytes(pcm),)
+
+    pendente = b""
+
+    for pedaco in pcm:
+        if not pedaco:
+            continue
+
+        pendente += bytes(pedaco)
+
+        while len(pendente) >= opus_codec.BYTES_PER_FRAME:
+            yield pendente[:opus_codec.BYTES_PER_FRAME]
+            pendente = pendente[opus_codec.BYTES_PER_FRAME:]
+
+    if pendente:
+        yield pendente + bytes(opus_codec.BYTES_PER_FRAME - len(pendente))
+
+
 def is_rtcp(packet):
     """Whether this datagram is a control report rather than audio.
 
@@ -685,27 +716,29 @@ class VoiceTransport:
             "speaking": 1 if is_speaking else 0, "delay": 0, "ssrc": self._ssrc}})
 
     def play(self, pcm, speech_id=None):
-        """Sends 48kHz stereo PCM as Opus, paced in real time. Returns when done or stopped."""
+        """Sends 48kHz stereo PCM as Opus, paced in real time. Returns when done or stopped.
+
+        `pcm` is either all the audio at once, or an iterable that yields it in pieces as it
+        becomes available. The second form is what lets Aurora start talking before the sentence
+        has finished being made: the first twenty milliseconds go out while the rest is still
+        arriving.
+        """
         if self.state != "ready":
             raise RuntimeError("the voice transport is not ready")
 
         self._current_speech = speech_id
         self._playing.set()
         self.speaking(True)
+        fluxo = _frames_of(pcm)
 
         try:
             started = time.monotonic()
             frames = 0
 
-            for offset in range(0, len(pcm), opus_codec.BYTES_PER_FRAME):
+            for frame in fluxo:
                 if not self._playing.is_set():
                     # Stopped mid-sentence, which is what being interrupted looks like from here.
                     break
-
-                frame = pcm[offset:offset + opus_codec.BYTES_PER_FRAME]
-
-                if len(frame) < opus_codec.BYTES_PER_FRAME:
-                    frame += bytes(opus_codec.BYTES_PER_FRAME - len(frame))
 
                 self._send_frame(self._encoder.encode(frame))
                 frames += 1
@@ -720,6 +753,14 @@ class VoiceTransport:
 
             return frames
         finally:
+            # A stream left half-read is a connection left open. Closing it here is what makes
+            # being interrupted cost nothing: the generator stops at its yield and lets go of
+            # whatever it was holding.
+            close = getattr(fluxo, "close", None)
+
+            if close is not None:
+                close()
+
             self._playing.clear()
             self._current_speech = None
 

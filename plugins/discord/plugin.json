@@ -18,7 +18,8 @@
   ],
   "event_subscriptions": [],
   "network_endpoints": [
-    "discord.com"
+    "discord.com",
+    "api.elevenlabs.io"
   ],
   "service": {
     "start_timeout_seconds": 20,
@@ -28,6 +29,10 @@
     {
       "name": "bot_token",
       "purpose": "Signs in as your Discord bot. Aurora can do anything this bot can do."
+    },
+    {
+      "name": "elevenlabs_api_key",
+      "purpose": "Reads Aurora's replies aloud. The sentence she is about to say is sent to ElevenLabs; nobody's recorded voice ever is. Speech recognition stays on this machine."
     }
   ],
   "capabilities": [
@@ -935,7 +940,7 @@
     {
       "key": "discord.voice.status",
       "title": "Voice status",
-      "description": "Whether Aurora is in a call, with whom, and what this machine can actually do \u2014 voice needs local speech programs and refuses rather than sending audio anywhere.",
+      "description": "Whether Aurora is in a call, with whom, and what this machine can actually do — voice needs local speech programs and refuses rather than sending audio anywhere.",
       "input_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1097,7 +1102,7 @@
     {
       "key": "discord.voice.leave",
       "title": "Leave the call",
-      "description": "Disconnects from the voice channel. Only ever reduces what Aurora is doing, so it never waits for an approval \u2014 being unable to leave is worse than leaving unexpectedly.",
+      "description": "Disconnects from the voice channel. Only ever reduces what Aurora is doing, so it never waits for an approval — being unable to leave is worse than leaving unexpectedly.",
       "input_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1172,7 +1177,7 @@
     {
       "key": "discord.voice.converse",
       "title": "Take part in the conversation",
-      "description": "Lets Aurora speak when it is spoken to, for a bounded time, without approving each sentence. Approving every utterance is not a conversation \u2014 but this is the widest grant in the plugin, so it expires, it counts what it spends, and leaving or muting ends it immediately and needs nobody's permission.",
+      "description": "Lets Aurora speak when it is spoken to, for a bounded time, without approving each sentence. Approving every utterance is not a conversation — but this is the widest grant in the plugin, so it expires, it counts what it spends, and leaving or muting ends it immediately and needs nobody's permission.",
       "input_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1222,7 +1227,7 @@
     {
       "key": "discord.voice.pending",
       "title": "What is waiting for an answer",
-      "description": "The utterances Aurora heard, decided it should answer, and has not answered yet. Reading them is how whatever holds language finds out there is something to say \u2014 Aurora has no model of its own and is not supposed to.",
+      "description": "The utterances Aurora heard, decided it should answer, and has not answered yet. Reading them is how whatever holds language finds out there is something to say — Aurora has no model of its own and is not supposed to.",
       "input_schema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

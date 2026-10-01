@@ -72,7 +72,7 @@ class Join(unittest.TestCase):
         discord_service.time.sleep = lambda _seconds: None
         # Takes the voice the caller names, the way the real one does: a stand-in with an older
         # signature turns a change in the code under test into a failure in the double.
-        discord_service.voice_engines.readiness = lambda voice=None: {
+        discord_service.voice_engines.readiness = lambda *_, **__: {
             "can_join": True, "can_speak": True, "can_listen": True, "missing": []}
 
     def tearDown(self):
@@ -219,7 +219,7 @@ class ListeningTwice(unittest.TestCase):
         self._readiness = discord_service.voice_engines.readiness
         # Takes the voice the caller names, the way the real one does: a stand-in with an older
         # signature turns a change in the code under test into a failure in the double.
-        discord_service.voice_engines.readiness = lambda voice=None: {
+        discord_service.voice_engines.readiness = lambda *_, **__: {
             "can_join": True, "can_speak": True, "can_listen": True, "missing": []}
 
         # The watcher itself is a thread with a recogniser in it; what is under test is whether one

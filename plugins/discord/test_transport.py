@@ -287,5 +287,85 @@ class Silence(unittest.TestCase):
         self.assertEqual(transport.silence, 0)
 
 
+class Framing(unittest.TestCase):
+    """Turning audio into 20ms frames, whether it arrives whole or a piece at a time.
+
+    The piece-at-a-time case is what lets Aurora start talking before the sentence is finished
+    being made, and the thing that can go wrong is subtle: pieces do not arrive frame-sized, and
+    padding each one to a frame would sprinkle silence through the middle of words.
+    """
+
+    def test_a_whole_buffer_frames_the_same_as_it_always_did(self):
+        pcm = tone() * 3
+        frames = list(vt._frames_of(pcm))
+
+        self.assertEqual(len(frames), 3)
+        self.assertTrue(all(len(f) == opus_codec.BYTES_PER_FRAME for f in frames))
+        self.assertEqual(b"".join(frames), pcm)
+
+    def test_pieces_that_do_not_line_up_are_rejoined_not_padded(self):
+        pcm = tone() * 3
+        # sizes chosen to straddle every frame boundary
+        pedacos, resto = [], pcm
+        for tamanho in (700, 4000, 123, 9999):
+            pedacos.append(resto[:tamanho])
+            resto = resto[tamanho:]
+        pedacos.append(resto)
+
+        frames = list(vt._frames_of(iter(pedacos)))
+
+        self.assertEqual(len(frames), 3)
+        # byte for byte the same audio: nothing inserted, nothing dropped
+        self.assertEqual(b"".join(frames), pcm)
+
+    def test_the_last_frame_is_padded_because_nothing_is_coming_to_finish_it(self):
+        pcm = tone() + b"\x01\x02\x03\x04"
+        frames = list(vt._frames_of(iter([pcm])))
+
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(len(frames[1]), opus_codec.BYTES_PER_FRAME)
+        self.assertTrue(frames[1].startswith(b"\x01\x02\x03\x04"))
+        self.assertEqual(frames[1][4:], bytes(opus_codec.BYTES_PER_FRAME - 4))
+
+    def test_empty_pieces_are_not_frames(self):
+        frames = list(vt._frames_of(iter([b"", tone(), b"", b""])))
+
+        self.assertEqual(len(frames), 1)
+
+    def test_a_frame_is_ready_before_the_source_has_finished(self):
+        """The whole point: audio goes out while the rest is still being produced."""
+        entregues = []
+
+        def devagar():
+            for _ in range(3):
+                entregues.append("pedaco")
+                yield tone()
+
+        fluxo = vt._frames_of(devagar())
+        primeiro = next(fluxo)
+
+        self.assertEqual(len(primeiro), opus_codec.BYTES_PER_FRAME)
+        # uma peça pedida, não três: o resto ainda nem foi produzido
+        self.assertEqual(len(entregues), 1)
+
+    def test_closing_the_stream_stops_asking_for_more(self):
+        """Being interrupted must let go of whatever was producing the audio."""
+        fechado = []
+
+        def fonte():
+            try:
+                while True:
+                    yield tone()
+            except GeneratorExit:
+                fechado.append(True)
+                raise
+
+        fluxo = vt._frames_of(fonte())
+        next(fluxo)
+        fluxo.close()
+
+        self.assertEqual(fechado, [True])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

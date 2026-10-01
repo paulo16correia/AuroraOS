@@ -60,14 +60,6 @@ class BundledEngineDiscovery(unittest.TestCase):
             voice_engines._find_program("definitely-not-an-engine-xyz"),
             shutil.which("definitely-not-an-engine-xyz"))
 
-    def test_bundled_tts_makes_find_tts_report_it(self):
-        self._drop("espeak-ng")
-
-        found = voice_engines.find_tts()
-
-        self.assertIsNotNone(found)
-        self.assertEqual("espeak-ng", found["name"])
-
     def test_the_real_plugin_directory_is_left_alone(self):
         # The guard on the mistake above. What discovery is pointed at is a temporary directory,
         # and nothing these tests write can land beside the plugin.

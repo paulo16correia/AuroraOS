@@ -518,7 +518,7 @@ def voice_status(state, args):
     deciding whether to have Aurora join a call should be able to find out first, and an error in
     the middle of a conversation is a bad way to learn that a codec is missing.
     """
-    ready = voice_engines.readiness(_setting("tts_voice"))
+    ready = _readiness(state)
     session = state.get("voice")
 
     window = conversation_window(state)
@@ -553,7 +553,7 @@ def voice_list_channels(api, args):
 
 
 def voice_join(state, args, nonce=None):
-    ready = voice_engines.readiness(_setting("tts_voice"))
+    ready = _readiness(state)
 
     if not ready["can_join"]:
         # Joining a call Aurora cannot hear or be heard in is worse than refusing: it puts a
@@ -706,7 +706,7 @@ def voice_listen(state, args, nonce=None):
 
         return {"listening": False}
 
-    ready = voice_engines.readiness(_setting("tts_voice"))
+    ready = _readiness(state)
 
     if not ready["can_listen"]:
         raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
@@ -988,7 +988,7 @@ def voice_speak(state, args, nonce=None):
     if state.get("voice_muted"):
         raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
 
-    ready = voice_engines.readiness(_setting("tts_voice"))
+    ready = _readiness(state)
 
     if not ready["can_speak"]:
         raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))
@@ -1002,9 +1002,7 @@ def voice_speak(state, args, nonce=None):
             "floor_taken",
             "somebody is speaking; Aurora does not talk over people")
 
-    audio = voice_engines.synthesise(
-        voice_engines.find_tts(_setting("tts_voice")), args["text"],
-        pitch=float(_setting("tts_pitch", 1.0)))
+    engine = _speech_engine(state)
     transport = state.get("voice_transport")
 
     if transport is None:
@@ -1014,7 +1012,7 @@ def voice_speak(state, args, nonce=None):
         session.stop_speaking("no_transport")
         raise Unknown("the voice transport is not connected; nothing was heard")
 
-    frames = transport.play(_pcm_from_wav(audio), speech)
+    frames = _say(transport, engine, args["text"], state.get("speech_key"), speech, session)
     finished = session.finished_speaking(speech)
 
     return {
@@ -1096,13 +1094,12 @@ def speak_in_conversation(state, text, invited):
     window["remaining"] -= 1
 
     synthesis_started = time.monotonic() * 1000
+    engine = _speech_engine(state)
 
-    audio = voice_engines.synthesise(
-        voice_engines.find_tts(_setting("tts_voice")), text, voice=_setting("tts_voice"),
-        pitch=float(_setting("tts_pitch", 1.0)))
-
+    # No longer "synthesise, then play": the two overlap now. What is measured here is the moment
+    # the first audio could be heard, which is the number somebody in the call actually feels.
     spoke_at = time.monotonic() * 1000
-    frames = transport.play(_pcm_from_wav(audio), speech)
+    frames = _say(transport, engine, text, state.get("speech_key"), speech, session)
     completed = session.finished_speaking(speech)
 
     conversation = state.get("conversation")
@@ -1124,81 +1121,59 @@ def speak_in_conversation(state, text, invited):
     }
 
 
-def _pcm_from_wav(audio):
-    """Reads a WAV into the 48kHz stereo 16-bit samples Opus needs, whatever it started as.
+def _readiness(state):
+    """What voice can do right now, asked in one place.
 
-    The format is read from the file rather than assumed, because assuming it was wrong. macOS's
-    `say` writes 32-bit float mono however it is asked; handing those bytes to an encoder expecting
-    16-bit stereo produces packets of the right length carrying noise. Discord accepted them, the
-    counters said frames were sent, and nobody heard anything.
-
-    That is the third failure in this integration of the same kind: not an error, a plausible
-    result. There is nothing in "172 frames sent" to say the frames were meaningless.
+    The three things it needs — which voice, whose key, what language — were being assembled at
+    six call sites, and the day one of them forgot the key would be the day `can_speak` quietly
+    became false with a misleading reason attached.
     """
-    if audio[:4] != b"RIFF":
-        return audio
+    return voice_engines.readiness(
+        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"))
 
-    channels = rate = bits = 0
-    fmt = 1
-    data = b""
-    at = 12
 
-    # Every chunk, in order. `say` puts JUNK and FLLR padding before and after the format, and a
-    # reader that assumes fmt comes first and data comes second finds neither.
-    while at + 8 <= len(audio):
-        name = audio[at:at + 4]
-        (size,) = struct.unpack_from("<I", audio, at + 4)
+def _speech_engine(state):
+    """The configured voice, or a refusal that says which half is missing.
 
-        if name == b"fmt " and size >= 16:
-            fmt, channels, rate, _, _, bits = struct.unpack_from("<HHIIHH", audio, at + 8)
-        elif name == b"data":
-            data = audio[at + 8:at + 8 + size]
+    Two separate things have to be in place and they are fixed by different people in different
+    ways: the voice is a setting somebody edits, the key is a secret somebody types into a prompt.
+    Saying "voice unavailable" for either would send one of them looking in the wrong place.
+    """
+    engine = voice_engines.cloud_tts(
+        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"))
 
-        at += 8 + size + (size % 2)
+    if engine is None:
+        raise Refused(E_VOICE_UNAVAILABLE,
+                      "speaking needs: " + "; ".join(_readiness(state)["missing"]))
 
-    if not data or not channels or not rate:
-        return audio
+    return engine
 
-    # Whatever the samples are, as signed 16-bit.
-    if fmt == 3 and bits == 32:
-        count = len(data) // 4
-        samples = [
-            max(-32768, min(32767, int(value * 32767)))
-            for (value,) in struct.iter_unpack("<f", data[:count * 4])
-        ]
-    elif bits == 16:
-        samples = [value for (value,) in struct.iter_unpack("<h", data[:len(data) // 2 * 2])]
-    else:
-        # An encoding this does not know. Better to say so than to send noise that looks like
-        # speech from every angle except the listener's.
-        raise Refused(
-            E_VOICE_UNAVAILABLE,
-            "the speech program produced %d-bit format %d, which this does not read" % (bits, fmt))
 
-    # One channel per ear. Opus is configured for stereo because Discord is.
-    if channels == 1:
-        samples = [s for value in samples for s in (value, value)]
-    elif channels > 2:
-        samples = [
-            s for frame in range(len(samples) // channels)
-            for s in (samples[frame * channels], samples[frame * channels + 1])
-        ]
+def _say(transport, engine, text, key, speech, session):
+    """Speaks `text`, streaming, and turns a failed synthesis into something somebody can act on.
 
-    # And at the rate Discord carries. Repeating or dropping whole frames is crude and audible on
-    # a large ratio; from 22kHz or 24kHz, which is what these programs produce, it is speech.
-    if rate != opus_rate():
-        ratio = opus_rate() / rate
-        stereo = len(samples) // 2
-        resampled = []
+    The audio is produced and played at the same time — the transport pulls frames from the
+    generator, so the first twenty milliseconds go out while the rest of the sentence is still
+    being made.
 
-        for out in range(int(stereo * ratio)):
-            source = min(stereo - 1, int(out / ratio))
-            resampled.append(samples[source * 2])
-            resampled.append(samples[source * 2 + 1])
+    The failure path is the reason this is a function rather than one line. Synthesis happens
+    lazily inside the generator, so an exhausted quota or a wrong voice id surfaces from inside
+    `play` rather than before it. Left alone that arrives as an unhandled error after Aurora has
+    already claimed the floor, and the session would go on believing she is talking. So the floor
+    is given back first, and the refusal carries the service's own words: "quota exceeded" is
+    something an owner can fix, and "speech failed" is not.
 
-        samples = resampled
+    There is deliberately no fallback to a local voice. Aurora has nothing to say without her
+    language model anyway, and dropping mid-conversation into a voice the owner rejected would be
+    worse than stopping.
+    """
+    fluxo = voice_engines.synthesise_stream(engine, text, key)
 
-    return struct.pack("<%dh" % len(samples), *samples)
+    try:
+        return transport.play(fluxo, speech)
+    except RuntimeError as erro:
+        session.stop_speaking("speech_failed")
+        raise Refused(E_VOICE_UNAVAILABLE, str(erro)) from erro
 
 
 def opus_rate():
@@ -1223,7 +1198,7 @@ def voice_converse(state, args, nonce=None):
     if session is None:
         raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
 
-    ready = voice_engines.readiness(_setting("tts_voice"))
+    ready = _readiness(state)
 
     if not ready["can_speak"]:
         raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))
@@ -1512,6 +1487,12 @@ def main():
 
         if kind == "hello":
             token = (frame.get("secrets") or {}).get("bot_token", "")
+
+            # Kept beside the bot token and treated the same way: it arrives in the hello frame,
+            # never on a command line, and it is never echoed back — not in a log, not in
+            # `readiness`, not in a refusal. Its absence is reported; its value is not.
+            state["speech_key"] = (frame.get("secrets") or {}).get("elevenlabs_api_key", "")
+
             if not token:
                 # Aurora refuses to start a service whose secret is missing, so reaching here means
                 # something else went wrong. Said once, without the value that is not there.

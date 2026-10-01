@@ -1,14 +1,25 @@
-"""Speech in and out, on this machine only.
+"""Speech in and out, and the one place where Aurora is not local.
 
-Aurora is local-only, and audio is the hardest place to keep that promise: the easy way to do
-speech recognition is to send somebody's voice to a service, and doing that would take a private
-conversation off the owner's machine without anybody deciding to. So every engine here is a program
-already installed locally, and there is no fallback that reaches the network. If nothing local is
-available the capability refuses and says what to install.
+**Listening is local and stays local.** The easy way to do speech recognition is to send somebody's
+voice to a service, and doing that would take a private conversation off the owner's machine
+without anybody deciding to. So recognition is a program already installed here, with no fallback
+that reaches the network. This file never uploads audio and never keeps it: a recording exists as
+bytes in memory for as long as it takes to become text, and then it is gone.
 
-What this file does not do is as important as what it does. It never uploads audio. It never keeps
-audio. A recording exists as bytes in memory for as long as it takes to turn into text, and the
-text is what leaves.
+**Speaking is not local, and that was a decision.** Every local voice that could be had was
+measured, and in the language this was built for none of them was good enough to be Aurora's — the
+one European Portuguese voice in Piper's catalogue is male and band-limited, and the alternatives
+were licence-blocked, Brazilian, or too heavy to sit on the same card as the language model. Rather
+than ship a voice the owner does not want, this leg was given to ElevenLabs, and the cost is stated
+instead of buried: **the sentence Aurora is about to say leaves the machine.**
+
+The two facts are reported separately by `readiness` — `audio_leaves_this_machine` and
+`text_leaves_this_machine` — because they are no longer the same answer, and a reader who assumes
+one from the other would be wrong in a way that matters.
+
+There is no local fallback. A voice the owner rejected is not a safety net, and falling back to it
+mid-conversation would be worse than failing: Aurora has nothing to say without her language model
+anyway, so a refusal that explains itself is the honest behaviour when speech cannot be made.
 """
 
 import array
@@ -146,21 +157,6 @@ MODEL_NAMES = [
 ]
 
 # Local text-to-speech. `say` ships with macOS and speaks without a network.
-TTS_ENGINES = [
-    # --length_scale is here for the pitch setting, not for speed: see _shift_pitch. At 1.0 it is
-    # piper's own default and changes nothing.
-    ("piper", ["--model", "{model}", "--length_scale", "{length_scale}", "--output_file", "{output}"]),
-    # LEI16, not LEF32. `say` writes 32-bit float however it is asked, so the conversion happens
-    # in the reader either way — but asking for what is wanted costs nothing and says what is
-    # expected.
-    #
-    # The voice is a setting because it is a matter of taste and of who is listening. The default
-    # is whatever the machine speaks with; a name in config.json overrides it.
-    ("say", ["-o", "{output}", "--data-format=LEI16@48000", "{voice}", "{text}"]),
-    ("espeak-ng", ["-w", "{output}", "{text}"]),
-]
-
-
 def find_opus():
     """The Opus library, if it can actually be opened.
 
@@ -220,37 +216,6 @@ def _find_program(name):
     return shutil.which(name)
 
 
-def find_voice_model(preferred=None):
-    """A piper voice (an .onnx beside its .json), or None.
-
-    Piper is the one text-to-speech engine here that cannot speak without a model, the same way
-    whisper cannot listen without one — and nothing supplies it a path, so without this it is found
-    and then fails on every sentence. Looked for where the whisper model is looked for, so what a
-    plugin needs to run keeps shipping beside the plugin, where the sandbox can reach it.
-
-    `preferred` is a voice named in the owner's settings, with or without the .onnx. It is worth
-    naming: which language a voice speaks is not a detail, and taking whichever file sorts first
-    means a Brazilian voice reads European Portuguese to somebody who installed both. A named
-    voice that is not installed falls back to one that is rather than going silent — being unable
-    to answer is worse than answering in the wrong accent, and readiness reports which is in use.
-    """
-    installed = []
-
-    for directory in MODEL_SEARCH:
-        if not os.path.isdir(directory):
-            continue
-
-        for name in sorted(n for n in os.listdir(directory) if n.endswith(".onnx")):
-            path = os.path.join(directory, name)
-
-            if preferred in (name, os.path.splitext(name)[0]):
-                return path
-
-            installed.append(path)
-
-    return installed[0] if installed else None
-
-
 def find_stt(preferred_model=None):
     """A local speech-to-text program with a model to run, or None.
 
@@ -297,26 +262,6 @@ def _workspace():
     return directory
 
 
-def find_tts(voice=None):
-    """A local text-to-speech program, or None. `voice` names which one to speak with."""
-    for name, arguments in TTS_ENGINES:
-        found = _find_program(name)
-
-        if not found:
-            continue
-
-        model = find_voice_model(voice) if "{model}" in " ".join(arguments) else None
-
-        if "{model}" in " ".join(arguments) and model is None:
-            # Installed but with nothing to speak with. Skipped rather than returned, so a later
-            # engine that needs no model still gets its turn.
-            continue
-
-        return {"name": name, "path": found, "arguments": arguments, "model": model}
-
-    return None
-
-
 def has_transport():
     """Whether the leg that actually carries audio exists.
 
@@ -332,7 +277,211 @@ def has_transport():
                                        "voice_transport.py"))
 
 
-def readiness(voice=None):
+# ---- text to speech, which is the one thing here that uses the network ----
+#
+# Every local voice that could be had in European Portuguese was measured and none was good enough
+# to be Aurora's: the one voice in Piper's catalogue is male and band-limited, and the alternatives
+# were either licence-blocked, Brazilian, or too heavy to sit beside the language model. So this
+# leg was given up deliberately, and the trade is named rather than hidden: the **text** Aurora is
+# about to say leaves the machine. Audio never does — recognition stays local, and `readiness`
+# reports both facts separately so neither can be mistaken for the other.
+
+ELEVENLABS_HOST = "api.elevenlabs.io"
+
+# Flash: the low-latency model, and the one that honours an explicit language code rather than
+# guessing from the text. Guessing is the failure that matters here — "no" is a word in several
+# languages and a wrong guess reads the whole sentence in the wrong one.
+ELEVENLABS_MODEL = "eleven_flash_v2_5"
+
+# 48kHz because that is what Discord's Opus encoder takes. Asking for anything else would buy a
+# resampling step and the artefacts that come with it, for nothing.
+ELEVENLABS_RATE = 48000
+
+ELEVENLABS_TIMEOUT = 30.0
+
+
+def resolve_voice(setting, language=None):
+    """Which voice to speak with, from whatever shape the installer wrote.
+
+    Whoever installs Aurora chooses the voice, and there are two reasonable things to want. One
+    voice for everything gives Aurora a single recognisable identity — at the cost of carrying that
+    speaker's accent into every other language she speaks. One voice per language gives a native
+    accent everywhere, at the cost of Aurora not having a voice of her own.
+
+    Neither is wrong, so this does not choose: the setting is either a string, used whatever the
+    language, or a mapping from language to voice with an optional "default" for the rest.
+    """
+    if not setting:
+        return None
+
+    if isinstance(setting, str):
+        return setting.strip() or None
+
+    if not isinstance(setting, dict):
+        return None
+
+    # "pt-PT" should find a voice filed under "pt", and "pt" should not be found by "pt-BR".
+    candidates = []
+
+    if language:
+        candidates.append(str(language))
+
+        if "-" in str(language):
+            candidates.append(str(language).split("-")[0])
+
+    candidates.append("default")
+
+    for key in candidates:
+        found = setting.get(key)
+
+        if isinstance(found, str) and found.strip():
+            return found.strip()
+
+    return None
+
+
+def cloud_tts(voice_setting, api_key, language=None):
+    """The speaking engine, or None with nothing said about why.
+
+    Both halves have to be present: a key without a voice cannot speak and a voice without a key
+    cannot either. `readiness` is what explains which is missing.
+    """
+    voice_id = resolve_voice(voice_setting, language)
+
+    if not voice_id or not api_key:
+        return None
+
+    return {"name": "elevenlabs", "voice_id": voice_id, "model": ELEVENLABS_MODEL,
+            "rate": ELEVENLABS_RATE, "language": language}
+
+
+def _to_stereo(mono):
+    """Duplicates each sample into both channels.
+
+    ElevenLabs returns one channel and Discord carries two. Done here rather than later because
+    the framing downstream counts bytes, and handing it mono would silently halve every frame.
+    """
+    out = bytearray(len(mono) * 2)
+    out[0::4] = mono[0::2]
+    out[1::4] = mono[1::2]
+    out[2::4] = mono[0::2]
+    out[3::4] = mono[1::2]
+    return bytes(out)
+
+
+ELEVENLABS_BASE = "https://" + ELEVENLABS_HOST
+
+
+def _speech_base(base):
+    """The service to talk to, refusing any address that would send the key in clear.
+
+    The override exists so the protocol can be tested without a network, a key or somebody's quota.
+    It is deliberately narrow: plain HTTP is allowed only to loopback, because an API key on the
+    wire in clear is exactly the kind of mistake a test helper quietly turns into production.
+    """
+    if not base:
+        return ELEVENLABS_BASE
+
+    base = base.rstrip("/")
+
+    if "://" not in base:
+        base = "https://" + base
+
+    scheme, _, rest = base.partition("://")
+    host = rest.split("/")[0].split(":")[0]
+
+    if scheme != "https" and host not in ("127.0.0.1", "localhost", "::1", "[::1]"):
+        raise RuntimeError(
+            "refusing to send the speech key to %s over %s — only https, or loopback for tests"
+            % (host, scheme))
+
+    return base
+
+
+def synthesise_stream(engine, text, api_key, timeout=ELEVENLABS_TIMEOUT, base=None):
+    """Yields 48kHz stereo PCM as it arrives, so speaking can start before the sentence is made.
+
+    The generator is the cancellation mechanism. Closing it — which is what the transport does when
+    somebody interrupts — stops reading and closes the connection, and nothing keeps working in the
+    background afterwards.
+
+    Raises RuntimeError on anything that means no audio, rather than yielding silence: a refusal
+    that says the quota ran out is useful, and half a second of nothing is not.
+    """
+    import json
+    import urllib.error
+    import urllib.request
+
+    if not text or not text.strip():
+        raise RuntimeError("nothing to say")
+
+    body = {"text": text, "model_id": engine.get("model") or ELEVENLABS_MODEL}
+
+    # Sent only when known. An empty language code is not the same as an absent one: the API
+    # rejects the former and infers for the latter.
+    if engine.get("language"):
+        body["language_code"] = str(engine["language"])
+
+    url = "%s/v1/text-to-speech/%s/stream?output_format=pcm_%d" % (
+        _speech_base(base), engine["voice_id"], engine.get("rate") or ELEVENLABS_RATE)
+
+    request = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"), method="POST",
+        headers={"xi-api-key": api_key, "Content-Type": "application/json",
+                 "Accept": "audio/pcm"})
+
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout)
+    except urllib.error.HTTPError as error:
+        # The body carries the reason — a bad voice id, an exhausted quota — and it is short.
+        # Worth reading, because "HTTP 401" alone sends somebody looking in the wrong place.
+        detail = ""
+
+        try:
+            detail = error.read()[:400].decode("utf-8", "replace")
+        except Exception:
+            pass
+
+        raise RuntimeError("the speech service refused (HTTP %d) %s"
+                           % (error.code, detail.strip())) from error
+    except Exception as error:
+        raise RuntimeError("the speech service could not be reached: %s: %s"
+                           % (type(error).__name__, error)) from error
+
+    pendente = b""
+    entregou = False
+
+    # `read(n)` is the wrong call here and it took a test to notice: it blocks until it has all n
+    # bytes or the response ends, so the first audio would wait for a full buffer to accumulate
+    # instead of going out as it arrived — which is the whole point of streaming. `read1` returns
+    # whatever one underlying read produced, however little.
+    ler = getattr(response, "read1", None) or response.read
+
+    try:
+        while True:
+            pedaco = ler(4096)
+
+            if not pedaco:
+                break
+
+            pendente += pedaco
+
+            # A 16-bit sample must not be split across a channel duplication, so an odd trailing
+            # byte waits for its other half.
+            inteiro = len(pendente) - (len(pendente) % 2)
+
+            if inteiro:
+                entregou = True
+                yield _to_stereo(pendente[:inteiro])
+                pendente = pendente[inteiro:]
+    finally:
+        response.close()
+
+    if not entregou:
+        raise RuntimeError("the speech service answered with no audio")
+
+
+def readiness(voice=None, api_key=None, language=None):
     """What voice can and cannot do on this machine, as a plain answer.
 
     Reported rather than discovered at the moment of failure: somebody deciding whether to have
@@ -343,7 +492,7 @@ def readiness(voice=None):
 
     opus = find_opus()
     stt = find_stt()
-    tts = find_tts(voice)
+    tts = cloud_tts(voice, api_key, language)
     transport = has_transport()
     e2ee = dave.available()
 
@@ -369,24 +518,39 @@ def readiness(voice=None):
         else:
             missing.append("a local speech-to-text program (whisper.cpp)")
     if not tts:
-        missing.append("a local text-to-speech program (piper, or `say` on macOS)")
+        # Which half is missing, because the two are fixed in different places by different
+        # people: the voice is a setting somebody chooses, the key is a secret somebody types.
+        if not api_key:
+            missing.append(
+                "the elevenlabs_api_key secret (set it with `secret set plugin/discord "
+                "elevenlabs_api_key`; it is never passed on a command line)")
+        if not resolve_voice(voice, language):
+            missing.append(
+                "a voice to speak with — put a voice id in the tts_voice setting, either one id "
+                "for every language or a mapping of language to id")
 
     return {
         "can_join": bool(opus and transport),
         "can_listen": bool(opus and stt and transport),
         "can_speak": bool(opus and tts and transport),
         "transport": transport,
-        # Which voice, not only that there is one. Two are commonly installed and they are
-        # different languages; "tts: piper" does not tell anybody which one is answering.
-        "voice": os.path.basename(tts["model"]) if tts and tts.get("model") else None,
+        # Which voice, not only that there is one. The setting may hold several and which one
+        # answers depends on the language being spoken; "tts: elevenlabs" says nothing useful.
+        "voice": tts["voice_id"] if tts else None,
+        "language": language,
         "e2ee": e2ee,
         "opus": opus,
         "stt": stt["name"] if stt else None,
         "tts": tts["name"] if tts else None,
         "missing": missing,
 
-        # Said explicitly, because it is the property that would be quietly lost first.
+        # Said explicitly, because these are the properties that would be quietly lost first, and
+        # they are no longer the same answer. Recognition is still local: nobody's voice is
+        # uploaded, and a recording exists only as bytes in memory until it becomes text. Speaking
+        # is not: the sentence Aurora is about to say is sent to ElevenLabs to be read aloud.
         "audio_leaves_this_machine": False,
+        "text_leaves_this_machine": bool(tts),
+        "speech_service": ELEVENLABS_HOST if tts else None,
     }
 
 
@@ -501,145 +665,3 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
         shutil.rmtree(directory, ignore_errors=True)
 
 
-def voices():
-    """The voices this machine can speak with, as `say` reports them."""
-    import subprocess
-
-    found = shutil.which("say")
-
-    if not found:
-        return []
-
-    listed = subprocess.run([found, "-v", "?"], capture_output=True, timeout=20)
-
-    # `say -v ?` writes "Name  lang_REGION  # sample", and a name may carry a parenthesised
-    # qualifier — "Eddy (Português (Brasil))" — so the language is found by shape rather than by
-    # position. Splitting on whitespace and taking the second field finds half the voices.
-    import re
-
-    found_voices = []
-
-    for line in listed.stdout.decode(errors="replace").splitlines():
-        match = re.match(r"^(.+?)\s+([a-z]{2}_[A-Z]{2})\s", line)
-
-        if match:
-            found_voices.append({
-                "name": match.group(1).split(" (")[0].strip(),
-                "language": match.group(2),
-            })
-
-    return found_voices
-
-
-def _length_scale_for(pitch):
-    """How much to slow piper down so that compressing by `pitch` lands back at normal speed.
-
-    Not `pitch` itself, which is the obvious guess and is wrong by half. `--length_scale` stretches
-    phoneme length, and the sentence silence around it does not stretch with it, so the duration a
-    given scale actually buys is about half of what it asks for. Measured on this machine, three
-    runs each because piper's noise makes any single one unreliable:
-
-        length_scale  1.0 -> 1.01x    1.2 -> 1.08x    1.4 -> 1.20x
-
-    which is a duration ratio of 1 + (scale - 1) / 2, so the scale needed for a ratio of `pitch` is
-    twice the distance from one. At 1.4 that predicts 1.20 and measured 1.20.
-    """
-    return 1.0 + (pitch - 1.0) * 2.0
-
-
-def _shift_pitch(wav_bytes, factor):
-    """Raises a voice by `factor` without changing how fast it talks.
-
-    Piper has no pitch control, so this is the two-step every vocoder-less engine uses: ask it to
-    speak *slower* by the factor, then resample the result *shorter* by the same factor. The two
-    cancel in duration and compound in pitch.
-
-    Needed because there is no other lever. Piper's entire Portuguese catalogue is five voices and
-    the highest of them measures 181 Hz — the same as a voice Windows ships as female — so "use a
-    different one" is not an option that exists. Kept as a setting, at 1.0 by default, because a
-    shifted voice is a processed voice and whether it sounds better is the owner's ear, not a fact.
-    """
-    source = wave.open(io.BytesIO(wav_bytes))
-    channels, width, rate, frames = (
-        source.getnchannels(), source.getsampwidth(), source.getframerate(), source.getnframes())
-    raw = source.readframes(frames)
-
-    if width != 2:
-        # Only 16-bit is resampled here. Anything else is handed back untouched rather than
-        # mangled: a wrong-width "shift" is silence or noise, and both are worse than a low voice.
-        return wav_bytes
-
-    samples = array.array("h")
-    samples.frombytes(raw)
-
-    total = len(samples) // channels
-    kept = int(total / factor)
-    shifted = array.array("h")
-
-    for i in range(kept):
-        # Linear interpolation between the two neighbouring frames. Nearest-neighbour is audible
-        # as a rasp on sibilants; this is one multiply more and does not have it.
-        position = i * factor
-        left = int(position)
-        right = min(left + 1, total - 1)
-        weight = position - left
-
-        for channel in range(channels):
-            a = samples[left * channels + channel]
-            b = samples[right * channels + channel]
-            shifted.append(int(a + (b - a) * weight))
-
-    out = io.BytesIO()
-    written = wave.open(out, "wb")
-    written.setnchannels(channels)
-    written.setsampwidth(width)
-    written.setframerate(rate)
-    written.writeframes(shifted.tobytes())
-    written.close()
-
-    return out.getvalue()
-
-
-def synthesise(engine, text, model=None, timeout=60, voice=None, pitch=1.0):
-    """Turns text into audio, locally. Returns the bytes and leaves nothing behind."""
-    if engine is None:
-        raise RuntimeError("no local text-to-speech program is installed")
-
-    directory = _workspace()
-    target = os.path.join(directory, "speech.wav")
-
-    # The caller may name one; otherwise the engine carries whatever it was found with.
-    model = model or engine.get("model")
-
-    try:
-        arguments = [
-            argument.replace("{output}", target)
-                    .replace("{length_scale}", "%.3f" % _length_scale_for(pitch)).replace("{model}", model or "")
-                    .replace("{text}", text)
-                    .replace("{voice}", "-v" + voice if voice else "")
-            for argument in engine["arguments"]
-        ]
-
-        # An empty placeholder is not an empty argument. `say ""` reads the empty string aloud.
-        arguments = [a for a in arguments if a]
-
-        command = [engine["path"], *arguments]
-        stdin = text.encode() if engine["name"] == "piper" else None
-
-        finished = subprocess.run(
-            command, input=stdin, capture_output=True, timeout=timeout, check=False)
-
-        if finished.returncode != 0 or not os.path.exists(target):
-            raise RuntimeError("%s produced no audio" % engine["name"])
-
-        with open(target, "rb") as handle:
-            spoken = handle.read()
-
-        # Only where the engine was actually asked to slow down. Compressing audio that was
-        # rendered at normal speed would raise the pitch and speed the voice up with it.
-        if pitch != 1.0 and "{length_scale}" in " ".join(engine["arguments"]):
-            spoken = _shift_pitch(spoken, pitch)
-
-        return spoken
-    finally:
-        shutil.rmtree(directory, ignore_errors=True)

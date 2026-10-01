@@ -148,7 +148,15 @@ public sealed class DiscordPluginTests : IDisposable
         Assert.Equal("plugin/discord", manifest.PluginId);
         Assert.Equal(35, manifest.Capabilities.Count);
         Assert.NotNull(manifest.Service);
-        Assert.Equal("bot_token", Assert.Single(manifest.RequiredSecrets!).Name);
+        // Two secrets, and the second one is a boundary rather than a convenience: speaking is the
+        // one thing Aurora does that leaves the machine, so the key that pays for it is declared
+        // in the manifest where somebody has to agree to it, next to the host it talks to.
+        Assert.Equal(
+            ["bot_token", "elevenlabs_api_key"],
+            manifest.RequiredSecrets!.Select(s => s.Name).ToArray());
+
+        // Deliberately not asserted here: this fixture rewrites the manifest's network endpoints
+        // to point at a fake Discord on loopback, so what it would be testing is the fixture.
 
         // Every write declares an effect, and every effectful capability needs approval. Nothing
         // that changes somebody's Discord happens because Aurora felt like it.

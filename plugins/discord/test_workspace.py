@@ -77,59 +77,6 @@ if __name__ == "__main__":
     unittest.main(verbosity=2)
 
 
-class Pitch(unittest.TestCase):
-    """Raising the voice without speeding it up.
-
-    Piper's whole Portuguese catalogue is five voices and the highest measures the same as a voice
-    Windows ships as female, so "pick a different one" is not an option that exists. Shifting is the
-    only lever, and it is only worth having if the speech does not get faster with the pitch.
-    """
-
-    def test_the_slowdown_is_twice_the_distance_from_one(self):
-        # --length_scale buys about half the duration it asks for, because the silence around the
-        # phonemes does not stretch with them. Compensating with the pitch itself leaves the voice
-        # talking ~10% faster, which is what the first attempt did.
-        self.assertAlmostEqual(1.0, voice_engines._length_scale_for(1.0))
-        self.assertAlmostEqual(1.4, voice_engines._length_scale_for(1.2))
-        self.assertAlmostEqual(1.3, voice_engines._length_scale_for(1.15))
-
-    def test_shifting_shortens_the_audio_by_the_factor(self):
-        import io as _io
-        import struct
-        import wave
-
-        rate, seconds, factor = 22050, 1.0, 1.2
-        frames = int(rate * seconds)
-
-        raw = _io.BytesIO()
-        written = wave.open(raw, "wb")
-        written.setnchannels(1)
-        written.setsampwidth(2)
-        written.setframerate(rate)
-        written.writeframes(struct.pack("<%dh" % frames, *([1000] * frames)))
-        written.close()
-
-        shifted = wave.open(_io.BytesIO(voice_engines._shift_pitch(raw.getvalue(), factor)))
-
-        self.assertEqual(rate, shifted.getframerate())
-        self.assertAlmostEqual(frames / factor, shifted.getnframes(), delta=2)
-
-    def test_audio_that_is_not_sixteen_bit_is_left_alone(self):
-        # Resampling the wrong width produces noise or silence, and both are worse than a low voice.
-        import io as _io
-        import wave
-
-        raw = _io.BytesIO()
-        written = wave.open(raw, "wb")
-        written.setnchannels(1)
-        written.setsampwidth(1)
-        written.setframerate(22050)
-        written.writeframes(b"\x80" * 1000)
-        written.close()
-
-        self.assertEqual(raw.getvalue(), voice_engines._shift_pitch(raw.getvalue(), 1.2))
-
-
 class AudioContext(unittest.TestCase):
     """Sizing whisper's encoder window to the utterance (docs/adr/0085).
 

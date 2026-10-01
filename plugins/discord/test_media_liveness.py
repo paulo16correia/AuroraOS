@@ -263,7 +263,7 @@ class Status(unittest.TestCase):
 
     def setUp(self):
         self._readiness = discord_service.voice_engines.readiness
-        discord_service.voice_engines.readiness = lambda voice=None: {
+        discord_service.voice_engines.readiness = lambda *_, **__: {
             "can_join": True, "can_speak": True, "can_listen": True, "missing": []}
 
     def tearDown(self):
