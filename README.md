@@ -4,7 +4,13 @@
 
 <br>
 
+<!-- The CI badge belongs here. It is out while GitHub Actions is not running on this repository,
+     because a red badge says "this is broken" when what it means is "this has not been run", and
+     the first is a worse lie than saying nothing. The workflow itself is in place and unchanged;
+     put the badge back the moment a run goes green:
+
 [![CI](https://github.com/paulo16correia/AuroraOS/actions/workflows/ci.yml/badge.svg)](https://github.com/paulo16correia/AuroraOS/actions/workflows/ci.yml)
+-->
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-1f6feb.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
