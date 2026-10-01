@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Windows first, and not alphabetically: plugin confinement is an AppContainer, which exists
+  # only here. A green build on another platform says nothing about whether plugins are actually
+  # confined, so this is the job that gates.
+  windows:
+    name: Build and test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        # Warnings are errors here as they are locally (Directory.Build.props), so a warning that
+        # someone stopped seeing in their editor still stops the build.
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        # The Python plugin suites run from inside the .NET suite, which is deliberate: a test
+        # nobody executes is documentation, and this repository has been bitten by that before.
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+  # Everything that is not the sandbox should still compile and pass elsewhere. This job is
+  # deliberately build-only: claiming the full suite passes on Linux would be a guess until
+  # somebody has watched it, and an honest amber is worth more than a green that lies.
+  linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release

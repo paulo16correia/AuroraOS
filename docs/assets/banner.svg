@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300"
+     role="img" aria-label="Aurora OS — a cognitive operating system for a persistent digital entity">
+  <title>Aurora OS</title>
+
+  <defs>
+    <!-- The aurora itself: the name is not decoration, so the mark is the thing it is named for. -->
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#0b1020"/>
+      <stop offset="55%"  stop-color="#121a33"/>
+      <stop offset="100%" stop-color="#0d1226"/>
+    </linearGradient>
+
+    <linearGradient id="veil" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%"   stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="45%"  stop-color="#22d3ee" stop-opacity="0.55"/>
+      <stop offset="75%"  stop-color="#a78bfa" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#f0abfc" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="veil2" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%"   stop-color="#34d399" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#34d399" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="wordmark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#e8ecff"/>
+      <stop offset="60%"  stop-color="#a5b4fc"/>
+      <stop offset="100%" stop-color="#67e8f9"/>
+    </linearGradient>
+
+    <filter id="soften" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+
+    <clipPath id="frame">
+      <rect x="0" y="0" width="1200" height="300" rx="16"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="300" fill="url(#sky)"/>
+
+    <!-- stars, placed rather than random so the file renders identically everywhere -->
+    <g fill="#ffffff" opacity="0.5">
+      <circle cx="90"   cy="46"  r="1.4"/><circle cx="212" cy="88"  r="1"/>
+      <circle cx="318"  cy="38"  r="1.2"/><circle cx="437" cy="72"  r="0.9"/>
+      <circle cx="560"  cy="30"  r="1.3"/><circle cx="664" cy="96"  r="1"/>
+      <circle cx="781"  cy="44"  r="1.1"/><circle cx="905" cy="82"  r="1.4"/>
+      <circle cx="1012" cy="36"  r="1"/>  <circle cx="1124" cy="74" r="1.2"/>
+      <circle cx="152"  cy="140" r="0.9"/><circle cx="1066" cy="132" r="0.9"/>
+    </g>
+
+    <g filter="url(#soften)" opacity="0.9">
+      <path d="M -40 300 C 130 210, 190 100, 300 30 L 372 30 C 262 106, 206 216, 96 300 Z"
+            fill="url(#veil)"/>
+      <path d="M 150 300 C 300 200, 352 108, 452 34 L 512 34 C 412 112, 362 214, 232 300 Z"
+            fill="url(#veil2)"/>
+      <path d="M 300 300 C 438 214, 492 112, 586 40 L 632 40 C 546 118, 492 222, 372 300 Z"
+            fill="url(#veil)" opacity="0.75"/>
+    </g>
+
+    <!-- the horizon, so the veils have something to stand on -->
+    <path d="M 0 268 C 180 250, 360 276, 560 262 C 760 248, 960 274, 1200 256 L 1200 300 L 0 300 Z"
+          fill="#070b16" opacity="0.92"/>
+
+    <!-- Anchored at the right edge and grown leftwards, so the longest line sets the width and
+         nothing can quietly run off the canvas the way it did the first time. -->
+    <g transform="translate(1152, 150)" text-anchor="end">
+      <text x="0" y="-18" font-family="Segoe UI, Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif"
+            font-size="80" font-weight="700" letter-spacing="-2" fill="url(#wordmark)">Aurora OS</text>
+      <text x="0" y="26" font-family="Segoe UI, Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif"
+            font-size="23" font-weight="400" fill="#93a3c9">A cognitive operating system, on your own machine.</text>
+      <text x="0" y="66" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+            font-size="15" fill="#5f6f96">resolve → validate → policy → consent → idempotency → execute → audit</text>
+    </g>
+  </g>
+
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="16" fill="none"
+        stroke="#243050" stroke-width="1"/>
+</svg>
