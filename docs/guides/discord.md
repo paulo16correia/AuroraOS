@@ -126,9 +126,12 @@ Aurora can hold a conversation in a voice channel. The rules it follows:
 - Audio it cannot attribute to a person is discarded rather than guessed at.
 - Silence ends a turn; one turn produces one observation.
 
-**Audio never leaves this machine.** Speech recognition and synthesis run through local programs —
-`whisper.cpp`, and `piper` or macOS's `say`. There is no fallback that reaches a service. If nothing
-local is installed, the capability refuses and tells you what to install. Raw audio is never kept.
+**Audio never leaves this machine. The text Aurora is about to say does.** Recognition is local —
+`whisper.cpp`, with a model that ships beside the plugin — and nobody's voice is uploaded: a
+recording exists as bytes in memory and as one scratch file deleted in the same call that wrote it.
+Speaking is not local: the sentence goes to ElevenLabs to be read aloud, through the same client the
+voice plugin uses (`docs/guides/voice.md`). There is no fallback to a local voice, and if either
+half is missing the capability refuses and names what to install. Raw audio is never kept.
 
 `discord.voice.status` reports what this machine can actually do before you need it.
 

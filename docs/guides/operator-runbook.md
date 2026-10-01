@@ -55,8 +55,9 @@ are Python programs. You need CPython 3 available as `python3` (or `python`).
 
 - **Discord voice** needs `libopus` (native) and a local speech-to-text. Without them, voice
   reports itself unavailable rather than failing mid-call.
-- **Local voice** needs faster-whisper (or whisper.cpp), Coqui XTTS (or macOS `say`), and a local
-  Ollama model. All optional; the stack reports what is missing.
+- **Voice** needs `whisper.cpp` with a model beside the plugin, a local Ollama model, and an
+  ElevenLabs key for speaking — speech is the one leg that leaves the machine. All optional; the
+  plugin reports what is missing through `voice.status` without starting anything.
 
 None of these are needed for text-only Microsoft 365 or Discord messaging.
 
@@ -293,11 +294,12 @@ UNVERIFIED. Voice turn-taking/governance and the cipher/codec are VERIFIED again
 real round trip, but **voice against real Discord is VERIFIED on macOS only**, and needs `libopus`
 plus a local STT present.
 
-**Voice (telephony / OpenAI Realtime)** — IMPLEMENTED and TESTED against a loopback Realtime
-stand-in. Live use needs real provider and OpenAI credentials and has **not** been verified
-end-to-end. **Local voice** (faster-whisper / Coqui XTTS / Ollama) is IMPLEMENTED and TESTED with
-the engines faked; running it for real needs those engines and models installed, and is best with a
-GPU.
+**Voice** — IMPLEMENTED and TESTED through the real plugin host and the real Kernel, with the
+recogniser and speaker scripted and the model reached over HTTP on loopback. The telephone is gone:
+there is one conversation, made of whisper, a model on this machine, and ElevenLabs. Running it for
+real needs those installed and an ElevenLabs key, and has **not** been verified end-to-end — nothing
+here has met the real speech service, and no whisper model is installed beside the voice plugin yet.
+Voice is off until `Aurora:Voice:Enabled` is set.
 
 **Do not claim Windows live verification for Discord/Microsoft/Voice** — it has not happened. Demo
 these against their stand-ins, or on macOS where the real Discord path is verified, and say which.

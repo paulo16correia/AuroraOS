@@ -1,96 +1,197 @@
 # Voice
 
-**Status:** the runtime is **IMPLEMENTED · TESTED**. The default speech layer is now **local** —
-Faster-Whisper, Ollama and XTTS on your own machine (`docs/adr/0074`) — and its whole path is tested
-through the real plugin host and the real Kernel. **UNVERIFIED:** none of the three models is
-installed here, so nothing has been transcribed, answered or spoken. The OpenAI Realtime transport
-is implemented and tested over a real socket, and UNVERIFIED against the real endpoint: no key
-exists here. Twilio and a real +351 number remain UNVERIFIED; inbound PSTN remains UNSUPPORTED. See
-`docs/reference/platform-support.md`.
+**Status:** the runtime is **IMPLEMENTED · TESTED** through the real plugin host and the real
+Kernel, with the recogniser and the speaker scripted and the language model reached over real HTTP
+on loopback. **UNVERIFIED:** nothing here has met the real ElevenLabs, and no whisper model is
+installed beside the voice plugin, so nothing has been transcribed or spoken on this machine
+through this path. See `docs/reference/platform-support.md`.
 
 ## What this is
 
-Aurora gained a voice, not a phone bot. The same Aurora that exists in text and in Discord, reached
-through a different transport. There is one session model, one grant model, one audit and one
-identity across every channel (`docs/adr/0073`).
+Aurora gained a voice, not a second assistant. The same Aurora that exists in text and in Discord,
+reached through a different channel. There is one session model, one grant model, one audit and one
+identity across all of them (`docs/adr/0073`).
 
-Aurora is not a second assistant on the phone. Its name, values, interaction rules, prohibited
-claims, disclosure and tone all come from the personality profile that governs every other channel;
-the voice layer arranges them and contributes nothing about who Aurora is.
+Its name, values, interaction rules, disclosure and tone all come from the personality profile that
+governs every other channel. The voice layer arranges them and contributes nothing about who Aurora
+is.
+
+There is also one voice *implementation*. A plugin that needs to speak or listen does not write its
+own: `plugins/voice/speech.py` is the client, and a plugin that needs it carries a copy, checked
+byte for byte against the original by its own tests. Discord does exactly that.
+
+## What leaves this machine, and what does not
+
+This is the one thing to read before deciding whether to turn voice on.
+
+| | |
+| --- | --- |
+| **Hearing** | whisper, locally. Nobody's voice is uploaded. A recording exists as bytes in memory and as one file in a scratch directory that is deleted in the same call that wrote it. |
+| **Thinking** | a model on this machine, over loopback. |
+| **Speaking** | **ElevenLabs.** The sentence Aurora is about to say is sent to them to be read aloud. |
+
+Every local European Portuguese voice that could be had was measured and none was good enough to be
+Aurora's. That leg was given up deliberately, and the cost is stated rather than hidden:
+`voice.status` reports `audio_leaves_this_machine` and `text_leaves_this_machine` as separate
+answers, so neither can be mistaken for the other.
+
+There is deliberately **no fallback to a local voice**. Aurora has nothing to say without her
+language model anyway, and dropping mid-conversation into a voice its owner rejected would be worse
+than stopping.
 
 ## Where it runs
 
 ```
-microphone  →  Aurora  →  sandboxed voice plugin  →  Whisper → Ollama → XTTS
-                                    ↓ reports                 (all on this machine)
-                              Aurora Kernel  →  capability  →  observation
-                                    ↓ calls back
-                              voice plugin  →  XTTS  →  speech  →  Aurora  →  speakers
+microphone  →  Aurora  →  sandboxed voice plugin  →  whisper → model → ElevenLabs
+                                 ↓ reports            (local)  (local)  (network)
+                           Aurora Kernel  →  capability  →  observation
+                                 ↓ calls back
+                           voice plugin  →  speech  →  Aurora  →  speakers
 ```
 
-With OpenAI Realtime instead, the shape is the same and the far end is somebody else's:
-
-```
-telephone  →  provider  →  sandboxed voice plugin  →  OpenAI Realtime
-```
-
-The plugin holds both connections, because Aurora's own process opens no sockets and the build
-fails if it ever does. The plugin never calls into Aurora: it **reports** that the interaction layer
-wants a tool, and Aurora decides and calls it back. That is why voice needed no change to the plugin
-protocol.
+The plugin holds the one connection Aurora's own process may not — Aurora opens no sockets and the
+build fails if it ever does. The plugin never calls into Aurora: it **reports** that the interaction
+layer wants a capability, and Aurora decides and calls it back. That is why voice needed no change
+to the plugin protocol.
 
 ## Setting it up
 
-### 1. Decide what voice may do — it does nothing by default
+### 1. Turn it on — it does nothing until you do
 
 ```
-Aurora:Voice:InboundEnabled          false
-Aurora:Voice:OutboundEnabled         false
-Aurora:Voice:AllowedDestinations     (empty — allows nothing)
+Aurora:Voice:Enabled                 false
 Aurora:Voice:MaxConcurrentSessions   2
-Aurora:Voice:MaxCallDuration         00:15:00
 ```
 
-An empty destination list allows nothing. Having a number is not a decision to ring people with it,
-which is why inbound and outbound are separate switches.
+`Enabled` is false on a fresh install, and a session is refused with `not_enabled` until somebody
+sets it. That is separate from the operator's stop switch: stopped is something that was running
+being stopped, not enabled is nobody having decided yet. They are reported separately because they
+are fixed by different people in different places.
 
-For Portugal:
+An installation that started listening because nobody had said not to would be making that decision
+on its owner's behalf, in the room where that is least recoverable.
 
-```
-Aurora:Voice:AllowedDestinations     +351
-Aurora:Voice:Number                  +351XXXXXXXXX
-```
-
-An entry is a whole E.164 number or a country prefix. There is no other pattern language, because
-one would end up allowing more than whoever wrote it meant.
-
-### 2. Secrets go in the vault, never in configuration
+### 2. The speech key goes in the vault, never in configuration
 
 ```bash
-aurora secret set plugin/voice provider_auth_token
-aurora secret set plugin/voice provider_account_sid
-aurora secret set plugin/voice openai_api_key
+aurora secret set plugin/voice elevenlabs_api_key
 ```
 
-They reach the plugin over its pipe. **The interaction layer never receives a provider credential**
-— it has no use for one, and a model that held one could be talked into repeating it.
+It reaches the plugin over its pipe, is held in memory for the life of the process, and goes into
+exactly one header. It is never passed on a command line. **The interaction layer never receives
+it** — it has no use for one, and a model that held a credential could be talked into repeating it.
 
-### 3. Outbound calls need a reason each time
+Without it the plugin still answers `voice.status`, which is how you find out it is missing rather
+than by a sentence that never gets spoken.
 
-An outbound call carries an `OutboundCallIntent`: purpose, objective, target, grant, constraints,
-authorising actor and an approval reference. Without one it is refused, and a mission or a plan is
-not one.
+### 3. Choose a voice
 
-## What is not possible here
+Whoever installs Aurora chooses it; there is no default, because a default would be somebody else's
+choice of what Aurora sounds like. Put a voice id in `plugins/voice/config.json`:
 
-**Inbound calls.** Twilio delivers them by POSTing to a public URL and its media streams need Twilio
-to dial a WebSocket. Aurora binds loopback unconditionally. There is no endpoint to give it.
+```json
+{
+  "local": {
+    "stt": { "language": "auto" },
+    "tts": { "voice": "21m00Tcm4TlvDq8ikWAM", "locale": "en" },
+    "llm": { "endpoint": "http://127.0.0.1:11434", "model": "llama3.1:8b" }
+  }
+}
+```
 
-The plugin validates what arrives if you put ingress in front of it yourself — that is a decision
-about your network, with a plugin that holds no Aurora keys behind it — but nothing here ships a
-listener, and inbound is UNSUPPORTED until you do.
+Two reasonable things to want, and this does not choose between them. One voice for everything
+gives Aurora a single recognisable identity, at the cost of carrying that speaker's accent into
+every other language. One voice per language gives a native accent everywhere, at the cost of Aurora
+not having a voice of her own:
 
-**Joining a Teams call.** Not implemented; the abstraction exists so it can be.
+```json
+{ "tts": { "voice": { "pt": "…", "en": "…", "default": "…" } } }
+```
+
+`pt-PT` finds a voice filed under `pt`; `pt` is not found by `pt-BR`.
+
+`locale` is the language Aurora answers in by default and the one sent to the speech service. Sent
+only when known: an empty language code is not the same as an absent one — the service rejects the
+first and infers for the second. Inferring is the failure that matters, because "no" is a word in
+several languages and a wrong guess reads the whole sentence in the wrong one.
+
+### 4. Install what hears
+
+```bash
+ollama pull llama3.1:8b
+```
+
+and put a whisper model where the plugin can read it:
+
+```
+plugins/voice/models/ggml-large-v3-turbo.bin
+```
+
+Its own directory, and nowhere else. The sandbox lets a plugin read what ships beside it and nothing
+else of yours — a model in a home cache is one the plugin cannot open, correctly, and so is one
+belonging to another plugin. Multilingual models are preferred in order; an English-only model
+transcribes Portuguese into confident nonsense rather than failing, which is the worse of the two.
+
+`voice.status` says which engines are present without contacting or starting anything, so you can
+find out what is missing before approving something that would find out by failing. If an engine is
+absent a session is **refused by name** rather than quietly becoming something else.
+
+## The seven capabilities
+
+| | |
+| --- | --- |
+| `voice.status` | What voice can and cannot do here. Starts nothing, contacts nobody. |
+| `voice.session.start` | Begins a conversation Aurora has already authorised. |
+| `voice.listen` | A slice of microphone audio. Base64 PCM16, 24 kHz mono. |
+| `voice.poll` | Drains what the conversation has said and what it is waiting on. |
+| `voice.tool_result` | What Aurora decided about a capability the model asked for. |
+| `voice.interrupt` | Stop talking, now. |
+| `voice.hangup` | End the session. |
+
+There were nine. `voice.inbound` and `voice.outbound` were the telephone, and the telephone is gone.
+
+## One round of a conversation
+
+1. `VoiceRuntime.BeginAsync(channel, participant, grant)` checks policy — stopped, enabled,
+   concurrency — and opens a `VoiceSession` with its grant;
+2. `VoiceIdentity` composes the instructions from the active `PersonalityProfile`;
+3. `voice.session.start` begins the conversation with those instructions and only the granted
+   capabilities;
+4. audio arrives through `voice.listen`; the plugin decides locally when somebody stopped talking;
+5. the model asks for a capability → the plugin queues it and says so;
+6. `VoiceRuntime.PumpAsync` drains it → `VoiceToolBridge` → the session's grant → **the real
+   Kernel**;
+7. the outcome goes back through `voice.tool_result`, in one of four words, never embellished.
+
+**Pumped rather than pushed.** The plugin queues and Aurora drains. A callback would need the plugin
+to call into Aurora, which the plugin protocol exists to prevent.
+
+### The turn does not happen where the audio arrives
+
+`voice.listen` buffers and returns. Turn detection is local — amplitude and a silence window, which
+is crude and enough to tell a sentence from a pause — and when somebody stops talking the turn goes
+to a worker, which recognises, thinks and synthesises and leaves what it produced on the queue
+`voice.poll` already drains.
+
+This is not an optimisation. Every capability declares a timeout, and `voice.listen` declares ten
+seconds because appending audio is a forwarding operation. Recognition and an 8B model are not:
+doing them inside that call made Aurora abandon turns it had already been told about, and — because
+the plugin reads its protocol one frame at a time — made `voice.poll` and `voice.hangup` unreachable
+while it happened.
+
+Interrupting and hanging up bump a generation. Work carrying an older number is dropped rather than
+spoken, so a sentence synthesised after a conversation ended never reaches anybody.
+
+### Speaking starts before the sentence is finished
+
+The speech client offers two ways to ask for the same thing. `speak()` returns the whole sentence,
+for callers that need it in one piece; `stream()` yields it as it arrives, for callers that can
+start playing before it is finished — which is the difference between answering in a quarter of a
+second and answering in two. Discord streams. The generator is also the cancellation mechanism:
+closing it stops reading and drops the connection, and nothing goes on working afterwards.
+
+A failure raises rather than yielding silence. A refusal that says the quota ran out is useful; half
+a second of nothing is indistinguishable from a quiet room.
 
 ## Security
 
@@ -99,150 +200,37 @@ listener, and inbound is UNSUPPORTED until you do.
 | Identity | Composed from the personality profile. Nothing invented in the voice layer. |
 | Authority | A grant issued at session start that never grows. Speech does not widen it. |
 | Relationship, memory, mission, plan | Not inputs to the decision. The function has no parameter for any of them. |
-| Caller ID | `claimed_from`. The network carries whatever the originating carrier says. |
-| Tool requests | Session grant first, then the Kernel. Both real, in that order. |
+| Who is on the other end | The channel's claim, stored as a claim. Never proof. |
+| Capability requests | Session grant first, then the Kernel. Both real, in that order. |
 | Outcomes | Four words, never embellished. Unknown is never narrated as done. |
-| Webhooks | Signature, freshness, replay — in that order, before the payload is read. |
+| Speech as input | Content, never instruction, whatever the words are. |
 | Stop | One switch, every channel, every live session, audited. |
 
-## The runtime
-
-`plugins/voice/voice_service.py` carries words; `VoiceRuntime` decides. Both exist, and the store,
-the policy, the bridge and the runtime are all registered in `ServiceRegistration`.
-
-One round of a conversation:
-
-1. a provider event arrives → `voice.inbound` validates signature, freshness and replay;
-2. `VoiceRuntime` checks policy — stopped, inbound enabled, concurrency — and opens a
-   `VoiceSession` with its grant;
-3. `VoiceIdentity` composes the instructions from the active `PersonalityProfile`;
-4. `voice.session.start` begins the interaction with those instructions and only the granted tools;
-5. the speech layer asks for a capability → the plugin queues it and says so;
-6. `VoiceRuntime.PumpAsync` drains it → `VoiceToolBridge` → session grant → **the real Kernel**;
-7. the outcome goes back through `voice.tool_result`, in one of four words, never embellished.
-
-**Pumped rather than pushed.** The plugin queues and Aurora drains, which is how the Discord
-plugin's pending turns already work — the one voice design here that has met a real service. A
-callback would need the plugin to call into Aurora, which the plugin protocol exists to prevent.
-
-## The local speech layer
-
-Three engines on your machine, behind the same six-method contract the Realtime session offers. The
-provider is chosen by configuration and **local is the default**, because the point of it is that it
-needs nobody's permission and no network.
-
-| | | |
-| --- | --- | --- |
-| Hearing | Faster-Whisper (Turbo, or Large-v3) | falls back to `whisper.cpp` if that is what is installed |
-| Thinking | Ollama, `llama3.1:8b` by default | `POST /api/chat`, not streamed, tools declared |
-| Speaking | Coqui XTTS v2 | falls back to macOS `say` |
-
-XTTS has no voice of its own — it speaks in one it is given. By default that is one of the model's
-own studio voices; set `speaker_wav` to a sample and it clones that instead.
-
-Audio is 24 kHz mono PCM16 throughout, resampled to 16 kHz for Whisper by averaging rather than by
-dropping samples — decimation does not fail, it transcribes confidently into words nobody said.
-
-### The turn does not happen where the audio arrives
-
-`voice.listen` buffers and returns. When somebody stops talking the turn goes to a worker, which
-recognises, thinks and synthesises, and leaves what it produced on the queue `voice.poll` already
-drains — so a caller pumps until the answer is there, exactly as it does for a remote layer.
-
-This is not an optimisation. Every capability declares a timeout, and `voice.listen` declares ten
-seconds because appending audio to a remote service is a forwarding operation. Recognition and an
-8B model are not: doing them inside that call made Aurora abandon turns it had already been told
-about, and — because the plugin reads its protocol one frame at a time — made `voice.poll` and
-`voice.hangup` unreachable while it happened.
-
-Interrupting and hanging up bump a generation. Work carrying an older number is dropped rather than
-spoken, so a sentence synthesised after a call ended never reaches anybody.
-
-### Nothing is installed for you
-
-The models are gigabytes and you install them deliberately:
-
-```bash
-ollama pull llama3.1:8b
-pip install faster-whisper
-pip install TTS
-```
-
-`voice.status` says which engines are present without contacting or starting anything, so you can
-find out what is missing before approving something that would find out by failing. If an engine is
-absent, a session is **refused by name** rather than quietly becoming something else.
-
-### What it settles and what it does not
+## What is settled and what is not
 
 The path is tested end to end — audio in, `clock.now` through the real Kernel, audio out — with the
-recogniser and synthesiser scripted and the model reached over real HTTP on loopback. That proves
-every piece is connected to the next and that the Kernel is in the middle of it.
+recogniser and speaker scripted and the model reached over real HTTP on loopback. That proves every
+piece is connected to the next and that the Kernel is in the middle of it.
 
-It proves nothing about quality. Whether Whisper hears European Portuguese, whether Llama answers
-as Aurora rather than as a chat assistant, whether XTTS is worth listening to, and whether a turn
-completes in under a second are all questions for a machine with the models on it.
-
-## The remote speech layer
-
-`realtime.py` speaks the real OpenAI Realtime protocol over a real WebSocket — the RFC 6455 client
-vendored from the Discord plugin, which has performed a real handshake against a real service and
-been disconnected for masking a frame wrongly.
-
-| | |
-| --- | --- |
-| Endpoint | `wss://api.openai.com/v1/realtime?model=…` |
-| Headers | `Authorization: Bearer …`, `OpenAI-Beta: realtime=v1` |
-| Audio | base64 PCM16, 24 kHz mono, both directions |
-| Turn taking | `server_vad` — the service decides when somebody stopped talking |
-| Interruption | `input_audio_buffer.speech_started` → `response.cancel` |
-| Tools | function calls in, `function_call_output` out |
-
-Audio is **appended, never committed**. With server-side turn detection the service decides when a
-turn ended, and committing by hand takes that decision back and does it worse.
-
-**Without a key there is no session.** The plugin refuses rather than falling back to a stand-in,
-because a stand-in would let a call appear to happen. Choosing it at all takes
-`provider_kind: "realtime"` in the plugin's configuration; an installation that says nothing gets
-the local stack.
-
-### The audio granularity Aurora imposes
-
-A capability is capped at 600 calls a minute, which puts a floor of about **100 ms** under an audio
-chunk carried through `voice.listen`. That is the granularity a governed capability can have, and
-it costs up to 100 ms of latency. Worth knowing before measuring the conversation and blaming the
-model.
-
-## Running the slice locally
-
-```bash
-export OPENAI_API_KEY=sk-...
-python3 plugins/voice/local_slice.py
-```
-
-Needs `ffmpeg` for the microphone and `ffplay` or `afplay` for the speakers; it says which is
-missing rather than failing obscurely.
-
-**It is a harness, not a capability.** It opens your microphone, and a program that does that on
-somebody's behalf should be one they started. It talks to the real service and plays what comes
-back — and it does **not** go through Aurora's Kernel: a tool the model asks for there is answered
-with a refusal, because the governed path runs inside Aurora and the harness is outside it.
-
-Use it to hear the voice. Use the test suite to prove the governance.
+It proves nothing about quality. Whether whisper hears European Portuguese, whether the model
+answers as Aurora rather than as a chat assistant, and whether a turn completes in under a second
+are questions for a machine with the models on it.
 
 ## Known gaps
 
-- **Nothing has met the real service.** No OpenAI key exists on this machine, so every claim about
-  how the real endpoint behaves rests on its documentation.
-- **The microphone has never been opened from inside the sandbox.** The harness runs unsandboxed;
-  whether `sandbox-exec` and macOS TCC will let a confined plugin capture audio is untried, and it
-  is the next thing a real slice would hit.
-- **No local model has ever run.** Ollama, Faster-Whisper and Coqui are not installed here. The
-  local stack's tests script the recogniser and the synthesiser and reach a model on loopback.
-- **Nothing is wired to a device on Aurora's side.** `VoiceRuntime.ListenAsync` carries audio in and
-  `PumpAsync` carries it back out, both tested through the real host — but no microphone or speaker
-  is connected to either end outside the harness.
-- Nothing has met a real provider or a real number.
-- Inbound PSTN is unsupported without owner-supplied ingress.
+- **Nothing has met the real speech service.** No key exists here, so every claim about how
+  ElevenLabs behaves rests on its documentation and on a fake server on loopback.
+- **No whisper model is installed beside this plugin.** Discord ships one and hears today; voice
+  will hear once a `ggml-*.bin` is put in `plugins/voice/models/`.
+- **The microphone has never been opened from inside the sandbox**, and nothing on Aurora's side is
+  wired to a device: `ListenAsync` carries audio in and `PumpAsync` carries it back out, both tested
+  through the real host, with nothing at either end.
+- **`Aurora:Voice:MaxCallDuration` is documented as a ceiling and enforces nothing.** It did not
+  before the telephone was removed either.
+- **Leftovers of the telephone.** `Aurora:Voice:OutboundEnabled` and
+  `Aurora:Voice:AllowedDestinations` are still bound from configuration and read by nothing
+  reachable; `VoiceAuthorization` still has an outbound branch nothing calls; `voice_session` still
+  has its `direction`, `external_ref` and `intent_json` columns. Removing them reaches the database
+  and is a separate job.
 - Discord voice is not yet on the shared session model.
 - Audio quality, latency and PT-PT recognition are entirely unmeasured.
-- The plugin has no SIP path; whether one is worthwhile depends on measurements nobody has taken.

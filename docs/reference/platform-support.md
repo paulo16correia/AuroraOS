@@ -110,8 +110,9 @@ rather than operating systems, because that is where the risk is.
 | Local stack, end to end: audio → STT → Ollama → Kernel → `clock.now` → TTS | IMPLEMENTED · TESTED | 8, real host and Kernel | **partly** — real HTTP to the model, scripted STT/TTS |
 | Faster-Whisper transcribing PT-PT | **VERIFIED** — 3/3 correct, confidence 0.93 | — | **yes**, on an M1 |
 | Ollama answering as Aurora in PT-PT | **VERIFIED** — answers, and asks for the capability | — | **yes**, on an M1 |
-| XTTS v2 producing PT-PT audio | **VERIFIED** — real audio, 24 kHz | 4 | **yes**, on an M1 |
-| XTTS v2 voice quality | **UNVERIFIED** — nobody has listened | — | **no** |
+| XTTS v2 producing PT-PT audio | **REMOVED** — it was verified, and then replaced | — | measured on an M1, below |
+| XTTS v2 voice quality | **REMOVED** — nobody listened, and then it went | — | — |
+| ElevenLabs speaking | IMPLEMENTED · TESTED against a fake server on loopback | 17 | **no** — no key exists here |
 | Local stack latency on 8 GB | **VERIFIED UNUSABLE** — 694 s for one turn | — | **yes** — see below |
 | A whole turn on real engines, plugin side | **VERIFIED** — completed, correct answer, real audio | — | **yes** — see below |
 | A whole turn through Aurora's host on real engines | **UNVERIFIED** — never run end to end | — | **no** |
@@ -121,22 +122,25 @@ rather than operating systems, because that is where the risk is.
 | Identity composed from PersonalityProfile | IMPLEMENTED | 17 | not applicable — local |
 | Tool bridge through the real Kernel | IMPLEMENTED | 14 | not applicable — local |
 | Operator stop across every channel | IMPLEMENTED | 3 | not applicable — local |
-| Provider webhook validation (signature, replay, schema) | IMPLEMENTED | 16 | **no** |
+| Provider webhook validation (signature, replay, schema) | **REMOVED** with the telephone | — | — |
 | Interaction layer protocol and outcome truthfulness | IMPLEMENTED | 18 | **no** |
-| OpenAI Realtime transport — handshake, framing, audio, tools | IMPLEMENTED · TESTED | 20, real socket | **no** |
-| OpenAI Realtime — a real session against api.openai.com | **UNVERIFIED** | — | **no** — no key exists |
+| OpenAI Realtime transport | **REMOVED** — one interaction layer, not two | — | — |
 | Microphone capture inside the plugin sandbox | **UNVERIFIED** — never attempted | — | **no** |
 | Local audio harness (outside the sandbox) | IMPLEMENTED | preflight only | **no** — no key |
-| Twilio — a real outbound call | **UNVERIFIED** | fakes only | **no** |
-| A real +351 number | **UNVERIFIED** | — | **no** |
+| Twilio, outbound calls, a real +351 number | **REMOVED** — there is no telephone | — | — |
 | Audio, end to end | **not implemented** — this milestone is protocol correctness | — | — |
 | Inbound PSTN calls | **UNSUPPORTED** — see below | — | — |
 | Teams voice | **not implemented** | — | — |
 | Discord voice on the shared session model | **not migrated** — see below | — | — |
 
-**Nothing here has met a telephone, Twilio or OpenAI.** No credentials, no number, no calls. The
-tests run against deterministic fakes and a fake transport that can be told to disconnect — which is
-worth having, and is not verification.
+**The telephone is gone, and so is the second interaction layer.** What is left is one
+conversation — whisper hears, a model on this machine thinks, ElevenLabs speaks — and the rows above
+that say REMOVED are kept rather than deleted so that anybody who read an earlier version can see
+what became of them.
+
+**Nothing here has met the real speech service.** No key exists. The tests run against deterministic
+fakes and a server on loopback that can be told to answer slowly, in pieces, or with nothing — which
+is worth having, and is not verification.
 
 **The models have now run, and the machine cannot hold them.** All three engines were installed
 and measured on a MacBook Air M1 with 8 GB. Each works on its own; together they take about eight
@@ -240,22 +244,21 @@ argument.
 
 - whether Faster-Whisper Turbo transcribes European Portuguese well enough to act on;
 - whether Llama 3.1 8B answers as Aurora rather than as a chat assistant;
-- whether XTTS v2 in PT-PT is worth listening to;
+- whether the chosen ElevenLabs voice in PT-PT is worth listening to;
 - what the real latency of each stage is, and whether the whole turn fits in a second;
 - whether the silence window feels like a conversation or like a form.
 
-### Inbound calls are blocked by Aurora, not by the provider
+### Why there is no telephone
 
-Twilio delivers an inbound call by POSTing a webhook to a public URL, and its media streams need
-Twilio to dial a WebSocket. Aurora binds Kestrel to loopback unconditionally (`docs/adr/0045`).
-**There is no reachable endpoint and there will not be one.**
+A telephone company delivers an inbound call by POSTing a webhook to a public URL, and its media
+streams need the company to dial a WebSocket back. Aurora binds Kestrel to loopback unconditionally
+(`docs/adr/0045`), so there was no reachable endpoint and there was not going to be one — the same
+wall that makes Microsoft Teams change notifications UNSUPPORTED.
 
-This is the same wall that makes Microsoft Teams change notifications UNSUPPORTED. The plugin
-validates what arrives *if* an owner puts ingress in front of it — a tunnel, a forwarded port —
-which is a decision about their own network, made outside Aurora, with a plugin that holds no
-Aurora keys behind it. The plugin ships no listener of its own.
-
-So phone is **outbound-capable in code and inbound-blocked in deployment**.
+Outbound worked in code and had never placed a call. Carrying it meant carrying a second transport,
+a second set of credentials, a second authorisation path and the webhook validation that went with
+it, for a leg that had never run. It was removed rather than kept against the day somebody wanted
+it; what it would cost to bring back is written down here, which is cheaper than maintaining it.
 
 ### Discord voice is not migrated
 
@@ -267,10 +270,7 @@ trade, and that migration is a separate change with its own verification.
 
 ### What a real environment would settle
 
-- whether an OpenAI Realtime session accepts the session configuration as written;
-- whether the function-call frames match what the adapter parses;
-- whether Twilio's signature verification passes against real requests;
-- whether an outbound call reaches a +351 number at all;
+- whether the speech service accepts the request as written, and what it charges for it;
 - whether PT-PT speech recognition and the chosen voice are usable;
 - what any of it sounds like, which no test on this machine can say.
 
