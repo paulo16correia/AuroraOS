@@ -60,30 +60,27 @@ public sealed class VoiceRuntime
     private const string PluginId = "plugin/voice";
 
     /// <summary>
-    /// Answers a call somebody made: validates the provider's event, then decides whether there is
-    /// to be a conversation at all.
+    /// Begins a voice session on a channel, for somebody Aurora is about to talk to.
     /// </summary>
     /// <remarks>
-    /// The order matters. The event is validated by the plugin — signature, freshness, replay —
-    /// before Aurora reads anything in it, and Aurora decides about the session before anything is
-    /// started. A provider event is a claim that a telephone rang, not an instruction to answer.
+    /// This used to be <c>AnswerAsync</c>, and it took a provider event: a webhook from a
+    /// telephone company, validated before anything was created. That shape made answering the
+    /// telephone the only way a voice session could begin, which was fine while the telephone was
+    /// the only channel and wrong the moment it was not.
+    /// <para>
+    /// There is no telephone now. What is left is the part that was never about telephones: policy
+    /// says whether voice runs at all, the stop is honoured before anything is created, and two
+    /// sessions do not become three because somebody asked twice.
+    /// </para>
     /// </remarks>
-    public async Task<VoiceOutcome> AnswerAsync(
-        VoiceInboundEvent inbound, VoiceGrant grant, CancellationToken ct)
+    public async Task<VoiceOutcome> BeginAsync(
+        VoiceChannel channel, VoiceParticipant participant, VoiceGrant grant, CancellationToken ct)
     {
         VoiceSettings settings = await _policy.CurrentAsync(ct).ConfigureAwait(false);
 
         if (settings.Stopped)
         {
             return VoiceOutcome.Refused(VoiceRefusal.VoiceStopped, "voice is stopped");
-        }
-
-        if (!settings.InboundEnabled)
-        {
-            // Off until somebody turns it on. An installation that answered the telephone before
-            // its owner decided it should is one that decided on their behalf.
-            return VoiceOutcome.Refused(
-                VoiceRefusal.NotInGrant, "this installation does not answer calls");
         }
 
         IReadOnlyList<VoiceSession> live = await _sessions.LiveAsync(ct).ConfigureAwait(false);
@@ -95,115 +92,25 @@ public sealed class VoiceRuntime
                 $"{live.Count} voice sessions are already live");
         }
 
-        PluginResult validated = await CallAsync(
-            "voice.inbound",
-            new
-            {
-                form = inbound.Form,
-                signature = inbound.Signature,
-                url = inbound.Url,
-                event_id = inbound.EventId,
-                timestamp = inbound.Timestamp,
-            },
-            ct)
-            .ConfigureAwait(false);
-
-        if (!validated.Ok)
-        {
-            // A provider event that does not verify is not a call. Nothing is created and nothing
-            // is answered.
-            return VoiceOutcome.Refused(
-                validated.Refusal ?? "voice_bad_event", validated.Detail ?? "the event was refused");
-        }
-
-        JsonNode details = JsonNode.Parse(validated.OutputJson!)!;
-        var externalRef = details["external_ref"]?.GetValue<string>() ?? Guid.NewGuid().ToString("N");
-
-        VoiceSession? existing = await _sessions
-            .FindByExternalAsync("phone", externalRef, ct).ConfigureAwait(false);
-
-        if (existing is not null)
-        {
-            // The provider delivered the same event twice, which is ordinary. Resumed rather than
-            // duplicated: a second session would mean a second budget for one call.
-            return VoiceOutcome.Resumed(existing);
-        }
-
         var session = new VoiceSession(
             SessionId: Guid.NewGuid().ToString("N"),
-            Channel: VoiceChannel.Phone,
-            Provider: "phone",
+            Channel: channel,
+            Provider: channel.ToString().ToLowerInvariant(),
+
+            // Somebody is speaking to Aurora. The other direction was Aurora dialling out, which
+            // needed an approved reason and no longer exists.
             Direction: VoiceCallDirection.Inbound,
-            Participant: new VoiceParticipant(
-                details["claimed_from"]?.GetValue<string>() ?? "unknown",
-                Verification: ParticipantVerification.ChannelAsserted),
+            Participant: participant,
             Grant: grant,
             State: VoiceSessionState.Connecting,
             StartedAtUtc: _clock.UtcNow.ToString("O"),
-            CorrelationId: Guid.NewGuid().ToString("N"),
-            ExternalRef: externalRef);
+            CorrelationId: Guid.NewGuid().ToString("N"));
 
         await _sessions.OpenAsync(session, ct).ConfigureAwait(false);
 
         return await StartAsync(session, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Places a call Aurora decided to make, which needs a reason somebody approved.
-    /// </summary>
-    public async Task<VoiceOutcome> CallAsync(
-        OutboundCallIntent intent, string fromNumber, CancellationToken ct)
-    {
-        VoiceSettings settings = await _policy.CurrentAsync(ct).ConfigureAwait(false);
-        IReadOnlyList<VoiceSession> live = await _sessions.LiveAsync(ct).ConfigureAwait(false);
-
-        // The whole outbound rule, in the one place that already held it. A mission may have
-        // produced a goal and a planner a task; neither arrives here with an approval, and neither
-        // gets a call.
-        VoiceDecision decision = VoiceAuthorization.ForOutboundCall(
-            intent, _clock.UtcNow, settings.Stopped, settings.OutboundEnabled,
-            settings.AllowedDestinations, live.Count, settings.MaxConcurrentSessions);
-
-        if (!decision.Allowed)
-        {
-            return VoiceOutcome.Refused(decision.Refusal!, decision.Detail!);
-        }
-
-        var session = new VoiceSession(
-            SessionId: Guid.NewGuid().ToString("N"),
-            Channel: VoiceChannel.Phone,
-            Provider: "phone",
-            Direction: VoiceCallDirection.Outbound,
-            Participant: intent.Target,
-            Grant: intent.Grant,
-            State: VoiceSessionState.Connecting,
-            StartedAtUtc: _clock.UtcNow.ToString("O"),
-            CorrelationId: Guid.NewGuid().ToString("N"),
-            Intent: intent);
-
-        await _sessions.OpenAsync(session, ct).ConfigureAwait(false);
-
-        PluginResult placed = await CallAsync(
-            "voice.outbound",
-            new { session_id = session.SessionId, to = intent.Target.Handle, from = fromNumber },
-            ct)
-            .ConfigureAwait(false);
-
-        if (!placed.Ok)
-        {
-            await _sessions.AdvanceAsync(
-                session.SessionId, VoiceSessionState.Failed, placed.Detail, ct).ConfigureAwait(false);
-
-            return VoiceOutcome.Refused(
-                placed.Refusal ?? "voice_provider_failed", placed.Detail ?? "the call was not placed");
-        }
-
-        return await StartAsync(session, ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Starts the interaction, with instructions composed from Aurora's own identity.
-    /// </summary>
     private async Task<VoiceOutcome> StartAsync(VoiceSession session, CancellationToken ct)
     {
         ResolvedProfile profile = await _personality

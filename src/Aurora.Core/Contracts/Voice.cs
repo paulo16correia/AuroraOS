@@ -14,9 +14,6 @@ namespace Aurora.Core.Contracts;
 /// </remarks>
 public enum VoiceChannel
 {
-    /// <summary>The public telephone network, reached through a provider.</summary>
-    Phone,
-
     /// <summary>A Discord voice channel. Aurora's first voice, and the only verified one.</summary>
     Discord,
 
@@ -204,7 +201,7 @@ public sealed record VoiceSession(
 }
 
 /// <summary>
-/// The context one Realtime tool request is decided in.
+/// The context one tool request from a voice conversation is decided in.
 /// </summary>
 /// <remarks>
 /// Carried explicitly rather than looked up from ambient state, because the thing that must never

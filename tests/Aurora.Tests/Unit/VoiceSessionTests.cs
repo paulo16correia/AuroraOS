@@ -24,7 +24,7 @@ public sealed class VoiceSessionTests
         string id = "vs-1",
         string? external = "CA-provider-1",
         int maxCalls = 3,
-        VoiceChannel channel = VoiceChannel.Phone) =>
+        VoiceChannel channel = VoiceChannel.Discord) =>
         new(id, channel, "fake", VoiceCallDirection.Inbound,
             new VoiceParticipant("+351911111111"),
             new VoiceGrant(["memory.recall"], maxCalls, TimeSpan.FromMinutes(10),
@@ -44,7 +44,7 @@ public sealed class VoiceSessionTests
         VoiceSession? found = await store.FindAsync("vs-1", CancellationToken.None);
 
         Assert.NotNull(found);
-        Assert.Equal(VoiceChannel.Phone, found!.Channel);
+        Assert.Equal(VoiceChannel.Discord, found!.Channel);
         Assert.Equal("+351911111111", found.Participant.Handle);
         Assert.Equal(["memory.recall"], found.Grant.AllowedActions);
         Assert.Equal(TimeSpan.FromMinutes(10), found.Grant.MaxDuration);

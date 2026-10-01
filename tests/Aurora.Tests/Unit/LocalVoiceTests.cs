@@ -182,8 +182,7 @@ public sealed class LocalVoiceTests : IDisposable
         public Task<string?> FindAsync(string pluginId, string name, CancellationToken ct) =>
             Task.FromResult<string?>(name switch
             {
-                "provider_auth_token" => Token,
-                "openai_api_key" => "sk-unused-by-the-local-stack",
+                "elevenlabs_api_key" => "sk-unused-by-the-local-stack",
                 _ => null,
             });
     }
@@ -331,8 +330,15 @@ public sealed class LocalVoiceTests : IDisposable
         ["CallStatus"] = "ringing",
     };
 
-    private static VoiceInboundEvent Inbound(string url = "https://aurora.example/voice") =>
-        new(Ringing, Sign(url, Ringing), url, "CA-local-1-ringing");
+    /// <summary>Who Aurora is talking to.</summary>
+    /// <remarks>
+    /// This used to be a signed provider webhook, with a replay window and an HMAC. All of that
+    /// belonged to the telephone company and went with it. What a session needs now is who is on
+    /// the other end, and how much that claim is worth — which for every channel Aurora has is
+    /// the channel's word for it and not proof.
+    /// </remarks>
+    private static VoiceParticipant Caller() =>
+        new("somebody", Verification: ParticipantVerification.ChannelAsserted);
 
     private static string Sign(string url, IReadOnlyDictionary<string, string> form)
     {
@@ -446,7 +452,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Que horas são?");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
         Assert.True(answered.Session is not null, answered.Detail);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
@@ -485,7 +491,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Olá.");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
@@ -508,7 +514,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Apaga tudo.");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(["clock.now"]), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(["clock.now"]), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
@@ -531,7 +537,7 @@ public sealed class LocalVoiceTests : IDisposable
 
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
@@ -556,7 +562,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(policyAllows: false, transcripts: "Que horas são?");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
@@ -581,7 +587,8 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Olá.");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
+        Assert.True(answered.Session is not null, $"{answered.Refusal}: {answered.Detail}");
 
         await rig.Runtime.StopAsync("operator", "enough", Ct);
 
@@ -601,7 +608,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Que horas são?");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
 
         await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
 
@@ -634,7 +641,7 @@ public sealed class LocalVoiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TheLocalStackNeedsNoKeyAndSaysSoWhenAsked()
+    public async Task StatusSaysWhichHalfOfVoiceLeavesTheMachine()
     {
         Rig rig = Build(transcripts: "Olá.");
         await using ServicePluginHost host = rig.Host;
@@ -651,9 +658,16 @@ public sealed class LocalVoiceTests : IDisposable
 
         // Answerable before anything is approved and without contacting anybody, which is what
         // makes it the right thing to ask when voice is not working.
-        Assert.Equal("local", answer["provider_kind"]!.GetValue<string>());
         Assert.True(answer["can_hold_a_conversation"]!.GetValue<bool>());
         Assert.Empty(_ollama.Seen);
+
+        // The two halves, and they stopped being the same answer. Nobody's recorded voice leaves:
+        // recognition runs here and a recording exists only as bytes in memory until it becomes
+        // text. The sentence Aurora is about to say does leave, and status says so rather than
+        // letting an owner infer it from a manifest.
+        Assert.False(answer["audio_leaves_this_machine"]!.GetValue<bool>());
+        Assert.True(answer["text_leaves_this_machine"]!.GetValue<bool>());
+        Assert.Equal("api.elevenlabs.io", answer["speech_service"]!.GetValue<string>());
     }
 
     // ---- the lifecycle defect real engines found ----
@@ -675,7 +689,7 @@ public sealed class LocalVoiceTests : IDisposable
         TimeSpan declared = Manifest().Capabilities
             .First(c => c.Key == "voice.listen").Timeout;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
         var session = answered.Session!.SessionId;
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -716,7 +730,7 @@ public sealed class LocalVoiceTests : IDisposable
         Rig rig = Build(transcripts: "Olá.");
         await using ServicePluginHost host = rig.Host;
 
-        VoiceOutcome answered = await rig.Runtime.AnswerAsync(Inbound(), Grant(), Ct);
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(VoiceChannel.Discord, Caller(), Grant(), Ct);
         var session = answered.Session!.SessionId;
 
         await SaySomethingAsync(rig.Runtime, session);
@@ -734,5 +748,58 @@ public sealed class LocalVoiceTests : IDisposable
 
         // And nothing was said into the call after it ended.
         Assert.DoesNotContain(rig.Reported.Seen, o => o.Kind == "voice.said");
+    }
+
+    // ---- rules that moved here when VoiceRuntimeTests went ----
+
+    [Fact]
+    public async Task ASessionSurvivesAndCanBeFoundAgain()
+    {
+        Rig rig = Build();
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(), Grant(), Ct);
+        Assert.True(answered.Session is not null, $"{answered.Refusal}: {answered.Detail}");
+
+        // A second store over the same database, as a restarted process would build. A session
+        // that only exists in memory is one that a crash turns into a conversation nobody can
+        // account for afterwards.
+        var reopened = new SqliteVoiceSessionStore(_db.Factory, _clock);
+        VoiceSession? found = await reopened.FindAsync(answered.Session!.SessionId, Ct);
+
+        Assert.NotNull(found);
+        Assert.Equal("somebody", found!.Participant.Handle);
+
+        // Who is on the other end is the channel's claim and never proof, and the store has to
+        // keep it labelled as a claim.
+        Assert.Equal(ParticipantVerification.ChannelAsserted, found.Participant.Verification);
+    }
+
+    [Fact]
+    public async Task ARequestForACapabilityNobodyOfferedIsRefusedRatherThanGuessedAt()
+    {
+        // Not in the grant and not in the catalogue: a name the model produced. The refusal has to
+        // come from the grant rather than from the capability failing to resolve, because a
+        // capability that happens not to exist today may exist tomorrow.
+        ModelAsksFor("aurora__do_everything");
+
+        Rig rig = Build(transcripts: "Faz tudo.");
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(), Grant(), Ct);
+        Assert.True(answered.Session is not null, $"{answered.Refusal}: {answered.Detail}");
+
+        await SaySomethingAsync(rig.Runtime, answered.Session!.SessionId);
+
+        VoicePump pump = await PumpUntilAsync(
+            rig.Runtime, answered.Session.SessionId, p => p.Refused > 0);
+
+        Assert.Equal(1, pump.Refused);
+
+        // Nothing ran. The audit is the place to look: a refusal that still executed would leave
+        // a record, and the absence of one is the only evidence that matters.
+        Assert.DoesNotContain(_audit.Entries, e => e.ActionId == "aurora.do_everything");
     }
 }

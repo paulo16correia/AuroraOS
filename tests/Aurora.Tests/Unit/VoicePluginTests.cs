@@ -35,42 +35,46 @@ public sealed class VoicePluginTests
         _ = PythonSuite.Run(PluginSource(), module, expected);
 
     [Fact]
-    public void TheRealRealtimeTransportHoldsItsRules()
-    {
-        // Driven against a Realtime service on loopback, so the class that ships performs a real
-        // RFC 6455 handshake and carries real masked frames. The client stand-in used by the
-        // runtime tests replaces the transport, which leaves everything inside it untested.
-        RunPython("test_realtime", 20);
-    }
-
-    [Fact]
-    public void TheProviderBoundaryAndTheInteractionLayerHoldTheirRules()
-    {
-        RunPython("test_voice_plugin", 34);
-    }
-
-    [Fact]
     public void TheLocalStackHoldsItsRules()
     {
-        // Turn detection, the loop, and what none of it may do, with the three engines faked.
-        // Whether the path exists at all is LocalVoiceTests, through the real host and Kernel.
-        // Two more than before: the language the model answers in used to be written into the
-        // channel instructions in European Portuguese, which made it a property of Aurora rather
-        // than of whoever is talking to her. It is a parameter now, and the two new tests cover
-        // the part that matters — a language is asked for by name, because a model follows
-        // "European Portuguese (Portugal)" where it drifts on "pt-PT".
-        RunPython("test_local", 50);
+        // Turn detection, the loop, and what none of it may do, with the engines faked. Whether
+        // the path exists at all is LocalVoiceTests, through the real host and Kernel.
+        //
+        // Fewer than before, and the drop is the point: the OpenAI Realtime transport and the
+        // telephone provider were removed, and with them fifty-four tests that covered neither
+        // hearing nor speaking. What is left is one recogniser and one speaker.
+        RunPython("test_local", 45);
     }
 
     [Fact]
     public void TheVoicePluginOpensTheConnectionsSoAuroraDoesNot()
     {
-        var source = File.ReadAllText(Path.Combine(PluginSource(), "provider.py"));
+        var source = File.ReadAllText(Path.Combine(PluginSource(), "speech.py"));
 
         // The reason voice is a plugin at all. Aurora's own process opens no sockets — LocalOnly
-        // fails the build over it — so the thing holding a websocket to a speech provider and an
-        // HTTPS client to a telephone company has to be somewhere else.
-        Assert.Contains("hmac", source, StringComparison.Ordinal);
+        // fails the build over it — so whatever holds a connection to a speech service has to be
+        // somewhere else. It used to be provider.py, holding a websocket to OpenAI and an HTTPS
+        // client to a telephone company; both are gone, and the one remaining connection is the
+        // request that turns a sentence into audio.
+        Assert.Contains("urllib.request", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Aurora.Core", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SpeakingIsTheOnlyThingThatLeavesTheMachine()
+    {
+        var source = File.ReadAllText(Path.Combine(PluginSource(), "speech.py"));
+
+        // Recognition is local and must stay local: a recording is somebody's voice, and sending
+        // it would take a private conversation off the owner's machine without anybody deciding
+        // to. Synthesis is not local, deliberately, and the file says so rather than leaving a
+        // reader to infer it from an import.
+        Assert.Contains("leaves the machine", source, StringComparison.Ordinal);
+
+        // One host, named once. A second would mean a second thing to approve and a second place
+        // for audio to go.
+        Assert.Contains("api.elevenlabs.io", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("api.openai.com", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("api.twilio.com", source, StringComparison.Ordinal);
     }
 }

@@ -68,7 +68,7 @@ public sealed class VoiceToolBridgeTests : IDisposable
         string[]? actions = null, int maxCalls = 5, VoiceSessionState state = VoiceSessionState.Active)
     {
         var session = new VoiceSession(
-            "vs-1", VoiceChannel.Phone, "fake", VoiceCallDirection.Inbound,
+            "vs-1", VoiceChannel.Discord, "fake", VoiceCallDirection.Inbound,
             new VoiceParticipant("+351911111111"),
             new VoiceGrant(actions ?? ["memory.recall"], maxCalls, TimeSpan.FromMinutes(10),
                 Now.AddMinutes(30).ToString("O")),

@@ -28,7 +28,7 @@ public sealed class VoiceAuthorizationTests
         VoiceSessionState state = VoiceSessionState.Active,
         int used = 0,
         DateTimeOffset? started = null) =>
-        new("vs-1", VoiceChannel.Phone, "fake", VoiceCallDirection.Inbound,
+        new("vs-1", VoiceChannel.Discord, "fake", VoiceCallDirection.Inbound,
             new VoiceParticipant("+351911111111"), grant ?? Grant(), state,
             (started ?? Now).ToString("O"), "corr-1", ToolCallsUsed: used);
 

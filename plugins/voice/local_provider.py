@@ -457,25 +457,30 @@ def _latency(turn):
     return {name: value for name, value in measured.items() if value is not None}
 
 
-def build(settings, identity, action_ids, opener=None):
-    """A local session from configuration, or a refusal naming what is missing.
+def build(settings, identity, action_ids, opener=None, api_key=None):
+    """A session from configuration, or a refusal naming what is missing.
 
     Refusing is the honest answer. A provider that quietly fell back to something else would let a
     conversation appear to happen with an engine nobody chose.
+
+    Hearing is local and speaking is not, and the two failures read differently: a missing model
+    file is something to download, and a missing key is something to be given.
     """
-    recogniser = speech.best_recogniser(settings.get("stt"))
-    speaker = speech.best_speaker(settings.get("tts"))
+    locale = settings.get("locale") or "en"
+    heard = speech.recogniser(settings.get("stt"))
+    spoken = speech.speaker(settings.get("tts"), api_key, locale)
 
     missing = []
 
-    if recogniser is None:
-        missing.append("a speech recogniser (faster-whisper, or whisper.cpp with a model)")
+    if heard is None:
+        missing.append("a local speech recogniser (whisper.cpp, with a ggml model beside it)")
 
-    if speaker is None:
-        missing.append("a speech synthesiser (Coqui XTTS, or `say` on macOS)")
+    missing += spoken.missing() if hasattr(spoken, "missing") else []
 
     if missing:
         raise LocalUnavailable("voice_local_incomplete", "; ".join(missing))
+
+    recogniser, speaker = heard, spoken
 
     brain = thinking.Thinking(
         identity=identity,
@@ -485,6 +490,6 @@ def build(settings, identity, action_ids, opener=None):
         # The language the model answers in travels with the session rather than being baked into
         # the instructions, so one Aurora can speak to a Dutch owner and a Portuguese one without
         # being rebuilt for either.
-        locale=settings.get("locale") or "en")
+        locale=locale)
 
     return LocalSession(recogniser, speaker, brain)

@@ -36,7 +36,7 @@ public sealed class VoiceIdentityTests
         string[]? actions = null,
         OutboundCallIntent? intent = null,
         bool disclosure = true) =>
-        new("vs-1", VoiceChannel.Phone, "fake", direction,
+        new("vs-1", VoiceChannel.Discord, "fake", direction,
             new VoiceParticipant("+351911111111"),
             new VoiceGrant(actions ?? ["memory.recall"], 5, TimeSpan.FromMinutes(10),
                 "2026-09-02T11:00:00Z", disclosure),

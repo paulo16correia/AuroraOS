@@ -20,19 +20,27 @@ import sys
 import threading
 import time
 
-import interaction
 import local_provider
-import provider
-import realtime
-from fake_realtime import FakeTransport
 
 E_UNSUPPORTED = "voice_unsupported_capability"
-
-# The model, overridable by configuration. Named here rather than assumed in three places, and
-# read from settings so an installation can move without an edit.
-DEFAULT_MODEL = "gpt-realtime"
 E_NO_SESSION = "voice_no_session"
 E_ALREADY = "voice_session_exists"
+E_SCHEMA = "voice_schema"
+E_PROVIDER = "voice_failed"
+
+
+class Refused(Exception):
+    """A refusal with a code Aurora can act on, rather than a stack trace it cannot.
+
+    It used to live in provider.py with the telephone code. That file is gone and this was the
+    only part of it anything else used, so it moved here rather than keeping a module alive to
+    hold one exception.
+    """
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 def say(frame):
@@ -62,71 +70,29 @@ def _settings():
 
 
 def _session_for(settings, api_key, instructions, tools):
-    """The conversation this installation can actually hold.
+    """The conversation this installation can hold.
 
-    Two providers behind one contract: the local stack — recogniser, model, synthesiser, all on
-    this machine — and OpenAI Realtime. Chosen by configuration, and `local` is the default,
-    because the point of the local stack is that it needs nobody's permission and no network.
+    There used to be two providers behind this — the local stack and OpenAI Realtime — chosen by
+    configuration. There is one now. Every engine behind a choice is one more thing to install,
+    keep working and reason about when an answer comes back wrong, and the local stack is the one
+    that needs nobody's permission.
 
-    Whichever is chosen, everything above is identical: the runtime pumps it, the tool request
-    reaches VoiceToolBridge, and the Kernel decides.
+    What it is made of: whisper for hearing, a local model for thinking, and ElevenLabs for
+    speaking. Only the last of those leaves the machine.
     """
-    which = (settings.get("provider_kind") or "local").lower()
-
-    if which == "local":
-        return local_provider.build(
-            settings.get("local") or {},
-            identity=instructions,
-            action_ids=[t.get("name", "").replace("__", ".") for t in tools])
-
-    transport = _transport_for(settings, api_key)
-
-    if transport is None:
-        return None
-
-    config = settings.get("realtime") or {}
-
-    return interaction.InteractionSession(
-        transport,
-        instructions=instructions,
-        tools=tools,
-        voice=str(config.get("voice") or "alloy"),
-        model=str(config.get("model") or DEFAULT_MODEL),
-        locale=str(config.get("locale") or "en"))
-
-
-def _transport_for(settings, api_key):
-    """The interaction transport: the real service, or the deterministic stand-in.
-
-    The stand-in is selected only by configuration a shipped installation does not have. It exists
-    because the failures worth testing — a layer that will not connect, one that disconnects
-    mid-call, one that returns a tool name nobody offered — cannot be asked for on demand from a
-    real service.
-    <br>
-    With no key there is no transport and no session. Refusing is the honest answer: a plugin that
-    quietly fell back to a stand-in would let a call appear to happen.
-    """
-    config = settings.get("realtime") or {}
-
-    if config.get("transport") == "fake":
-        return FakeTransport(script=config.get("script") or [])
-
-    if not api_key:
-        return None
-
-    return realtime.RealtimeTransport(
-        api_key,
-        url=config.get("url") or realtime.REALTIME_URL,
-        timeout=int(config.get("timeout_seconds") or 30))
+    return local_provider.build(
+        settings.get("local") or {},
+        identity=instructions,
+        action_ids=[t.get("name", "").replace("__", ".") for t in tools],
+        api_key=api_key)
 
 
 class Session:
     """One conversation this process is carrying."""
 
-    def __init__(self, session_id, participant, transport):
+    def __init__(self, session_id, participant):
         self.session_id = session_id
         self.participant = participant
-        self.transport = transport
         self.interaction = None
         self.state = "created"
 
@@ -142,86 +108,38 @@ class Session:
 
 
 def status(state, args):
+    """What voice can and cannot do, answered without starting anything.
+
+    An owner finds out what is missing before approving something that would find out by failing,
+    which is a much worse way to learn that a model file was never downloaded.
+    """
     import speech
 
     settings = _settings()
-    config = settings.get("realtime") or {}
-    which = (settings.get("provider_kind") or "local").lower()
+    local = settings.get("local") or {}
+    heard = speech.recogniser(local.get("stt"))
+    spoken = speech.speaker(local.get("tts"), state.get("api_key"),
+                            settings.get("locale") or "en")
 
-    if which == "local":
-        local = settings.get("local") or {}
-        recogniser = speech.best_recogniser(local.get("stt"))
-        speaker = speech.best_speaker(local.get("tts"))
-
-        return {
-            "sessions": len(state["sessions"]),
-
-            # Two different providers, named apart. `provider_kind` is what carries the
-            # conversation; `call_provider` is who owns the telephone line, and they were both
-            # called "provider" until one silently overwrote the other in this answer.
-            "provider_kind": "local",
-            "call_provider": (settings.get("provider") or {}).get("kind") or "none",
-            "recogniser": getattr(recogniser, "name", None),
-            "speaker": getattr(speaker, "name", None),
-            "model": (local.get("llm") or {}).get("model") or "llama3.1:8b",
-
-            # Whether the pieces are here, answered without starting any of them. An owner finds
-            # out what is missing before approving something that would find out by failing.
-            "can_hold_a_conversation": recogniser is not None and speaker is not None,
-            "missing": (
-                ([] if recogniser else ["speech recogniser"])
-                + ([] if speaker else ["speech synthesiser"])),
-        }
-
-    transport = _transport_for(settings, state.get("api_key"))
+    missing = ([] if heard else
+               ["a local speech recogniser (whisper.cpp, with a ggml model beside it)"])
+    missing += spoken.missing() if hasattr(spoken, "missing") else []
 
     return {
         "sessions": len(state["sessions"]),
-        "provider_kind": which,
-        "call_provider": (settings.get("provider") or {}).get("kind") or "none",
-        "transport": config.get("transport") or ("openai" if state.get("api_key") else "none"),
-        "model": config.get("model") or DEFAULT_MODEL,
+        "recogniser": getattr(heard, "name", None),
+        "speaker": getattr(spoken, "name", None) if spoken and spoken.available() else None,
+        "model": (local.get("llm") or {}).get("model") or "llama3.1:8b",
+        "locale": settings.get("locale") or "en",
+        "can_hold_a_conversation": bool(heard) and bool(spoken) and spoken.available(),
+        "missing": missing,
 
-        # Said plainly, and without contacting anybody: a caller deserves to know there is no
-        # speech layer before approving something that would find out by failing.
-        "can_hold_a_conversation": transport is not None,
-        "missing": [] if transport is not None else ["openai_api_key"],
-    }
-
-
-def inbound(state, args):
-    """A provider event arrived. Validate it and report who is calling.
-
-    Creates nothing. Aurora decides whether there is to be a session at all — this only says the
-    event is real and what it claims.
-    """
-    settings = _settings()
-    guard = state["guard"]
-
-    form = args.get("form") or {}
-    signature = args.get("signature") or ""
-    url = args.get("url") or ""
-
-    guard.check(url, form, signature, event_id=args.get("event_id"),
-                timestamp=args.get("timestamp"))
-
-    call = provider.parse_call_event(form)
-
-    report("voice.call_received", {
-        "external_ref": call["external_ref"],
-        "claimed_from": call["claimed_from"],
-        "status": call["status"],
-    })
-
-    return {
-        "external_ref": call["external_ref"],
-
-        # Named for what it is. The telephone network carries whatever the originating carrier
-        # says, so this is somebody's claim about who is calling and never evidence of it.
-        "claimed_from": call["claimed_from"],
-        "to": call["to"],
-        "status": call["status"],
-        "verification": "channel_asserted",
+        # The two halves, reported apart, because they stopped being the same answer. Nobody's
+        # recorded voice is uploaded — recognition runs here and a recording exists only as bytes
+        # in memory until it becomes text. The sentence Aurora is about to say does leave.
+        "audio_leaves_this_machine": False,
+        "text_leaves_this_machine": bool(spoken) and spoken.available(),
+        "speech_service": speech.ElevenLabsSpeaker.HOST if spoken and spoken.available() else None,
     }
 
 
@@ -235,7 +153,7 @@ def session_start(state, args):
     session_id = str(args["session_id"])[:128]
 
     if session_id in state["sessions"]:
-        raise provider.ProviderRefused(E_ALREADY, "that session is already running")
+        raise Refused(E_ALREADY, "that session is already running")
 
     settings = _settings()
 
@@ -247,14 +165,17 @@ def session_start(state, args):
     except local_provider.LocalUnavailable as incomplete:
         # Named engines rather than a shrug. "Nothing can carry a conversation" sends somebody
         # looking in the wrong place; "no speech recogniser is installed" does not.
-        raise provider.ProviderRefused(incomplete.code, incomplete.message)
+        raise Refused(incomplete.code, incomplete.message)
 
     if conversation is None:
-        raise provider.ProviderRefused(
-            provider.E_UNSUPPORTED,
+        raise Refused(
+            E_UNSUPPORTED,
             "no interaction provider is configured, so nothing can carry a conversation")
 
-    session = Session(session_id, args.get("participant") or {}, conversation)
+    # The conversation went in twice — once as the third positional, which used to be the
+    # telephone transport, and once as .interaction. There is no transport now and there never
+    # were two things here.
+    session = Session(session_id, args.get("participant") or {})
     session.interaction = conversation
 
     try:
@@ -262,8 +183,8 @@ def session_start(state, args):
     except Exception as unreachable:
         # A layer that will not connect is not a conversation. Reported as a failure rather than a
         # session, because a session that exists and cannot speak is worse than none.
-        raise provider.ProviderRefused(
-            provider.E_PROVIDER,
+        raise Refused(
+            E_PROVIDER,
             "the interaction layer could not be reached (%s)" % type(unreachable).__name__)
 
     session.state = "active"
@@ -328,10 +249,11 @@ def poll(state, args):
         "audio": spoken,
     }
 
-    # What the conversation has spent. Both providers report it, in their own terms: the local one
-    # counts turns, tokens and the latency of each stage; the remote one counts audio and frames.
-    if hasattr(session.transport, "telemetry"):
-        answer["telemetry"] = session.transport.telemetry()
+    # What the conversation has spent: turns, tokens, and the latency of each stage of each turn.
+    # Read from the interaction layer, which is the only thing a session is made of now — it was
+    # `session.transport` while there was a telephone, and that attribute went with it.
+    if hasattr(session.interaction, "telemetry"):
+        answer["telemetry"] = session.interaction.telemetry()
 
     return answer
 
@@ -405,38 +327,12 @@ def hangup(state, args):
     return {"session_id": session_id, "state": "ended", "reason": reason}
 
 
-def outbound(state, args):
-    """Places a call, having been told by Aurora that it may.
-
-    Everything that decides whether it may — the purpose, the approval, the destination policy, the
-    expiry — was checked in Aurora before this was called. What arrives here is a decision, and this
-    program's part is to dial.
-    """
-    settings = _settings()
-    kind = (settings.get("provider") or {}).get("kind")
-
-    if kind != "fake":
-        raise provider.ProviderRefused(
-            provider.E_UNSUPPORTED,
-            "no telephone provider is configured; outbound calling is not available")
-
-    to = provider.e164(str(args["to"]))
-    from_number = provider.e164(str(args["from"]))
-
-    placed = state["provider"].place_call(to, from_number, str(args["session_id"])[:128])
-
-    report("voice.call_placed", {
-        "session_id": args["session_id"], "external_ref": placed["external_ref"]})
-
-    return {"external_ref": placed["external_ref"], "status": placed["status"]}
-
-
 def _session(state, args):
     session_id = str(args["session_id"])[:128]
     session = state["sessions"].get(session_id)
 
     if session is None:
-        raise provider.ProviderRefused(E_NO_SESSION, "no such voice session is running here")
+        raise Refused(E_NO_SESSION, "no such voice session is running here")
 
     return session
 
@@ -448,12 +344,10 @@ READS = {
 
 WRITES = {
     "voice.listen": listen,
-    "voice.inbound": inbound,
     "voice.session.start": session_start,
     "voice.tool_result": tool_result,
     "voice.interrupt": interrupt,
     "voice.hangup": hangup,
-    "voice.outbound": outbound,
 }
 
 
@@ -467,12 +361,12 @@ def handle(state, frame):
     if capability in WRITES:
         return WRITES[capability](state, args)
 
-    raise provider.ProviderRefused(
+    raise Refused(
         E_UNSUPPORTED, "this plugin does not offer '%s'" % capability)
 
 
 def main():
-    state = {"sessions": {}, "guard": None, "provider": None}
+    state = {"sessions": {}}
 
     for line in sys.stdin:
         try:
@@ -485,16 +379,10 @@ def main():
         if kind == "hello":
             secrets = frame.get("secrets") or {}
 
-            # The provider's token, from Aurora's vault over the pipe. Never written down here and
-            # never given to the interaction layer, which has no use for one.
-            state["guard"] = provider.WebhookGuard(secrets.get("provider_auth_token", ""))
-            state["provider"] = provider.FakePhoneProvider(
-                secrets.get("provider_auth_token", ""))
-
             # The speech key, held in memory for the life of the process and put in exactly one
-            # Authorization header. Optional: without it the plugin still answers `voice.status`,
-            # which is how an owner finds out it is missing rather than by a failed call.
-            state["api_key"] = secrets.get("openai_api_key", "")
+            # header. Optional: without it the plugin still answers `voice.status`, which is how an
+            # owner finds out it is missing rather than by a sentence that never gets spoken.
+            state["api_key"] = secrets.get("elevenlabs_api_key", "")
 
             say({"kind": "ready", "degraded": not state["api_key"]})
             continue
@@ -513,19 +401,19 @@ def main():
         try:
             answer.update({"ok": True, "output": handle(state, frame)})
 
-        except provider.ProviderRefused as refused:
+        except Refused as refused:
             answer.update({"ok": False, "refusal": refused.code, "detail": refused.message})
 
         except KeyError as missing:
             answer.update({
-                "ok": False, "refusal": provider.E_SCHEMA,
+                "ok": False, "refusal": E_SCHEMA,
                 "detail": "the call is missing %s" % missing})
 
         except Exception as unexpected:
             # The type, not the text. A message from an unexpected exception is written by whatever
             # threw it and could carry anything.
             answer.update({
-                "ok": False, "refusal": provider.E_PROVIDER,
+                "ok": False, "refusal": E_PROVIDER,
                 "detail": "the plugin failed unexpectedly (%s)" % type(unexpected).__name__})
 
         say(answer)

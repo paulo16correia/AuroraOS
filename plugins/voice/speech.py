@@ -112,72 +112,6 @@ def energy(pcm16):
 # ---------------------------------------------------------------------------
 
 
-class FasterWhisperRecogniser:
-    """Faster-Whisper, in-process.
-
-    The one this task asked for. Imported lazily so a machine without it can still start the plugin
-    and be told what is missing, rather than failing at import and taking the whole thing down.
-    """
-
-    name = "faster-whisper"
-
-    def __init__(self, model="turbo", device="auto", compute_type="auto", language="auto"):
-        self.model_name = model
-        self.language = language
-        self._device = device
-        self._compute_type = compute_type
-        self._model = None
-
-    @staticmethod
-    def available():
-        try:
-            import faster_whisper  # noqa: F401
-            return True
-        except ImportError:
-            return False
-
-    def _load(self):
-        if self._model is None:
-            from faster_whisper import WhisperModel
-
-            self._model = WhisperModel(
-                self.model_name, device=self._device, compute_type=self._compute_type)
-
-        return self._model
-
-    def transcribe(self, pcm16):
-        import io
-
-        model = self._load()
-
-        # Faster-Whisper resamples internally, but handing it the rate it wants avoids a second
-        # conversion and keeps this the only place a rate is decided.
-        audio = io.BytesIO(wav(resample_to(pcm16, SAMPLE_RATE, WHISPER_RATE), WHISPER_RATE))
-
-        segments, info = model.transcribe(
-            audio,
-            language=self.language,
-
-            # Voice activity detection inside the recogniser, so silence does not become the
-            # phrase a model says when it heard nothing.
-            vad_filter=True,
-            beam_size=1)
-
-        parts = list(segments)
-        text = "".join(part.text for part in parts).strip()
-
-        return {
-            "text": text,
-            # avg_logprob is per-segment log probability. Averaged and exponentiated it is a rough
-            # confidence, and it is the only one this engine offers.
-            "confidence": round(
-                min(1.0, max(0.0, 2 ** (sum(p.avg_logprob for p in parts) / len(parts))))
-                if parts else 0.0, 3),
-            "seconds": round(getattr(info, "duration", 0.0), 2),
-            "engine": self.name,
-        }
-
-
 class WhisperCppRecogniser:
     """whisper.cpp through its command-line program.
 
@@ -259,122 +193,205 @@ class WhisperCppRecogniser:
 # ---------------------------------------------------------------------------
 
 
-class XttsSpeaker:
-    """Coqui XTTS v2.
+class ElevenLabsSpeaker:
+    """The voice Aurora speaks with, and the one thing in this file that uses the network.
 
-    The one this task asked for. Its licence is CPML — non-commercial — and the company that made
-    it is gone; the package is community-maintained. Both are worth knowing before it becomes the
-    default voice of something.
+    Every local voice that could be had was measured and none was good enough: the single European
+    Portuguese voice in Piper's catalogue is male and band-limited, and the alternatives were
+    licence-blocked, Brazilian, or too heavy to sit on the same card as the language model. So this
+    leg was given up deliberately, and the cost is stated rather than hidden — **the sentence
+    Aurora is about to say leaves the machine.** Audio never does; recognition is local and stays
+    local.
+
+    Two ways to ask for the same thing. `speak` returns the whole sentence, for callers that need
+    it in one piece. `stream` yields it as it arrives, for callers that can start playing before it
+    is finished — which is the difference between answering in a quarter of a second and answering
+    in two.
     """
 
-    name = "xtts-v2"
+    name = "elevenlabs"
 
-    # XTTS speaks in a voice it was given and has no voice of its own. Given neither a sample to
-    # clone nor the name of one of its own studio speakers it raises, which is what the shipped
-    # default did — it could not say a word until somebody configured a reference.
-    #
-    # So there is a default, and it is one of the model's own. An owner who wants Aurora to sound
-    # like something else configures `speaker_wav`, which is the same knob it always was.
-    DEFAULT_SPEAKER = "Sofia Hellen"
+    HOST = "api.elevenlabs.io"
+    BASE = "https://" + HOST
 
-    def __init__(self, model="tts_models/multilingual/multi-dataset/xtts_v2",
-                 language="en", speaker_wav=None, speaker=None):
-        self.model_name = model
-        self.language = language
-        self.speaker_wav = speaker_wav
-        self.speaker = speaker or self.DEFAULT_SPEAKER
-        self._tts = None
+    # Flash: the low-latency model, and the one that honours an explicit language code instead of
+    # guessing from the text. Guessing is the failure that matters — "no" is a word in several
+    # languages, and a wrong guess reads the whole sentence in the wrong one.
+    MODEL = "eleven_flash_v2_5"
 
-    @staticmethod
-    def available():
-        try:
-            import TTS  # noqa: F401
-            return True
-        except ImportError:
-            return False
+    TIMEOUT = 30.0
 
-    def _load(self):
-        if self._tts is None:
-            from TTS.api import TTS as CoquiTTS
+    def __init__(self, voice=None, api_key=None, locale="en", rate=SAMPLE_RATE, base=None):
+        self.voice_id = resolve_voice(voice, locale)
+        self.api_key = (api_key or "").strip()
+        self.locale = locale
+        self.rate = rate
+        self.base = base
 
-            self._tts = CoquiTTS(self.model_name)
+    def available(self):
+        """Both halves, because one without the other cannot say anything."""
+        return bool(self.voice_id and self.api_key)
 
-        return self._tts
+    def missing(self):
+        """Which half is absent, named so the right person looks in the right place.
 
-    def speak(self, text):
-        tts = self._load()
-        directory = tempfile.mkdtemp(prefix="aurora-voice-")
-        target = os.path.join(directory, "said.wav")
+        They are fixed differently: the voice is a setting somebody edits, the key is a secret
+        somebody types into a prompt. "Voice unavailable" would send one of them hunting in the
+        wrong file.
+        """
+        absent = []
 
-        # A cloned voice if the owner supplied a sample, and one of the model's own if not.
-        # Exactly one of the two, because XTTS refuses both and refuses neither.
-        voice = ({"speaker_wav": self.speaker_wav} if self.speaker_wav
-                 else {"speaker": self.speaker})
+        if not self.api_key:
+            absent.append(
+                "the elevenlabs_api_key secret (set it with `secret set plugin/voice "
+                "elevenlabs_api_key`; it is never passed on a command line)")
+        if not self.voice_id:
+            absent.append(
+                "a voice to speak with — put a voice id in the tts_voice setting, either one id "
+                "for every language or a mapping of language to id")
 
-        try:
-            tts.tts_to_file(
-                text=text, file_path=target, language=self.language, **voice)
-
-            # Closed before the directory goes: a handle still open here leaves the file
-            # undeletable on Windows, and rmtree is ignoring errors, so the temporary directory
-            # would be leaked once per sentence spoken.
-            with open(target, "rb") as spoken:
-                return _pcm_from_wav(spoken.read())
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
-
-
-class SaySpeaker:
-    """macOS `say`.
-
-    Already present, already carrying a European Portuguese voice this owner chose and heard. The
-    same reasoning as whisper.cpp above: a local speaker that exists beats a better one that does
-    not.
-    """
-
-    name = "say"
-
-    def __init__(self, voice="Joana"):
-        self.voice = voice
-
-    @staticmethod
-    def available():
-        return shutil.which("say") is not None
+        return absent
 
     def speak(self, text):
+        return b"".join(self.stream(text))
+
+    def stream(self, text):
+        """Yields PCM as it arrives: signed 16-bit little-endian mono, at `self.rate`.
+
+        The generator is the cancellation mechanism. Closing it — which is what an interrupted
+        sentence does — stops reading and closes the connection, and nothing goes on working in the
+        background afterwards.
+
+        Raises rather than yielding silence. A refusal that says the quota ran out is useful; half
+        a second of nothing is indistinguishable from a quiet room.
+        """
+        import urllib.error
+        import urllib.request
+
         if not self.available():
-            raise SpeechUnavailable("`say` is not on this machine")
+            raise SpeechUnavailable("; ".join(self.missing()))
 
-        directory = tempfile.mkdtemp(prefix="aurora-voice-")
-        target = os.path.join(directory, "said.wav")
-        sentence = os.path.join(directory, "sentence.txt")
+        if not text or not text.strip():
+            raise SpeechUnavailable("nothing to say")
+
+        body = {"text": text, "model_id": self.MODEL}
+
+        # Sent only when known: an empty language code is not the same as an absent one. The API
+        # rejects the first and infers for the second.
+        if self.locale:
+            body["language_code"] = str(self.locale)
+
+        url = "%s/v1/text-to-speech/%s/stream?output_format=pcm_%d" % (
+            _speech_base(self.base), self.voice_id, self.rate)
+
+        request = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"), method="POST",
+            headers={"xi-api-key": self.api_key, "Content-Type": "application/json",
+                     "Accept": "audio/pcm"})
 
         try:
-            # The sentence goes in a file rather than in the argument list. It was written by a
-            # language model, and as the last positional argument a sentence that looks like one
-            # of `say`'s own options is read as one instead of being spoken. It stays a single
-            # argument either way, so it cannot carry a value with it — but a sentence that goes
-            # silently missing is a bad enough failure, and a file has no options at all.
-            with open(sentence, "w", encoding="utf-8") as handle:
-                handle.write(text)
+            response = urllib.request.urlopen(request, timeout=self.TIMEOUT)
+        except urllib.error.HTTPError as error:
+            # The body carries the reason — a bad voice id, an exhausted quota — and it is short.
+            # Worth reading: "HTTP 401" alone sends somebody looking in the wrong place.
+            detail = ""
 
-            # LEI16 explicitly: `say` writes 32-bit float however it is asked otherwise, and the
-            # right-length noise that produces is indistinguishable from a working encoder.
-            finished = subprocess.run(
-                [shutil.which("say"), "-o", target,
-                 "--data-format=LEI16@%d" % SAMPLE_RATE, "-v", self.voice, "-f", sentence],
-                capture_output=True, timeout=60, check=False)
+            try:
+                detail = error.read()[:400].decode("utf-8", "replace")
+            except Exception:
+                pass
 
-            if finished.returncode != 0:
-                raise SpeechUnavailable("`say` exited %d" % finished.returncode)
+            raise SpeechUnavailable("the speech service refused (HTTP %d) %s"
+                                    % (error.code, detail.strip())) from error
+        except Exception as error:
+            raise SpeechUnavailable("the speech service could not be reached: %s: %s"
+                                    % (type(error).__name__, error)) from error
 
-            # Closed before the directory goes: a handle still open here leaves the file
-            # undeletable on Windows, and rmtree is ignoring errors, so the temporary directory
-            # would be leaked once per sentence spoken.
-            with open(target, "rb") as spoken:
-                return _pcm_from_wav(spoken.read())
+        # `read(n)` is the wrong call and it took a test to notice: it blocks until it has all n
+        # bytes or the response ends, so the first audio would wait for a whole buffer to
+        # accumulate instead of going out as it arrived. `read1` returns whatever one underlying
+        # read produced, however little.
+        read = getattr(response, "read1", None) or response.read
+        delivered = False
+
+        try:
+            while True:
+                piece = read(4096)
+
+                if not piece:
+                    break
+
+                delivered = True
+                yield piece
         finally:
-            shutil.rmtree(directory, ignore_errors=True)
+            response.close()
+
+        if not delivered:
+            raise SpeechUnavailable("the speech service answered with no audio")
+
+
+def resolve_voice(setting, language=None):
+    """Which voice to speak with, from whatever shape the installer wrote.
+
+    Whoever installs Aurora chooses, and there are two reasonable things to want. One voice for
+    everything gives Aurora a single recognisable identity, at the cost of carrying that speaker's
+    accent into every other language. One voice per language gives a native accent everywhere, at
+    the cost of Aurora not having a voice of her own. Neither is wrong, so this does not choose:
+    the setting is a string, or a mapping from language to voice with an optional "default".
+    """
+    if not setting:
+        return None
+
+    if isinstance(setting, str):
+        return setting.strip() or None
+
+    if not isinstance(setting, dict):
+        return None
+
+    # "pt-PT" should find a voice filed under "pt"; "pt" should not find one filed under "pt-PT".
+    candidates = []
+
+    if language:
+        candidates.append(str(language))
+
+        if "-" in str(language):
+            candidates.append(str(language).split("-")[0])
+
+    candidates.append("default")
+
+    for key in candidates:
+        found = setting.get(key)
+
+        if isinstance(found, str) and found.strip():
+            return found.strip()
+
+    return None
+
+
+def _speech_base(base):
+    """The service to talk to, refusing any address that would send the key in clear.
+
+    The override exists so the protocol can be tested without a network, a key or somebody's quota.
+    It is deliberately narrow: plain HTTP only to loopback, because an API key on the wire in clear
+    is exactly the mistake a test helper quietly turns into production.
+    """
+    if not base:
+        return ElevenLabsSpeaker.BASE
+
+    base = base.rstrip("/")
+
+    if "://" not in base:
+        base = "https://" + base
+
+    scheme, _, rest = base.partition("://")
+    host = rest.split("/")[0].split(":")[0]
+
+    if scheme != "https" and host not in ("127.0.0.1", "localhost", "::1", "[::1]"):
+        raise SpeechUnavailable(
+            "refusing to send the speech key to %s over %s — only https, or loopback for tests"
+            % (host, scheme))
+
+    return base
 
 
 def _pcm_from_wav(raw):
@@ -430,12 +447,31 @@ class ScriptedRecogniser:
 
 
 class ScriptedSpeaker:
-    """A synthesiser that produces the right amount of silence. Chosen the same way."""
+    """A synthesiser that produces the right amount of silence. Chosen the same way.
+
+    It answers `available` and `missing` because the real speaker does, and a double that does not
+    implement the interface is not a double — it is a different object that happens to work until
+    somebody calls the method it never had. That is exactly how this broke: `status` asked whether
+    the speaker was available and got an AttributeError the plugin reported as "failed
+    unexpectedly", which is true and useless.
+    """
 
     name = "scripted"
 
     def __init__(self, delay_ms=0):
         self._delay_ms = int(delay_ms or 0)
+
+    @staticmethod
+    def available():
+        return True
+
+    @staticmethod
+    def missing():
+        return []
+
+    def stream(self, text):
+        """The same two ways to ask as the real one, so a caller cannot tell them apart."""
+        yield self.speak(text)
 
     def speak(self, text):
         if self._delay_ms:
@@ -448,21 +484,21 @@ class ScriptedSpeaker:
         return b"\x00\x00" * samples
 
 
-def best_recogniser(settings):
-    """The recogniser this machine can actually run, preferring what was configured."""
+def recogniser(settings):
+    """Whisper, or the scripted double. There is deliberately nothing to choose between.
+
+    This used to pick the best of several engines. It does not any more, and the reason is worth
+    keeping: every engine in a list is one somebody has to install, keep working, and reason about
+    when a transcript comes back wrong. One recogniser means one set of failures, and whisper is
+    the one that was measured here.
+    """
     wanted = (settings or {}).get("engine")
 
     if wanted == "scripted":
         return ScriptedRecogniser(
             (settings or {}).get("transcripts") or [], (settings or {}).get("delay_ms"))
 
-    if wanted == "faster-whisper" or (wanted is None and FasterWhisperRecogniser.available()):
-        if FasterWhisperRecogniser.available():
-            return FasterWhisperRecogniser(
-                model=(settings or {}).get("model", "turbo"),
-                language=(settings or {}).get("language", "auto"))
-
-    if wanted in (None, "whisper.cpp") and WhisperCppRecogniser.available():
+    if wanted in (None, "whisper", "whisper.cpp") and WhisperCppRecogniser.available():
         return WhisperCppRecogniser(
             model=(settings or {}).get("model"),
             language=(settings or {}).get("language", "auto"))
@@ -470,20 +506,22 @@ def best_recogniser(settings):
     return None
 
 
-def best_speaker(settings):
-    """The speaker this machine can actually run, preferring what was configured."""
+def speaker(settings, api_key=None, locale="en"):
+    """ElevenLabs, or the scripted double. The same argument as above, for the same reason.
+
+    The key is passed in rather than read here: secrets reach a plugin in its hello frame and have
+    no business being looked up from inside an engine.
+    """
     wanted = (settings or {}).get("engine")
 
     if wanted == "scripted":
         return ScriptedSpeaker((settings or {}).get("delay_ms"))
 
-    if wanted in (None, "xtts") and XttsSpeaker.available():
-        return XttsSpeaker(
-            language=(settings or {}).get("language", "auto"),
-            speaker_wav=(settings or {}).get("speaker_wav"),
-            speaker=(settings or {}).get("speaker"))
+    built = ElevenLabsSpeaker(
+        voice=(settings or {}).get("voice"), api_key=api_key,
+        locale=(settings or {}).get("locale") or locale,
+        base=(settings or {}).get("base"))
 
-    if wanted in (None, "say") and SaySpeaker.available():
-        return SaySpeaker(voice=(settings or {}).get("voice", "Joana"))
-
-    return None
+    # Returned even when it cannot speak, so the caller can ask it *why* rather than being handed
+    # None and having to guess which half is missing.
+    return built

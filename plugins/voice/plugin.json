@@ -14,8 +14,7 @@
   ],
   "event_subscriptions": [],
   "network_endpoints": [
-    "api.openai.com",
-    "api.twilio.com"
+    "api.elevenlabs.io"
   ],
   "service": {
     "start_timeout_seconds": 20,
@@ -23,12 +22,8 @@
   },
   "required_secrets": [
     {
-      "name": "provider_auth_token",
-      "purpose": "Signs in to the telephone provider and validates the events it sends. Anything Aurora does on the telephone is done with this and is attributable to your account."
-    },
-    {
-      "name": "openai_api_key",
-      "purpose": "Signs in to the speech service that hears and speaks for Aurora. Audio from a conversation goes to OpenAI while a call is running; nothing else does, and the key never leaves the plugin."
+      "name": "elevenlabs_api_key",
+      "purpose": "Reads Aurora's replies aloud. The sentence she is about to say is sent to ElevenLabs; nobody's recorded voice ever is. Speech recognition stays on this machine."
     }
   ],
   "requires_gpu": false,
@@ -131,58 +126,6 @@
       "reversible": false,
       "rate_limit_per_minute": 600,
       "timeout_seconds": 10,
-      "idempotent": false,
-      "audit_level": "FULL"
-    },
-    {
-      "key": "voice.inbound",
-      "title": "A call arrived",
-      "description": "Validates a provider event — signature, freshness, replay — and reports who it claims is calling. Creates no session: Aurora decides whether there is to be one. Caller identity here is a claim the telephone network carried, never evidence.",
-      "input_schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "form",
-          "signature",
-          "url",
-          "event_id"
-        ],
-        "properties": {
-          "form": {
-            "type": "object"
-          },
-          "signature": {
-            "type": "string",
-            "maxLength": 512
-          },
-          "url": {
-            "type": "string",
-            "maxLength": 2000
-          },
-          "event_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "timestamp": {
-            "type": "string",
-            "maxLength": 40
-          }
-        }
-      },
-      "output_schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {}
-      },
-      "effects": [],
-      "risk": "MEDIUM",
-      "approval_required": true,
-      "reversible": false,
-      "rate_limit_per_minute": 60,
-      "timeout_seconds": 30,
       "idempotent": false,
       "audit_level": "FULL"
     },
@@ -371,54 +314,6 @@
       "rate_limit_per_minute": 60,
       "timeout_seconds": 30,
       "idempotent": true,
-      "audit_level": "FULL"
-    },
-    {
-      "key": "voice.outbound",
-      "title": "Place a call",
-      "description": "Dials a number, having been told by Aurora that it may. The purpose, the approval, the destination policy and the expiry were all decided in Aurora before this was called; what arrives here is a decision, and this only dials.",
-      "input_schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "session_id",
-          "to",
-          "from"
-        ],
-        "properties": {
-          "session_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "to": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 16
-          },
-          "from": {
-            "type": "string",
-            "minLength": 8,
-            "maxLength": 16
-          }
-        }
-      },
-      "output_schema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {}
-      },
-      "effects": [
-        "voice.call"
-      ],
-      "risk": "MEDIUM",
-      "approval_required": true,
-      "reversible": false,
-      "rate_limit_per_minute": 6,
-      "timeout_seconds": 30,
-      "idempotent": false,
       "audit_level": "FULL"
     }
   ]
