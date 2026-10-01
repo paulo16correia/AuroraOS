@@ -233,6 +233,9 @@ public static class VoiceRefusal
     /// <summary>Voice is stopped, by an operator or by policy.</summary>
     public const string VoiceStopped = "voice_stopped";
 
+    /// <summary>Nobody has turned voice on. Distinct from stopped, and fixed differently.</summary>
+    public const string NotEnabled = "not_enabled";
+
     /// <summary>The Kernel refused it. The ordinary case, and not an error.</summary>
     public const string KernelRefused = "kernel_refused";
 }

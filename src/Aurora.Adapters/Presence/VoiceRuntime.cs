@@ -83,6 +83,17 @@ public sealed class VoiceRuntime
             return VoiceOutcome.Refused(VoiceRefusal.VoiceStopped, "voice is stopped");
         }
 
+        // Separate from stopped, and said separately. Until the telephone was removed this was
+        // InboundEnabled and it gated answering a call; what it was actually doing was keeping an
+        // installation quiet until its owner decided otherwise, which has nothing to do with
+        // telephones and is worth more on a microphone in somebody's room than it ever was on a
+        // phone line.
+        if (!settings.Enabled)
+        {
+            return VoiceOutcome.Refused(
+                VoiceRefusal.NotEnabled, "voice is not enabled on this installation");
+        }
+
         IReadOnlyList<VoiceSession> live = await _sessions.LiveAsync(ct).ConfigureAwait(false);
 
         if (live.Count >= settings.MaxConcurrentSessions)

@@ -67,7 +67,11 @@ public interface IVoicePolicy
 
 /// <summary>What voice is allowed to do on this installation.</summary>
 /// <param name="Stopped">The operator's switch. When true nothing runs and nothing starts.</param>
-/// <param name="InboundEnabled">Whether Aurora answers calls made to it.</param>
+/// <param name="Enabled">
+/// Whether voice runs on this installation at all. Off until somebody turns it on, which is not
+/// the same switch as <paramref name="Stopped"/>: that one is an operator stopping something that
+/// was running, this one is an installation nobody has decided about yet.
+/// </param>
 /// <param name="OutboundEnabled">
 /// Whether Aurora may place calls. Separate from having a number, and off by default: a number
 /// existing is not a decision to ring people with it.
@@ -79,22 +83,21 @@ public interface IVoicePolicy
 /// <param name="MaxCallDuration">The ceiling any one session's grant may ask for.</param>
 public sealed record VoiceSettings(
     bool Stopped,
-    bool InboundEnabled,
+    bool Enabled,
     bool OutboundEnabled,
     IReadOnlyList<string> AllowedDestinations,
     int MaxConcurrentSessions,
     TimeSpan MaxCallDuration)
 {
-    /// <summary>
-    /// What an installation does before anybody configures it: answer nothing, call nobody.
-    /// </summary>
+    /// <summary>What an installation does before anybody configures it: nothing.</summary>
     /// <remarks>
-    /// Both off. An install that answered the telephone before its owner had decided it should is
-    /// an install that made a decision on their behalf.
+    /// Off. An install that listened and spoke before its owner had decided it should is an
+    /// install that made a decision on their behalf — and voice is the channel where that decision
+    /// is least recoverable, because it is made in somebody's room with a microphone.
     /// </remarks>
     public static VoiceSettings Default { get; } = new(
         Stopped: false,
-        InboundEnabled: false,
+        Enabled: false,
         OutboundEnabled: false,
         AllowedDestinations: [],
         MaxConcurrentSessions: 2,

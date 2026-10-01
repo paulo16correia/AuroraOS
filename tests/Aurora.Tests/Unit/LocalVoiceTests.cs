@@ -287,7 +287,7 @@ public sealed class LocalVoiceTests : IDisposable
         ServicePluginHost Host,
         Observations Reported);
 
-    private Rig Build(bool policyAllows = true, params string[] transcripts)
+    private Rig Build(bool policyAllows = true, bool enabled = true, params string[] transcripts)
     {
         var root = PluginRoot(transcripts);
         var reported = new Observations();
@@ -305,7 +305,7 @@ public sealed class LocalVoiceTests : IDisposable
 
         var sessions = new SqliteVoiceSessionStore(_db.Factory, _clock);
         var policy = new VoicePolicyService(
-            VoiceSettings.Default with { InboundEnabled = true }, sessions, _audit);
+            VoiceSettings.Default with { Enabled = enabled }, sessions, _audit);
 
         var principal = new Principal("voice", "aurora");
 
@@ -751,6 +751,30 @@ public sealed class LocalVoiceTests : IDisposable
     }
 
     // ---- rules that moved here when VoiceRuntimeTests went ----
+
+    [Fact]
+    public async Task AnInstallationNobodyHasTurnedVoiceOnForDoesNotListen()
+    {
+        // The posture a fresh install has to have, and the one that is least recoverable to get
+        // wrong: voice is a microphone in somebody's room, and an install that started listening
+        // because nobody had said not to would be making that decision on their behalf.
+        //
+        // It survived the telephone being removed by accident rather than by design — the switch
+        // was called InboundEnabled, so it read as being about answering calls, and nothing
+        // consulted it once there were no calls to answer.
+        Rig rig = Build(enabled: false);
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome answered = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(), Grant(), Ct);
+
+        Assert.Null(answered.Session);
+        Assert.Equal(VoiceRefusal.NotEnabled, answered.Refusal);
+
+        // Said apart from "stopped", because they are fixed differently: one is an operator
+        // resuming something, the other is an owner deciding for the first time.
+        Assert.NotEqual(VoiceRefusal.VoiceStopped, answered.Refusal);
+    }
 
     [Fact]
     public async Task ASessionSurvivesAndCanBeFoundAgain()

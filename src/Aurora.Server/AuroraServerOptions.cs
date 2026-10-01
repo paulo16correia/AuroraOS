@@ -242,7 +242,7 @@ public sealed class AuroraServerOptions
 
         var voice = VoiceSettings.Default with
         {
-            InboundEnabled = config.GetValue<bool?>("Aurora:Voice:InboundEnabled") ?? false,
+            Enabled = config.GetValue<bool?>("Aurora:Voice:Enabled") ?? false,
             OutboundEnabled = config.GetValue<bool?>("Aurora:Voice:OutboundEnabled") ?? false,
             AllowedDestinations =
                 config.GetSection("Aurora:Voice:AllowedDestinations").Get<string[]>() ?? [],

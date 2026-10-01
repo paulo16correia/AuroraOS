@@ -301,9 +301,9 @@ public sealed class VoiceAuthorizationTests
     {
         VoiceSettings settings = VoiceSettings.Default;
 
-        // An install that answered the telephone before its owner had decided it should is one
-        // that made a decision on their behalf.
-        Assert.False(settings.InboundEnabled);
+        // An install that listened and spoke before its owner had decided it should is one that
+        // made a decision on their behalf.
+        Assert.False(settings.Enabled);
         Assert.False(settings.OutboundEnabled);
         Assert.Empty(settings.AllowedDestinations);
     }
