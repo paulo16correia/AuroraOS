@@ -17,13 +17,16 @@ what the whole chain already speaks; converting in three places is how a rate er
 transcript in the wrong language.
 """
 
+import io
 import json
 import os
+import secrets
 import shutil
 import struct
 import subprocess
 import tempfile
 import time
+import wave
 
 SAMPLE_RATE = 24000
 SAMPLE_WIDTH = 2
@@ -110,82 +113,393 @@ def energy(pcm16):
 # ---------------------------------------------------------------------------
 # hearing
 # ---------------------------------------------------------------------------
+#
+# All of this came from the Discord plugin, which had it first and had it better: it is the one
+# that has been run against real models, on this machine, inside the sandbox. It lives here now
+# because there is one voice in Aurora, and a plugin that listens should not have to rediscover
+# that --no-gpu is the difference between a refusal and a segmentation fault.
+#
+# Where a plugin keeps its models and its bundled programs is the one thing that cannot be shared,
+# because each plugin is granted its own directory and nothing else. So it is a variable, and a
+# plugin that vendors this file sets it to its own directory.
+
+PLUGIN_HOME = os.path.dirname(os.path.abspath(__file__))
+
+
+# ---- how hard to work at it ----
+#
+# whisper.cpp defaults to four threads, which on a six-core processor leaves most of it idle while
+# somebody waits to be answered — 28% of the time on a four-second utterance, measured, for a
+# number it already knew. Half the logical processors is the physical core count on anything with
+# SMT, and using every one measured *slower* than eight: recognition is not the only thread in a
+# plugin, and the audio it is transcribing keeps arriving while it runs.
+def default_threads():
+    return max(1, (os.cpu_count() or 4) // 2)
+
+
+# ---- how much of the encoder's window an utterance needs ----
+#
+# Whisper's encoder always walks a thirty-second window — 1500 context units, fifty per second —
+# however little was actually said. In a conversation that is almost all padding: a second and a
+# half of "Aurora, estas a ouvir-me bem?" pays the same two seconds of encoding a full paragraph
+# would, and encoding was 73% of the time recognition took.
+#
+# `--audio-ctx` shortens the window. Measured, three runs per setting: up to about three and a half
+# seconds of speech the transcript is *character for character identical* at half the context, at a
+# third of the wall time. Past that, cutting too close starts costing words — a six-second clip lost
+# accuracy at 1.5x and recovered it at 2x — and cutting far too close makes the decoder thrash,
+# taking longer than the full window would have.
+#
+# So: twice what the audio needs, floored well clear of the thrashing, capped at the whole window.
+# Twice rather than 1.5 because the margin is what stops a long utterance losing words, and the
+# difference costs a tenth of a second on the short ones that dominate.
+#
+# The floor is 384 rather than 256 because 256 was measurably worse on hard audio — a clip whisper
+# struggles with went from an error of 21 characters to 9 by giving it half a second more window,
+# while a clip it handles easily barely noticed. Two tenths of a second is a cheap price for the bad
+# case, and the bad case is the one somebody in a conversation actually hears.
+CONTEXT_UNITS_PER_SECOND = 50
+CONTEXT_MARGIN = 2.0
+CONTEXT_FLOOR = 384
+CONTEXT_FULL = 1500
+
+
+def audio_context_for(seconds):
+    """The encoder window one utterance needs, or None to use the whole thing."""
+    if not seconds or seconds <= 0:
+        return None
+
+    wanted = int(seconds * CONTEXT_UNITS_PER_SECOND * CONTEXT_MARGIN)
+
+    if wanted >= CONTEXT_FULL:
+        # Long enough to need the whole window. Asking for it explicitly and asking for nothing are
+        # the same thing to whisper, and nothing is the setting it documents.
+        return None
+
+    return max(CONTEXT_FLOOR, wanted)
+
+
+def wav_seconds(audio_bytes):
+    """How long a WAV is, read from its header. Zero when it cannot be read."""
+    try:
+        with wave.open(io.BytesIO(audio_bytes)) as handle:
+            return handle.getnframes() / float(handle.getframerate() or 1)
+    except Exception:
+        # A malformed header is not a reason to fail a transcription: the full window still works,
+        # it is only slower.
+        return 0
+
+
+# ---- which program, and which model ----
+#
+# Each is a program the owner installed, in the order they are preferred.
+STT_ENGINES = [
+    # --no-gpu is not a performance choice. whisper.cpp loads its GPU backend by default, the
+    # sandbox denies a plugin the graphics processor, and the result is a segmentation fault rather
+    # than a refusal — exit -11 with a log line about loading Metal and nothing else. The GPU is
+    # used when Aurora granted it and refused when she did not: a large model takes about eight
+    # seconds on the graphics processor and seventy on the processor alone, and seventy seconds to
+    # hear one sentence is not listening.
+    #
+    # -l auto, because whisper.cpp defaults to English and transcribes everything else as
+    # "(speaking in foreign language)" — which is not a failure it reports, it is the transcript. A
+    # system that only understands its owner in one language is not one to ship by default.
+    #
+    # -bs 1 is greedy decoding. Measured, a beam search costs ~15% more time and changed no word of
+    # a short reply — and in a conversation the time is what is being spent.
+    #
+    # --prompt is the surprising one. It is context, not a command, and seeding it with Aurora's own
+    # name is the difference between a small model hearing "Aurora" and hearing "A hora" — measured,
+    # with the same clip. A name is the word recognition gets wrong most, and telling the recogniser
+    # the word exists costs nothing (docs/adr/0071).
+    ("whisper-cli",
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
+    ("whisper.cpp",
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
+    ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
+]
+
+# Multilingual first. An English-only model transcribes Portuguese into confident nonsense rather
+# than failing, which is the worse of the two.
+MODEL_NAMES = [
+    "ggml-large-v3-turbo.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin",
+    "ggml-base.en.bin", "ggml-tiny.bin",
+]
+
+
+def model_search(home=None):
+    """Where a whisper model is likely to be, the plugin's own directory first.
+
+    The model is a separate download from the program, and the program's default path is relative
+    to wherever it was built — which is never where a package manager put it. A recogniser with no
+    model fails on every utterance and says only that it exited non-zero.
+
+    The plugin's own `models/` comes first for the same reason its libraries do: the sandbox lets a
+    plugin read its own directory and nothing else of the owner's. A model in a home cache is one
+    the plugin cannot open — correctly. What a plugin needs to run ships with it.
+    """
+    return [
+        os.path.join(home or PLUGIN_HOME, "models"),
+        os.path.expanduser("~/.cache/whisper"),
+        os.path.expanduser("~/Library/Application Support/Aurora/models"),
+        "/opt/homebrew/share/whisper.cpp/models",
+        "/usr/local/share/whisper.cpp/models",
+    ]
+
+
+def find_model(preferred=None, home=None):
+    """A whisper model file, or None. Separate from the program and separately absent.
+
+    The owner may name one. The trade is speed against a proper noun: measured, the large model
+    takes about seven seconds for a four-second sentence and the base model four tenths of one —
+    and the base model mishears the name, unless it is prompted with it (docs/adr/0071).
+    """
+    for directory in model_search(home):
+        for name in ([preferred] if preferred else []) + MODEL_NAMES:
+            candidate = os.path.join(directory, name)
+
+            if os.path.exists(candidate):
+                return candidate
+
+    return None
+
+
+def engine_dirs(home=None):
+    """The plugin's own directories, which the sandbox grants it — where a bundled engine lives.
+
+    A confined plugin's PATH is the system directories alone, so an engine installed elsewhere is
+    unreachable to it. Its own directory is not: the sandbox lets it read and execute what ships
+    beside it, which is the same reason the model is looked for there first.
+    """
+    here = home or PLUGIN_HOME
+    return [os.path.join(here, "bin"), here]
+
+
+def find_program(name, dirs=None):
+    """An engine executable, preferring one shipped with the plugin over one on PATH.
+
+    Bundled first so a confined plugin can use engines that ship with it; PATH second so an
+    unconfined install keeps working exactly as before.
+    """
+    extensions = ["", ".exe", ".bat", ".cmd"] if os.name == "nt" else [""]
+
+    for directory in (engine_dirs() if dirs is None else dirs):
+        for extension in extensions:
+            candidate = os.path.join(directory, name + extension)
+
+            if os.path.isfile(candidate):
+                return candidate
+
+    return shutil.which(name)
+
+
+def find_stt(preferred_model=None, home=None, dirs=None):
+    """A local speech-to-text program with a model to run, or None.
+
+    Both, because either alone recognises nothing. whisper.cpp with no model exits non-zero on
+    every utterance, which reads as speech that could not be understood rather than as a file that
+    was never downloaded.
+    """
+    for name, arguments in STT_ENGINES:
+        found = find_program(name, dirs)
+
+        if not found:
+            continue
+
+        model = find_model(preferred_model, home)
+
+        if "{model}" in " ".join(arguments) and model is None:
+            return None
+
+        return {"name": name, "path": found, "arguments": arguments, "model": model}
+
+    return None
+
+
+def workspace():
+    """A directory for one utterance's scratch files, that a plugin can actually write in.
+
+    Not `tempfile.mkdtemp`. Since Python 3.13 that applies its 0700 as a real Windows ACL, which
+    replaces the inherited one and blocks further inheritance — so a confined plugin creates the
+    directory successfully and then cannot open a single file inside it. Every utterance came back
+    as `PermissionError: utterance.wav`, which reads like a broken recogniser and is not one.
+
+    Inheriting is not the weaker choice here. TEMP under the sandbox is the plugin's own working
+    directory: already the owner's, already granted to this one container and to no other, and
+    already unreachable by anything else. What 0700 defends against is a *shared* temp directory,
+    which is what POSIX still gets below.
+    """
+    directory = os.path.join(tempfile.gettempdir(), "aurora-voice-" + secrets.token_hex(6))
+
+    if os.name == "nt":
+        os.mkdir(directory)
+    else:
+        os.mkdir(directory, 0o700)
+
+    return directory
+
+
+# ---- not believing a recogniser that heard nothing ----
+#
+# What whisper says when there is nothing to hear. It does not return empty on silence — it returns
+# the most common thing in its training data, which for hours of subtitled video is gratitude and
+# sign-offs. Answering these is answering nobody.
+HALLUCINATIONS = {
+    "thank you.", "thanks for watching!", "thank you for watching!", "you", ".", "bye.",
+    "thanks for watching.", "please subscribe.", "[blank_audio]", "(silence)", "so",
+    "obrigado.", "obrigada.", "ate a proxima.", "tchau.", "muito obrigado.",
+}
+
+
+def is_silence(pcm, threshold=350):
+    """Whether this is quiet enough that anything heard in it would be invented.
+
+    Cheaper and more honest than filtering the output: a recogniser handed near-silence produces
+    confident sentences, and the only reliable way to not believe them is to not ask.
+    """
+    if len(pcm) < 4:
+        return True
+
+    total = 0
+    count = 0
+
+    # Every hundredth sample. Enough to tell speech from a quiet room, and cheap enough to run on
+    # every utterance.
+    for at in range(0, len(pcm) - 1, 200):
+        sample = int.from_bytes(pcm[at:at + 2], "little", signed=True)
+        total += abs(sample)
+        count += 1
+
+    return count == 0 or (total / count) < threshold
+
+
+def is_hallucination(text):
+    """Whether this is what a recogniser says when it heard nothing."""
+    return text.strip().lower() in HALLUCINATIONS
+
+
+def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
+               language="auto", prompt="", threads=None, audio_ctx=True):
+    """Turns speech into text, locally, and keeps neither the audio nor the file.
+
+    The audio touches the disk because these programs read files, and it is removed in the same
+    call that wrote it. Keeping recordings would mean Aurora holding a transcript of a private
+    conversation nobody agreed to her holding.
+    """
+    if engine is None:
+        raise RuntimeError("no local speech-to-text program is installed")
+
+    directory = workspace()
+    source = os.path.join(directory, "utterance.wav")
+
+    try:
+        with open(source, "wb") as handle:
+            handle.write(audio_bytes)
+
+        arguments = [
+            argument.replace("{input}", source)
+                    .replace("{model}", model or engine.get("model") or "")
+                    .replace("{language}", language or "auto")
+                    .replace("{prompt}", prompt or "")
+                    .replace("{threads}", str(threads or default_threads()))
+            for argument in engine["arguments"]
+        ]
+
+        # Without the grant the GPU is not merely slow, it is a segmentation fault: whisper.cpp
+        # loads its GPU backend by default and the sandbox refuses it. --no-gpu is how the refusal
+        # becomes a fallback instead of a crash.
+        arguments = [a for a in (
+            a.replace("{gpu}", "" if gpu else "--no-gpu") for a in arguments) if a]
+
+        # `-ac N` is two tokens or none, so it is expanded rather than substituted. `audio_ctx`
+        # False turns the sizing off entirely and asks for the whole window, which is what a caller
+        # comparing against the old behaviour wants.
+        window = audio_context_for(wav_seconds(audio_bytes)) if audio_ctx else None
+        expanded = []
+
+        for argument in arguments:
+            if argument != "{audio_ctx}":
+                expanded.append(argument)
+            elif window:
+                expanded += ["-ac", str(window)]
+
+        arguments = expanded
+
+        finished = subprocess.run(
+            [engine["path"], *arguments], capture_output=True, timeout=timeout, check=False)
+
+        if finished.returncode != 0:
+            # What it said, not only that it failed. "exited 1" is true of a missing model, a
+            # corrupt file and an unsupported sample rate alike, and they need different fixes.
+            complaint = (finished.stderr or finished.stdout or b"").decode(errors="replace")
+
+            raise RuntimeError(
+                "%s exited %d: %s" % (
+                    engine["name"], finished.returncode, complaint.strip()[-200:] or "no output"))
+
+        transcript = source + ".txt"
+
+        if os.path.exists(transcript):
+            # UTF-8 named: a transcript is speech, so it is exactly the file most likely to hold a
+            # character Python on Windows would otherwise fail to decode.
+            with open(transcript, "r", encoding="utf-8") as handle:
+                return handle.read().strip()
+
+        return finished.stdout.decode(errors="replace").strip()
+    finally:
+        # Always, including when the engine failed. A crash is not a reason to leave somebody's
+        # voice on the disk.
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 class WhisperCppRecogniser:
-    """whisper.cpp through its command-line program.
+    """whisper.cpp through its command-line program, for a caller that wants an object.
 
-    Already installed on this machine, with models, from the Discord voice work — which is why it
-    is here: a local recogniser that exists is worth more than a better one that does not.
+    The work is in the functions above, which the Discord plugin calls directly because it holds
+    its audio differently. This is the same recognition with the conversation layer's shape around
+    it: PCM in at the rate the rest of the chain uses, and a dict out.
     """
 
     name = "whisper.cpp"
 
-    SEARCH = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "models"),
-        os.path.expanduser("~/Developer/Aurora/plugins/discord/models"),
-        "/opt/homebrew/share/whisper.cpp/models",
-    ]
-
-    # Multilingual first. An English-only model transcribes Portuguese into confident nonsense
-    # rather than failing, which is the worse of the two.
-    MODELS = ["ggml-large-v3-turbo.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin"]
-
-    def __init__(self, model=None, language="auto", vocabulary=None):
+    def __init__(self, model=None, language="auto", vocabulary=None, home=None):
         self.language = language
-        self.model = model or self.find_model()
+        self.home = home
+        self.engine = find_stt(model, home)
+        self.model = model or (self.engine or {}).get("model")
 
         # Told to the recogniser as context. A name is the word recognition gets wrong most, and
         # saying it exists costs nothing (docs/adr/0071).
         self.vocabulary = vocabulary or ["Aurora"]
 
     @classmethod
-    def find_model(cls):
-        for directory in cls.SEARCH:
-            for name in cls.MODELS:
-                candidate = os.path.join(directory, name)
-
-                if os.path.exists(candidate):
-                    return candidate
-
-        return None
-
-    @classmethod
-    def available(cls):
-        return shutil.which("whisper-cli") is not None and cls.find_model() is not None
+    def available(cls, home=None):
+        return find_stt(home=home) is not None
 
     def transcribe(self, pcm16):
-        if not self.available():
+        if self.engine is None:
             raise SpeechUnavailable("whisper.cpp or its model is not on this machine")
 
-        directory = tempfile.mkdtemp(prefix="aurora-voice-")
-        source = os.path.join(directory, "turn.wav")
+        seconds = round(len(pcm16) / (SAMPLE_RATE * SAMPLE_WIDTH), 2)
 
-        try:
-            with open(source, "wb") as handle:
-                handle.write(wav(resample_to(pcm16, SAMPLE_RATE, WHISPER_RATE), WHISPER_RATE))
+        # Not asked at all rather than asked and disbelieved: a recogniser handed a quiet room
+        # answers with whatever its training data had most of.
+        if is_silence(pcm16):
+            return {"text": "", "confidence": None, "seconds": seconds, "engine": self.name}
 
-            finished = subprocess.run(
-                [shutil.which("whisper-cli"), "-m", self.model, "-f", source,
-                 "-l", self.language, "-bs", "1", "-nt", "--no-prints",
-                 "--prompt", ", ".join(self.vocabulary)],
-                capture_output=True, timeout=120, check=False)
+        text = transcribe(
+            self.engine, wav(resample_to(pcm16, SAMPLE_RATE, WHISPER_RATE), WHISPER_RATE),
+            model=self.model, language=self.language, prompt=", ".join(self.vocabulary))
 
-            if finished.returncode != 0:
-                raise SpeechUnavailable(
-                    "whisper.cpp exited %d" % finished.returncode)
-
-            text = finished.stdout.decode("utf-8", "replace").strip()
-
-            return {
-                "text": text,
-                # This engine reports none, and inventing one would be worse than saying so.
-                "confidence": None,
-                "seconds": round(len(pcm16) / (SAMPLE_RATE * SAMPLE_WIDTH), 2),
-                "engine": self.name,
-            }
-        finally:
-            shutil.rmtree(directory, ignore_errors=True)
+        return {
+            "text": "" if is_hallucination(text) else text,
+            # This engine reports none, and inventing one would be worse than saying so.
+            "confidence": None,
+            "seconds": seconds,
+            "engine": self.name,
+        }
 
 
 # ---------------------------------------------------------------------------
