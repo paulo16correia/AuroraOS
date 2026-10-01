@@ -128,3 +128,60 @@ class Pitch(unittest.TestCase):
         written.close()
 
         self.assertEqual(raw.getvalue(), voice_engines._shift_pitch(raw.getvalue(), 1.2))
+
+
+class AudioContext(unittest.TestCase):
+    """Sizing whisper's encoder window to the utterance (docs/adr/0085).
+
+    The encoder walks a thirty-second window whatever it is given, and encoding was 73% of the time
+    recognition took. Shortening it to fit is free on the short utterances a conversation is made
+    of, and destructive if cut too close — which is why the rule is a margin over what the audio
+    needs rather than a number somebody liked.
+    """
+
+    def test_the_window_is_twice_what_the_audio_needs(self):
+        # Fifty units a second is whisper's own ratio; twice that is the margin. Asserted above
+        # the floor, since below it the floor is the answer and this rule is not what is being read.
+        self.assertEqual(500, voice_engines.audio_context_for(5.0))
+        self.assertEqual(637, voice_engines.audio_context_for(6.37))
+
+    def test_the_floor_wins_where_the_margin_would_be_smaller(self):
+        # 3.48 seconds wants 348, which is under the floor. The floor is there because 256 was
+        # measurably worse on audio whisper struggles with, and a short utterance is exactly where
+        # the saving would have been smallest anyway.
+        self.assertEqual(voice_engines.CONTEXT_FLOOR, voice_engines.audio_context_for(3.48))
+
+    def test_short_utterances_still_get_a_floor(self):
+        # Below the floor the decoder starts thrashing and takes *longer* than the full window.
+        # A second of speech needs a hundred units; it gets 256.
+        self.assertEqual(voice_engines.CONTEXT_FLOOR, voice_engines.audio_context_for(1.0))
+        self.assertEqual(voice_engines.CONTEXT_FLOOR, voice_engines.audio_context_for(0.2))
+
+    def test_long_utterances_ask_for_the_whole_window(self):
+        # Past fifteen seconds the margin exceeds the window, and asking for all of it and asking
+        # for nothing are the same thing to whisper.
+        self.assertIsNone(voice_engines.audio_context_for(15.0))
+        self.assertIsNone(voice_engines.audio_context_for(60.0))
+
+    def test_audio_that_cannot_be_measured_uses_the_whole_window(self):
+        # A malformed header is not a reason to fail a transcription. The full window still works.
+        self.assertIsNone(voice_engines.audio_context_for(0))
+        self.assertEqual(0, voice_engines.wav_seconds(b"not a wav at all"))
+
+    def test_the_duration_is_read_from_the_header(self):
+        import io as _io
+        import struct
+        import wave
+
+        rate, seconds = 16000, 2.0
+        frames = int(rate * seconds)
+
+        raw = _io.BytesIO()
+        written = wave.open(raw, "wb")
+        written.setnchannels(1)
+        written.setsampwidth(2)
+        written.setframerate(rate)
+        written.writeframes(struct.pack("<%dh" % frames, *([0] * frames)))
+        written.close()
+
+        self.assertAlmostEqual(seconds, voice_engines.wav_seconds(raw.getvalue()), places=3)

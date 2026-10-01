@@ -524,8 +524,14 @@ def voice_status(state, args):
     window = conversation_window(state)
     transport = state.get("voice_transport")
 
+    # Deliberately its own field. `in_call`, `e2ee_ready` and a live gateway all stayed true over
+    # a media path that had been dead for two hours; this is the one that would have said so.
+    participants = (session.snapshot() or {}).get("participants") or [] if session else []
+
     return {
         "audio": transport.counters() if transport else None,
+        "media": transport.liveness(participants, timeout_seconds=media_timeout())
+                 if transport else None,
         "in_call": session is not None,
         "session": session.snapshot() if session else None,
         "muted": bool(state.get("voice_muted", False)),
@@ -649,6 +655,7 @@ def voice_join(state, args, nonce=None):
                 str(broken)[:300], " -> ".join(gateway.voice_trail[-3:]))) from None
 
     state["voice_transport"] = transport
+    _start_media_watch(state)
 
     report("voice.joined", session.snapshot())
     return session.snapshot()
@@ -657,6 +664,10 @@ def voice_join(state, args, nonce=None):
 def voice_leave(state, args, nonce=None):
     session = state.pop("voice", None)
     state["voice_listening"] = False
+
+    # Before the transport is closed, so the watcher never reads a torn-down one.
+    _stop_media_watch(state)
+    state.pop("voice_turns", None)
     close_conversation(state, "left")
 
     transport = state.pop("voice_transport", None)
@@ -741,6 +752,87 @@ def voice_listen(state, args, nonce=None):
     return {"listening": True}
 
 
+def media_timeout():
+    """How long the media path may be silent before Aurora stops believing in it."""
+    return float(_setting("media_timeout_seconds", voice_transport.MEDIA_TIMEOUT_SECONDS))
+
+
+def _start_media_watch(state):
+    """One watcher per session, and only one.
+
+    Guarded rather than assumed: `voice_listen` can be called again while a session is up, and a
+    second watcher would report the same death twice and outlive the first.
+    """
+    if state.get("voice_media_watch"):
+        return
+
+    state["voice_media_watch"] = True
+    threading.Thread(target=_watch_media, args=(state,), daemon=True).start()
+
+
+def _stop_media_watch(state):
+    """Ends the watcher. Its loop reads this flag, so clearing it is the cancellation."""
+    state.pop("voice_media_watch", None)
+
+
+def _watch_media(state):
+    """Notices when the media path stops carrying packets while everything else looks fine.
+
+    Everything else did look fine: the gateway stayed connected, participant events kept arriving,
+    `in_call` and `e2ee_ready` both stayed true — for two hours, over a socket that had received
+    nothing since the first minute (docs/adr/0082). Aurora sat in the channel visible to everybody
+    in it, hearing nothing, and no part of the system had a way to say so.
+
+    Detection only. What to do about a dead path — reconnect, rejoin, leave — is a separate
+    decision and is deliberately not made here.
+    """
+    seen = voice_transport.MEDIA_HEALTHY
+
+    while state.get("voice_media_watch"):
+        time.sleep(1)
+
+        session = state.get("voice")
+        transport = state.get("voice_transport")
+
+        if session is None or transport is None:
+            # The session it was watching is gone. Leaving rather than looping against a torn-down
+            # transport, which is how a watchdog outlives the thing it watches.
+            break
+
+        participants = (session.snapshot() or {}).get("participants") or []
+        now = transport.liveness(participants, timeout_seconds=media_timeout())
+
+        if now == seen:
+            continue
+
+        if now == voice_transport.MEDIA_DEAD:
+            report("voice.media_dead", _media_report(state, session, transport, participants))
+        elif seen == voice_transport.MEDIA_DEAD and now == voice_transport.MEDIA_HEALTHY:
+            report("voice.media_recovered", _media_report(state, session, transport, participants))
+
+        seen = now
+
+
+def _media_report(state, session, transport, participants):
+    """What an operator needs to tell a dead media path from a quiet call.
+
+    Counts and timings only. Nothing anybody said goes in here: the failure is that packets stopped
+    arriving, and no transcript makes that clearer.
+    """
+    counters = transport.counters()
+
+    return {
+        "guild_id": session.guild_id,
+        "channel_id": session.channel_id,
+        "quiet_seconds": round(transport.quiet_seconds() or 0.0, 1),
+        "timeout_seconds": media_timeout(),
+        "participants": len(participants),
+        "rtp": counters["received"] - counters["control"],
+        "rtcp": counters["control"],
+        "listening": bool(state.get("voice_listening", False)),
+    }
+
+
 def _watch_turns(state):
     """Ends turns on silence and turns each one into a transcript.
 
@@ -787,7 +879,8 @@ def _watch_turns(state):
 
             try:
                 transcript = voice_engines.transcribe(
-                    engine, _wav(audio), language=language, prompt=prompt, threads=threads)
+                    engine, _wav(audio), language=language, prompt=prompt, threads=threads,
+                    audio_ctx=bool(_setting("stt_audio_ctx", True)))
             except Exception as unheard:
                 # The message. A recogniser that cannot run and one that heard nothing produce the
                 # same exception type and need entirely different fixes.

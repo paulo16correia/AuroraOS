@@ -107,7 +107,15 @@ public sealed class DiscordVoiceTests : IDisposable
         // mkdtemp's 0700 became a real Windows ACL in Python 3.13, replacing the inherited
         // protection and blocking inheritance — so every utterance came back as a PermissionError
         // dressed up as a recogniser that could not understand anybody (docs/adr/0080).
-        RunPython("test_workspace", 8);
+        RunPython("test_workspace", 14);
+    }
+
+    [Fact]
+    public void ADeadMediaPathIsToldApartFromAQuietCall()
+    {
+        // The gateway, in_call and e2ee_ready all stayed true for two hours over a socket that had
+        // received nothing. None of the three is evidence about the media path (docs/adr/0082).
+        RunPython("test_media_liveness", 21);
     }
 
     // ---- the manifest and the program agree ----

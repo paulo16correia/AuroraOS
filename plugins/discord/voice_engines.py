@@ -35,6 +35,59 @@ def _default_threads():
     return max(1, (os.cpu_count() or 4) // 2)
 
 
+# ---- how much of the encoder's window an utterance needs ----
+#
+# Whisper's encoder always walks a thirty-second window — 1500 context units, fifty per second —
+# however little was actually said. In a conversation that is almost all padding: a second and a
+# half of "Aurora, estás a ouvir-me bem?" pays the same two seconds of encoding a full paragraph
+# would, and encoding was 73% of the time recognition took.
+#
+# `--audio-ctx` shortens the window. Measured on this machine, three runs per setting: up to about
+# three and a half seconds of speech the transcript is *character for character identical* at half
+# the context, at a third of the wall time. Past that, cutting too close starts costing words —
+# a six-second clip lost accuracy at 1.5x and recovered it at 2x — and cutting far too close makes
+# the decoder thrash, taking longer than the full window would have.
+#
+# So: twice what the audio needs, floored well clear of the thrashing, capped at the whole window.
+# Twice rather than 1.5 because the margin is what stops a long utterance losing words, and the
+# difference costs a tenth of a second on the short ones that dominate.
+#
+# The floor is 384 rather than 256 because 256 was measurably worse on hard audio — a clip whisper
+# struggles with went from an error of 21 characters to 9 by giving it half a second more window,
+# while a clip it handles easily barely noticed. Two tenths of a second is a cheap price for the
+# bad case, and the bad case is the one somebody in a call actually hears.
+CONTEXT_UNITS_PER_SECOND = 50
+CONTEXT_MARGIN = 2.0
+CONTEXT_FLOOR = 384
+CONTEXT_FULL = 1500
+
+
+def audio_context_for(seconds):
+    """The encoder window one utterance needs, or None to use the whole thing."""
+    if not seconds or seconds <= 0:
+        return None
+
+    wanted = int(seconds * CONTEXT_UNITS_PER_SECOND * CONTEXT_MARGIN)
+
+    if wanted >= CONTEXT_FULL:
+        # Long enough to need the whole window. Asking for it explicitly and asking for nothing
+        # are the same thing to whisper, and nothing is the setting it documents.
+        return None
+
+    return max(CONTEXT_FLOOR, wanted)
+
+
+def wav_seconds(audio_bytes):
+    """How long a WAV is, read from its header. Zero when it cannot be read."""
+    try:
+        with wave.open(io.BytesIO(audio_bytes)) as handle:
+            return handle.getnframes() / float(handle.getframerate() or 1)
+    except Exception:
+        # A malformed header is not a reason to fail a transcription: the full window still works,
+        # it is only slower.
+        return 0
+
+
 # Local speech-to-text, in the order they are preferred. Each is a program the owner installed.
 STT_ENGINES = [
     # --no-gpu is not a performance choice. whisper.cpp loads its Metal backend by default, the
@@ -62,10 +115,10 @@ STT_ENGINES = [
     # most, and telling the recogniser the word exists costs nothing.
     ("whisper-cli",
      ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
-      "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
+      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
     ("whisper.cpp",
      ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
-      "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
+      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
@@ -375,7 +428,7 @@ def is_hallucination(text):
 
 
 def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
-               language="auto", prompt="", threads=None):
+               language="auto", prompt="", threads=None, audio_ctx=True):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
     The audio touches the disk because these programs read files, and it is removed in the same
@@ -406,6 +459,20 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
         # refusal becomes a fallback instead of a crash.
         arguments = [a for a in (
             a.replace("{gpu}", "" if gpu else "--no-gpu") for a in arguments) if a]
+
+        # `-ac N` is two tokens or none, so it is expanded rather than substituted. `audio_ctx`
+        # False turns the sizing off entirely and asks for the whole window, which is what a caller
+        # comparing against the old behaviour wants.
+        window = audio_context_for(wav_seconds(audio_bytes)) if audio_ctx else None
+        expanded = []
+
+        for argument in arguments:
+            if argument != "{audio_ctx}":
+                expanded.append(argument)
+            elif window:
+                expanded += ["-ac", str(window)]
+
+        arguments = expanded
 
         finished = subprocess.run(
             [engine["path"], *arguments], capture_output=True, timeout=timeout, check=False)

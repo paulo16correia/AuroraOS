@@ -121,6 +121,33 @@ public sealed class AuroraServerOptions
     /// </remarks>
     public required VoiceSettings Voice { get; init; }
 
+    /// <summary>
+    /// The environment variable that forbids falling back to the owner's deployment directory.
+    /// </summary>
+    /// <remarks>
+    /// Set by the test assembly and by nothing else. Unconfigured paths defaulting to
+    /// <c>%LOCALAPPDATA%\Aurora</c> is the right behaviour for a server somebody started; it is
+    /// the wrong behaviour for a test, where the same default silently aims a test at the running
+    /// deployment's database, keys and sandbox. A test that forgets to say where its data goes
+    /// should fail saying so, not quietly borrow the operator's (docs/adr/0083).
+    /// </remarks>
+    public const string RequireExplicitPathsVariable = "AURORA_REQUIRE_EXPLICIT_PATHS";
+
+    private static bool RequiresExplicitPaths =>
+        Environment.GetEnvironmentVariable(RequireExplicitPathsVariable) == "1";
+
+    /// <summary>Refuses a path that was never configured, where falling back would be wrong.</summary>
+    private static void RefuseImplicitPath(string setting)
+    {
+        if (RequiresExplicitPaths)
+        {
+            throw new InvalidOperationException(
+                $"'{setting}' is not configured and {RequireExplicitPathsVariable}=1, so Aurora "
+                + "will not fall back to the deployment directory. Configure it — a temporary "
+                + "directory in a test — rather than writing to the owner's live installation.");
+        }
+    }
+
     public static AuroraServerOptions FromConfiguration(IConfiguration config)
     {
         var token = config["Aurora:BearerToken"]
@@ -137,6 +164,8 @@ public sealed class AuroraServerOptions
         var dbPath = config["Aurora:DbPath"];
         if (string.IsNullOrWhiteSpace(dbPath))
         {
+            RefuseImplicitPath("Aurora:DbPath");
+
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aurora");
             Directory.CreateDirectory(dir);
@@ -148,6 +177,8 @@ public sealed class AuroraServerOptions
         var sandboxRoot = config["Aurora:SandboxRoot"];
         if (string.IsNullOrWhiteSpace(sandboxRoot))
         {
+            RefuseImplicitPath("Aurora:SandboxRoot");
+
             sandboxRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Aurora", "sandbox");

@@ -12,14 +12,28 @@ public sealed class ServerOptionsTests
 {
     private static AuroraServerOptions From(params (string Key, string Value)[] settings)
     {
-        IConfiguration config = new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                settings
-                    .Select(setting => new KeyValuePair<string, string?>(setting.Key, setting.Value))
-                    .Append(new KeyValuePair<string, string?>(
-                        "Aurora:BearerToken", "a-token-long-enough-to-pass-validation"))
-                    .ToList())
-            .Build();
+        // Somewhere of this test's own. These options were built with only a bearer token, so
+        // every path fell back to the owner's installation — this test read the defaults for a
+        // *deployment* while claiming to read them for a configuration, and created and re-hardened
+        // the live sandbox on the way past (docs/adr/0083). Supplied here rather than in each case,
+        // and only where the case did not name one itself.
+        var given = settings
+            .Select(setting => new KeyValuePair<string, string?>(setting.Key, setting.Value))
+            .ToList();
+
+        void Default(string key, string value)
+        {
+            if (!given.Any(pair => string.Equals(pair.Key, key, StringComparison.Ordinal)))
+            {
+                given.Add(new KeyValuePair<string, string?>(key, value));
+            }
+        }
+
+        Default("Aurora:BearerToken", "a-token-long-enough-to-pass-validation");
+        Default("Aurora:DbPath", TestTemp.Path("options") + ".db");
+        Default("Aurora:SandboxRoot", TestTemp.Folder("options-sandbox"));
+
+        IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection(given).Build();
 
         return AuroraServerOptions.FromConfiguration(config);
     }

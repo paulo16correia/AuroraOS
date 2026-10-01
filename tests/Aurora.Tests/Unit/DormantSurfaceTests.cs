@@ -49,6 +49,15 @@ public sealed class DormantSurfaceTests
             // RFC 06's connector seam. Aurora reaches nothing outside this machine, so there is
             // nothing to connect to; the tool manager behind it is used, for incident containment.
             ["IToolConnector"] = "Aurora is local-only and ships no external connector",
+
+            // The local model seam (docs/adr/0084). The contract and the conversation boundary
+            // behind it are implemented and tested; what is missing is a runtime, and that is a
+            // deployment decision taken separately from the architectural one on purpose — the
+            // whole point of the contract is that it is not one vendor's client. Until a runtime
+            // is chosen and benchmarked on the machine it will run on, Aurora ships the seam
+            // empty, which means voice answers nobody rather than answering from somewhere
+            // unexamined.
+            ["ILocalLanguageModel"] = "no local runtime is chosen yet; the boundary is complete",
         };
 
     [Fact]

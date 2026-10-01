@@ -78,6 +78,66 @@ RTP_VERSION_FLAGS = 0x80
 RTP_PAYLOAD_TYPE = 0x78
 RTP_HEADER_BYTES = 12
 
+# ---- media liveness ----
+#
+# Whether audio is still arriving is a different question from every other health signal this
+# plugin has, and the difference is not academic: the gateway stayed connected, participant events
+# kept arriving, `in_call` stayed true and `e2ee_ready` stayed true for two hours over a socket
+# that had received nothing at all (docs/adr/0082). None of those four is evidence about the media
+# path. This is.
+
+MEDIA_HEALTHY = "healthy"
+MEDIA_SUSPECT = "suspect"
+MEDIA_DEAD = "dead"
+
+# Nothing is draining the socket, or there is nobody in the channel who could send anything. Not
+# "healthy" and not "dead": silence is not evidence either way, and saying either would be a guess
+# dressed as a reading.
+MEDIA_UNOBSERVED = "unobserved"
+
+# How long the media path may go completely silent before Aurora stops believing it is there. The
+# one number: everything else derives from it, and nothing else in the code carries a media
+# timeout of its own. Conservative on purpose — Discord's RTCP arrives every few seconds even
+# through a call where nobody speaks, so forty-five is already many missed reports, and the cost of
+# being wrong is telling somebody their call is broken when it is merely quiet.
+MEDIA_TIMEOUT_SECONDS = 45.0
+
+# Where "quiet for a while" stops being normal and becomes worth saying, without being a verdict.
+MEDIA_SUSPECT_FRACTION = 0.5
+
+
+def media_liveness(last_media_ms, now_ms, participants, observing,
+                   timeout_seconds=MEDIA_TIMEOUT_SECONDS):
+    """What the media path looks like, as a state rather than an inference.
+
+    `last_media_ms` is when anything at all last arrived on the media socket — RTP or RTCP, since
+    either proves the path carries packets. RTP alone would be the wrong test: a call where nobody
+    is speaking legitimately produces none, and a rule that read silence as death would call every
+    quiet moment a failure.
+
+    `observing` is whether anything is actually draining the socket. When it is not, no packet
+    would be counted even if the path were perfect, so silence says nothing and the answer is
+    UNOBSERVED rather than a verdict Aurora has not earned.
+    """
+    if not observing or not participants:
+        return MEDIA_UNOBSERVED
+
+    if last_media_ms is None:
+        # Observing, people present, and nothing has ever arrived. Aged from the moment observing
+        # began is the caller's job; with no timestamp at all there is nothing to age.
+        return MEDIA_UNOBSERVED
+
+    quiet_seconds = max(0.0, (now_ms - last_media_ms) / 1000.0)
+
+    if quiet_seconds >= timeout_seconds:
+        return MEDIA_DEAD
+
+    if quiet_seconds >= timeout_seconds * MEDIA_SUSPECT_FRACTION:
+        return MEDIA_SUSPECT
+
+    return MEDIA_HEALTHY
+
+
 # RTCP payload types: sender report through application-defined. The same socket carries these,
 # and they are not audio — a receiver report decrypted as speech is a packet that never
 # authenticates, which looks exactly like a broken cipher.
@@ -224,6 +284,14 @@ class VoiceTransport:
         # different fixes. Without counting them they look identical from outside.
         self.received = 0
         self.control = 0
+
+        # When anything last arrived on the media socket, RTP or RTCP alike. Monotonic, because a
+        # wall clock that steps backwards would make a live path look dead.
+        self.last_media_ms = None
+
+        # When draining began, so "nothing has arrived yet" can be aged from something. Without it
+        # a socket that never carried a single packet would look permanently unobserved.
+        self.observing_since_ms = None
         self.malformed = 0
         self.unauthenticated = 0
         self.unattributed = 0
@@ -689,6 +757,25 @@ class VoiceTransport:
 
     # ---- listening ----
 
+    def observing(self):
+        """Whether anything is draining the media socket right now."""
+        return bool(self._listening.is_set() and not self._stop.is_set())
+
+    def quiet_seconds(self):
+        """How long the media socket has been silent, or None when nothing is watching it."""
+        since = self.last_media_ms if self.last_media_ms is not None else self.observing_since_ms
+
+        if since is None or not self.observing():
+            return None
+
+        return max(0.0, (time.monotonic() * 1000 - since) / 1000.0)
+
+    def liveness(self, participants, timeout_seconds=MEDIA_TIMEOUT_SECONDS):
+        """The media path's state, judged against the people who could be sending to it."""
+        return media_liveness(
+            self.last_media_ms if self.last_media_ms is not None else self.observing_since_ms,
+            time.monotonic() * 1000, participants, self.observing(), timeout_seconds)
+
     def counters(self):
         """What arrived and what became of it."""
         return {
@@ -702,6 +789,7 @@ class VoiceTransport:
             "silence": self.silence,
             "speakers": len(self._speakers),
             "e2ee_ready": bool(self._dave is not None and self._dave.ready),
+            "media_quiet_seconds": self.quiet_seconds(),
             "first_header": self.first_header,
             "undecryptable_reason": self.undecryptable_reason,
         }
@@ -744,6 +832,7 @@ class VoiceTransport:
 
         self._on_audio = on_audio
         self._listening.set()
+        self.observing_since_ms = time.monotonic() * 1000
         self._receiver = threading.Thread(target=self._receive_loop, daemon=True)
         self._receiver.start()
 
@@ -774,6 +863,10 @@ class VoiceTransport:
                 continue
 
             self.received += 1
+
+            # Before telling RTP from RTCP, because either one proves the path carries packets and
+            # the distinction matters for audio, not for liveness.
+            self.last_media_ms = time.monotonic() * 1000
 
             if is_rtcp(packet):
                 # Timing and loss statistics. Aurora has no use for them and they are not audio.
