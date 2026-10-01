@@ -39,11 +39,17 @@ public abstract class WrapperSandbox : IPluginSandbox
             start.ArgumentList.Add(argument);
         }
 
-        if (!string.Equals(launch.Plan.FileName, launch.Executable, StringComparison.Ordinal))
+        IReadOnlyList<string> plugin = PluginCommand.For(launch.Request);
+
+        if (!string.Equals(launch.Plan.FileName, plugin[0], StringComparison.Ordinal))
         {
-            // Under a wrapper the plugin's own path is the wrapper's last argument. Unconfined,
-            // the plan already names the plugin and adding it again would pass it to itself.
-            start.ArgumentList.Add(launch.Executable);
+            // Under a wrapper the plugin's own command goes on the end, after the wrapper's own
+            // arguments — that is how sandbox-exec and bwrap both take it. Unconfined, the plan is
+            // already that command and adding it again would pass the plugin to itself.
+            foreach (var word in plugin)
+            {
+                start.ArgumentList.Add(word);
+            }
         }
 
         start.Environment.Clear();

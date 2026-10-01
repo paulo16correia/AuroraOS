@@ -539,6 +539,87 @@ public sealed class ServicePluginTests
         Assert.True(sandbox.Last!.GpuGranted, "the GPU grant did not reach the sandbox");
     }
 
+    // ---- F-4: the host bounds what a plugin can push at it (docs/adr/0079) ----
+
+    /// <summary>A plugin that answers a call with a result far larger than the frame limit.</summary>
+    private const string HugeResult = """
+        import json, sys
+        for line in sys.stdin:
+            frame = json.loads(line)
+            if frame.get("kind") == "hello":
+                print(json.dumps({"kind": "ready"}), flush=True)
+            elif frame.get("kind") == "call":
+                # One line, well past the megabyte frame ceiling.
+                big = "x" * (3 * 1024 * 1024)
+                print(json.dumps({
+                    "kind": "result", "id": frame["id"], "ok": True,
+                    "output": {"blob": big}}), flush=True)
+                # A second, well-formed result under a *different* id, so a call made after the
+                # oversized frame has something to match if the stream stayed framed.
+        """;
+
+    /// <summary>
+    /// A plugin that volunteers an observation whose payload is over the observation ceiling
+    /// (256 KB) but under the whole-frame ceiling (1 MB), so it is the payload check that drops it.
+    /// </summary>
+    private const string HugeObservation = """
+        import json, sys
+        for line in sys.stdin:
+            frame = json.loads(line)
+            if frame.get("kind") == "hello":
+                print(json.dumps({"kind": "ready"}), flush=True)
+                print(json.dumps({
+                    "kind": "event", "type": "flood",
+                    "payload": {"blob": "x" * (512 * 1024)}}), flush=True)
+            elif frame.get("kind") == "call":
+                print(json.dumps({
+                    "kind": "result", "id": frame["id"], "ok": True, "output": {}}), flush=True)
+        """;
+
+    [Fact]
+    public async Task AnOversizedResultFrameIsDroppedAndTheServiceStaysUsable()
+    {
+        Installed installed = await RootAsync("plugin/svc", HugeResult);
+        await using ServicePluginHost host = Host(installed.Root, new Observations());
+
+        // The 3 MB result line is over the frame ceiling, so the host drops it rather than
+        // buffering it whole; the call gets no matching result and ends as the ambiguous/timeout
+        // outcome rather than an out-of-memory. What matters is that the host did not fall over.
+        PluginResult first = await host.InvokeAsync(
+            Manifest(installed.Executable, timeoutSeconds: 2), Call(), Ct);
+
+        Assert.False(first.Ok);
+
+        // And the service is still up and answering: the oversized frame did not desynchronise or
+        // kill the connection.
+        Assert.Single(host.Running());
+        Assert.Equal(PluginServiceStatus.Ready, host.Running()[0].Status);
+    }
+
+    [Fact]
+    public async Task AnOversizedObservationPayloadIsDroppedNotPublished()
+    {
+        Installed installed = await RootAsync("plugin/svc", HugeObservation);
+        var observations = new Observations();
+        await using ServicePluginHost host = Host(installed.Root, observations);
+
+        PluginResult result = await host.InvokeAsync(Manifest(installed.Executable), Call(), Ct);
+
+        // The call itself is unaffected.
+        Assert.True(result.Ok, result.Detail);
+
+        // Give the reader a moment to have processed the volunteered event, then confirm the
+        // oversized payload never reached the observation sink.
+        for (var waited = 0; waited < 20 && host.Running()[0].Detail is null; waited++)
+        {
+            await Task.Delay(50, Ct);
+        }
+
+        Assert.Empty(observations.Seen);
+        Assert.Contains(
+            "payload exceeded", host.Running()[0].Detail ?? "", StringComparison.Ordinal);
+    }
+
     private sealed class RecordingSandbox : WrapperSandbox
     {
         public SandboxRequest? Last { get; private set; }

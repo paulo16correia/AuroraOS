@@ -315,7 +315,11 @@ class XttsSpeaker:
             tts.tts_to_file(
                 text=text, file_path=target, language=self.language, **voice)
 
-            return _pcm_from_wav(open(target, "rb").read())
+            # Closed before the directory goes: a handle still open here leaves the file
+            # undeletable on Windows, and rmtree is ignoring errors, so the temporary directory
+            # would be leaked once per sentence spoken.
+            with open(target, "rb") as spoken:
+                return _pcm_from_wav(spoken.read())
         finally:
             shutil.rmtree(directory, ignore_errors=True)
 
@@ -364,7 +368,11 @@ class SaySpeaker:
             if finished.returncode != 0:
                 raise SpeechUnavailable("`say` exited %d" % finished.returncode)
 
-            return _pcm_from_wav(open(target, "rb").read())
+            # Closed before the directory goes: a handle still open here leaves the file
+            # undeletable on Windows, and rmtree is ignoring errors, so the temporary directory
+            # would be leaked once per sentence spoken.
+            with open(target, "rb") as spoken:
+                return _pcm_from_wav(spoken.read())
         finally:
             shutil.rmtree(directory, ignore_errors=True)
 

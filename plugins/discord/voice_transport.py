@@ -34,6 +34,31 @@ HELLO = 8
 RESUMED = 9
 CLIENT_DISCONNECT = 13
 
+# The close codes Discord will not reconsider. A retry leaves the channel, rejoins, and sends the
+# same identify from the same machine — so for these the second answer is the first one, and the
+# only thing another attempt adds is one more visible join and leave for everybody in the call.
+# The codes left out of this table are the retryable half, and are the reason the retry exists:
+# 4006 and 4009 are a session Discord has forgotten and 4015 is a voice server that fell over,
+# which is precisely what asking for fresh credentials fixes (docs/adr/0068, docs/adr/0080).
+TERMINAL_CLOSE_CODES = {
+    4004: "Discord rejected the voice token",
+    4012: "Discord does not implement the voice protocol version Aurora asked for",
+    4014: "Aurora was disconnected from the channel (moved, removed, or the channel is gone)",
+    4016: "Discord does not implement the encryption mode Aurora offered",
+    4017: "the call requires DAVE end-to-end encryption and this machine cannot take part; "
+          "install the davey library beside the plugin",
+}
+
+
+def terminal_close_reason(error):
+    """Why Discord will not reconsider, or None where another attempt is worth making.
+
+    Read off the exception rather than parsed out of its message: the close code is the one part
+    of a refusal that is a fact, and matching on the sentence around it would break the next time
+    the sentence is worded better.
+    """
+    return TERMINAL_CLOSE_CODES.get(getattr(error, "close_code", None))
+
 # Discord's end-to-end encryption. The transitions are JSON; the key material is binary.
 DAVE_PREPARE_TRANSITION = 21
 DAVE_EXECUTE_TRANSITION = 22
@@ -216,6 +241,10 @@ class VoiceTransport:
         self.state = "disconnected"
         self.detail = None
 
+        # Why Discord closed the voice socket, as the number it sent. `detail` says it in a
+        # sentence for a person; this is the half a caller can decide on.
+        self.close_code = None
+
         # What it did, in order. A voice connection is four handshakes in a row and knowing which
         # one it reached is the difference between a diagnosis and a guess.
         self.trail = []
@@ -243,10 +272,15 @@ class VoiceTransport:
                 # The trail here too. It was only on the timeout path, so a connection that failed
                 # outright reported the error with no account of where it had got to — which is
                 # the half that says which step to look at.
-                raise WebSocketError(
+                refused = WebSocketError(
                     "%s | after %s" % (
                         self.detail or "the voice connection failed",
                         " -> ".join(self.trail[-3:]) or "nothing"))
+
+                # So the caller can tell a refusal it should stop asking about from one that a
+                # fresh session fixes, without reading the message.
+                refused.close_code = self.close_code
+                raise refused
             time.sleep(0.05)
 
         # What it was doing when the time ran out, which is the whole diagnosis. "It timed out"
@@ -362,6 +396,7 @@ class VoiceTransport:
                 # happened rather than why.
                 if socket_.close_code:
                     self.state = "failed"
+                    self.close_code = socket_.close_code
                     self.detail = "Discord closed the voice socket (%s)%s" % (
                         socket_.close_code,
                         ": " + socket_.close_reason if socket_.close_reason else "")

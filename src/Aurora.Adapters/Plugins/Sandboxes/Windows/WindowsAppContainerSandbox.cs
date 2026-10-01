@@ -45,14 +45,17 @@ public sealed class WindowsAppContainerSandbox : IPluginSandbox
 {
     internal const string Mechanism = "AppContainer";
 
-    public SandboxPlan Plan(SandboxRequest request) => new(
-        // No wrapper program: the plan names the plugin itself, because on this platform the
-        // confinement is carried by the token rather than by something standing in front.
-        request.Executable,
-        [],
-        SandboxLevel.Confined,
-        Mechanism,
-        []);
+    public SandboxPlan Plan(SandboxRequest request)
+    {
+        // No wrapper program: the plan names what is actually executed, because on this platform
+        // the confinement is carried by the token rather than by something standing in front.
+        // For a script that is the interpreter with the script as its argument — the container is
+        // the same either way, and so is everything it may reach.
+        IReadOnlyList<string> command = PluginCommand.For(request);
+
+        return new SandboxPlan(
+            command[0], [.. command.Skip(1)], SandboxLevel.Confined, Mechanism, []);
+    }
 
     public Task<SandboxStart> StartAsync(SandboxLaunch launch, CancellationToken ct)
     {
@@ -411,24 +414,15 @@ public sealed class WindowsAppContainerSandbox : IPluginSandbox
 
         for (var index = 0; index < profile.Capabilities.Count; index++)
         {
-            var wellKnown = profile.Capabilities[index] switch
+            var capabilitySid = profile.Capabilities[index] switch
             {
-                AppContainerCapability.InternetClient => Win32.WinCapabilityInternetClientSid,
+                AppContainerCapability.InternetClient => Win32.InternetClientCapabilitySid,
                 _ => throw new InvalidOperationException(
                     $"no SID is mapped for {profile.Capabilities[index]}"),
             };
 
-            // SECURITY_MAX_SID_SIZE. One allocation, sized for the largest a SID can be, rather
-            // than the usual ask-for-the-size dance for something this small.
-            var size = 68u;
-            IntPtr sid = Marshal.AllocHGlobal((int)size);
+            IntPtr sid = CapabilitySid(capabilitySid);
             allocated.Add(sid);
-
-            if (!Win32.CreateWellKnownSid(wellKnown, IntPtr.Zero, sid, ref size))
-            {
-                throw new InvalidOperationException(
-                    $"the {profile.Capabilities[index]} capability SID could not be made");
-            }
 
             Marshal.StructureToPtr(
                 new Win32.SidAndAttributes { Sid = sid, Attributes = 4 /* SE_GROUP_ENABLED */ },
@@ -437,6 +431,44 @@ public sealed class WindowsAppContainerSandbox : IPluginSandbox
         }
 
         return array;
+    }
+
+    /// <summary>
+    /// A capability SID, from its string, in a buffer freed the same way as every other here.
+    /// </summary>
+    /// <remarks>
+    /// <c>ConvertStringSidToSid</c> returns a <c>LocalAlloc</c> buffer; the SID is copied into an
+    /// <c>HGlobal</c> one and the original freed, so the caller's cleanup can free every capability
+    /// SID with <c>FreeHGlobal</c> and never has to remember which allocator made which.
+    /// </remarks>
+    private static IntPtr CapabilitySid(string stringSid)
+    {
+        if (!Win32.ConvertStringSidToSid(stringSid, out IntPtr local) || local == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"the capability SID {stringSid} could not be built "
+                + $"(error {Marshal.GetLastWin32Error()})");
+        }
+
+        try
+        {
+            var length = Win32.GetLengthSid(local);
+            IntPtr sid = Marshal.AllocHGlobal(length);
+
+            if (!Win32.CopySid((uint)length, sid, local))
+            {
+                Marshal.FreeHGlobal(sid);
+                throw new InvalidOperationException(
+                    $"the capability SID {stringSid} could not be copied "
+                    + $"(error {Marshal.GetLastWin32Error()})");
+            }
+
+            return sid;
+        }
+        finally
+        {
+            Win32.LocalFree(local);
+        }
     }
 
     /// <summary>
@@ -572,7 +604,10 @@ public sealed class WindowsAppContainerSandbox : IPluginSandbox
     private static string CommandLine(SandboxLaunch launch)
     {
         var line = new StringBuilder();
-        line.Append('"').Append(launch.Executable.Replace("\"", "\\\"", StringComparison.Ordinal))
+
+        // The plan's file name, not the plugin's path: where a script is being run they differ,
+        // and the program CreateProcess is given has to be the one that argv[0] names.
+        line.Append('"').Append(launch.Plan.FileName.Replace("\"", "\\\"", StringComparison.Ordinal))
             .Append('"');
 
         foreach (var argument in launch.Plan.Arguments)

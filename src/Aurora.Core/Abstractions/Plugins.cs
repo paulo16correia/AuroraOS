@@ -216,7 +216,45 @@ public sealed record SandboxRequest(
     /// and a graphics driver is a wide surface to open to third-party code, so neither answer is
     /// obviously right and the owner gives it.
     /// </remarks>
-    bool GpuGranted = false);
+    bool GpuGranted = false,
+    /// <summary>
+    /// The interpreter that runs <see cref="Executable"/>, when this platform cannot run it alone.
+    /// </summary>
+    /// <remarks>
+    /// Resolved to an absolute path by the host before the sandbox is asked anything, so a sandbox
+    /// never searches for a program: it is told which one, and confines that. Null on the
+    /// platforms where the kernel reads a shebang, which is every one except Windows — so nothing
+    /// about a macOS or Linux launch changes.
+    /// <para>
+    /// <see cref="Executable"/> stays the plugin's own file either way. It is what the confinement
+    /// is written around — the directory it lives in, the policy that names it — and swapping in
+    /// the interpreter's path would quietly move all of that to wherever Python is installed.
+    /// </para>
+    /// </remarks>
+    PluginInterpreter? Interpreter = null);
+
+/// <summary>An interpreter, found on this machine, that a plugin's program needs.</summary>
+/// <param name="Runtime">The name from <c>PluginRuntimes</c> this satisfies.</param>
+/// <param name="Path">
+/// Its absolute path. Absolute because a sandbox has to grant the container access to it by name,
+/// and because a relative one would be resolved against whatever directory the child ends up in.
+/// </param>
+public sealed record PluginInterpreter(string Runtime, string Path);
+
+/// <summary>The program and arguments that run one plugin, before any confinement is added.</summary>
+/// <remarks>
+/// One place, because three sandboxes have to agree on it. Without an interpreter this is the
+/// plugin's own program and nothing else, which is what every platform did before Windows needed
+/// an answer — so the no-interpreter case is byte-for-byte the launch that was verified on macOS.
+/// </remarks>
+public static class PluginCommand
+{
+    /// <summary>The plugin's own command line: interpreter then program, or just the program.</summary>
+    public static IReadOnlyList<string> For(SandboxRequest request) =>
+        request.Interpreter is { } interpreter
+            ? [interpreter.Path, request.Executable]
+            : [request.Executable];
+}
 
 /// <summary>How confined a plugin actually is once launched.</summary>
 public enum SandboxLevel

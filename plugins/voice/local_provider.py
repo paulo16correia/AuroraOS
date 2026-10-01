@@ -416,8 +416,19 @@ class LocalSession:
 
         if self.turns:
             spent["last_turn"] = self.turns[-1]
-            spent["median_turn_ms"] = sorted(
-                t["total_ms"] for t in self.turns if t.get("total_ms"))[len(self.turns) // 2]
+
+            # Indexed into the measurements themselves, not into every turn. A turn only carries
+            # total_ms if both ends of it were timed, so the two counts differ the moment one turn
+            # was not — and a turn that took under half a millisecond rounds to 0, which is a
+            # measurement rather than a missing one. Both were being dropped from the list and
+            # counted in the index, which is an IndexError on the first fast turn. Windows finds it
+            # every time: time.monotonic() there moves in steps of about 15ms, so a turn answered by
+            # a fake engine measures exactly 0.
+            timed = sorted(
+                turn["total_ms"] for turn in self.turns if turn.get("total_ms") is not None)
+
+            if timed:
+                spent["median_turn_ms"] = timed[len(timed) // 2]
 
         return spent
 

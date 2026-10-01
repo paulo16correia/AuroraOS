@@ -1,6 +1,7 @@
 using System.Globalization;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Core.Time;
 
 namespace Aurora.Adapters.Situation;
 
@@ -143,17 +144,18 @@ public sealed class SituationService : ISituationService
         return new AppropriatenessResult(true, "the moment fits");
     }
 
-    private static TimeZoneInfo ResolveZone(string timezone)
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById(timezone);
-        }
-        catch (Exception unknown) when (unknown is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            throw new SituationException($"'{timezone}' is not a time zone this machine knows.");
-        }
-    }
+    /// <summary>
+    /// The zone named in the context, resolved the one way Aurora resolves zones.
+    /// </summary>
+    /// <remarks>
+    /// Through <see cref="AuroraTimeZones"/> rather than <c>TimeZoneInfo</c> directly, so that an
+    /// IANA id written on one platform means the same thing on all of them. See that type for why
+    /// the platform alone is not enough.
+    /// </remarks>
+    private static TimeZoneInfo ResolveZone(string timezone) =>
+        AuroraTimeZones.TryFind(timezone, out TimeZoneInfo? zone)
+            ? zone
+            : throw new SituationException($"'{timezone}' is not a time zone this machine knows.");
 
     private static string Iso(DateTimeOffset value) =>
         value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);

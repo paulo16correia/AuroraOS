@@ -316,6 +316,20 @@ public sealed class SqlitePluginRegistry : IPluginRegistry
             return result;
         }
 
+        if (result is { Ok: false, Answered: true })
+        {
+            // The other end of the same principle. This one *did* run: it received the call,
+            // considered it, and declined — which is a plugin working, not a plugin faulting. The
+            // circuit exists to stop calling something broken, and a refusal is evidence of the
+            // opposite. Counted, it quarantined a voice plugin for three polite refusals to talk
+            // over the people in a call, and the quarantine then broke everything it could still
+            // have done (docs/adr/0081).
+            //
+            // Success still clears the counter below, so a plugin that alternates between failing
+            // and refusing does not launder its failures through refusals: they simply stay put.
+            return result;
+        }
+
         await RecordOutcomeAsync(installation, result.Ok, ct).ConfigureAwait(false);
         return result;
     }

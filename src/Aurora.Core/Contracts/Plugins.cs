@@ -156,7 +156,17 @@ public sealed record PluginManifest(
     /// </remarks>
     bool RequiresGpu = false,
     /// <summary>Secrets it cannot run without, by name. Values never appear here.</summary>
-    IReadOnlyList<PluginSecretRequirement>? RequiredSecrets = null);
+    IReadOnlyList<PluginSecretRequirement>? RequiredSecrets = null,
+    /// <summary>
+    /// The runtime that runs <see cref="Executable"/> where the platform cannot run it itself.
+    /// </summary>
+    /// <remarks>
+    /// A name from <see cref="PluginRuntimes.All"/> and never a path — see that type for why the
+    /// set is closed. Optional: where it is absent Aurora reads the program's own shebang, which
+    /// is the declaration a script plugin already carries. It is only ever consulted on a platform
+    /// that cannot execute the file directly, so declaring it changes nothing on Unix.
+    /// </remarks>
+    string? Interpreter = null);
 
 public sealed record PluginInstallation(
     string Id,
@@ -279,7 +289,20 @@ public sealed record PluginResult(
     string? OutputJson,
     string? Refusal,
     string Detail,
-    long DurationMs);
+    long DurationMs,
+    /// <summary>Whether the plugin itself answered this, rather than the host answering for it.</summary>
+    /// <remarks>
+    /// A plugin that declines is a plugin that is working. "Somebody else is speaking, so I will
+    /// not talk over them" is the rule doing its job, and counting three of those as three faults
+    /// quarantines a plugin for behaving correctly — which is what happened, mid-conversation, to
+    /// a voice that then could not answer at all (docs/adr/0081).
+    /// <para>
+    /// Only the code that built the result knows which it is, so it is recorded there rather than
+    /// guessed later from the refusal string: a plugin can put any text in that field, and a rule
+    /// that reads it would be a rule a plugin could talk its way around.
+    /// </para>
+    /// </remarks>
+    bool Answered = false);
 
 public sealed class PluginException : Exception
 {

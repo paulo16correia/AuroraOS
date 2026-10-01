@@ -11,15 +11,29 @@ audio. A recording exists as bytes in memory for as long as it takes to turn int
 text is what leaves.
 """
 
+import array
+import io
 import os
+import secrets
 import shutil
 import subprocess
 import tempfile
+import wave
 
 # What Discord's voice protocol requires, and what nothing in Python's standard library provides.
 # Named here so a refusal can tell somebody exactly what is missing rather than failing obscurely.
 OPUS_LIBRARIES = ["libopus.so.0", "libopus.0.dylib", "libopus.dylib", "libopus.so", "opus.dll"]
 OPUS_SEARCH = ["/opt/homebrew/lib", "/usr/local/lib", "/usr/lib", "/usr/lib/x86_64-linux-gnu"]
+
+# How many threads recognition gets. whisper.cpp defaults to four however many the machine has,
+# which on a six-core processor leaves most of it idle while somebody waits to be answered — 28%
+# of the time on a four-second utterance, measured here, for a number it already knew. Half the
+# logical processors is the physical core count on anything with SMT, and using every one measured
+# *slower* than eight: recognition is not the only thread in this plugin, and the audio it is
+# transcribing keeps arriving while it runs.
+def _default_threads():
+    return max(1, (os.cpu_count() or 4) // 2)
+
 
 # Local speech-to-text, in the order they are preferred. Each is a program the owner installed.
 STT_ENGINES = [
@@ -47,11 +61,11 @@ STT_ENGINES = [
     # measured, on this machine, with the same clip. A name is the word recognition gets wrong
     # most, and telling the recogniser the word exists costs nothing.
     ("whisper-cli",
-     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "--prompt", "{prompt}",
-      "--output-txt", "--no-prints", "{gpu}"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+      "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
     ("whisper.cpp",
-     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "--prompt", "{prompt}",
-      "--output-txt", "{gpu}"]),
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+      "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
@@ -80,7 +94,9 @@ MODEL_NAMES = [
 
 # Local text-to-speech. `say` ships with macOS and speaks without a network.
 TTS_ENGINES = [
-    ("piper", ["--model", "{model}", "--output_file", "{output}"]),
+    # --length_scale is here for the pitch setting, not for speed: see _shift_pitch. At 1.0 it is
+    # piper's own default and changes nothing.
+    ("piper", ["--model", "{model}", "--length_scale", "{length_scale}", "--output_file", "{output}"]),
     # LEI16, not LEF32. `say` writes 32-bit float however it is asked, so the conversion happens
     # in the reader either way — but asking for what is wanted costs nothing and says what is
     # expected.
@@ -122,6 +138,66 @@ def find_model(preferred=None):
     return None
 
 
+def _engine_dirs():
+    """The plugin's own directories, which the sandbox grants it — where a bundled engine lives.
+
+    A confined plugin's PATH is the system directories alone, so an engine installed elsewhere is
+    unreachable to it. Its own directory is not: the sandbox lets it read and execute what ships
+    beside it, which is the same reason the whisper model is looked for here first. So a `bin/`
+    folder beside the plugin, and the plugin's own folder, are searched before PATH.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    return [os.path.join(here, "bin"), here]
+
+
+def _find_program(name):
+    """An engine executable, preferring one shipped with the plugin over one on PATH.
+
+    Bundled first so a confined plugin can use engines that ship with it; PATH second so an
+    unconfined install, and macOS's built-in `say`, keep working exactly as before.
+    """
+    extensions = ["", ".exe", ".bat", ".cmd"] if os.name == "nt" else [""]
+
+    for directory in _engine_dirs():
+        for extension in extensions:
+            candidate = os.path.join(directory, name + extension)
+            if os.path.isfile(candidate):
+                return candidate
+
+    return shutil.which(name)
+
+
+def find_voice_model(preferred=None):
+    """A piper voice (an .onnx beside its .json), or None.
+
+    Piper is the one text-to-speech engine here that cannot speak without a model, the same way
+    whisper cannot listen without one — and nothing supplies it a path, so without this it is found
+    and then fails on every sentence. Looked for where the whisper model is looked for, so what a
+    plugin needs to run keeps shipping beside the plugin, where the sandbox can reach it.
+
+    `preferred` is a voice named in the owner's settings, with or without the .onnx. It is worth
+    naming: which language a voice speaks is not a detail, and taking whichever file sorts first
+    means a Brazilian voice reads European Portuguese to somebody who installed both. A named
+    voice that is not installed falls back to one that is rather than going silent — being unable
+    to answer is worse than answering in the wrong accent, and readiness reports which is in use.
+    """
+    installed = []
+
+    for directory in MODEL_SEARCH:
+        if not os.path.isdir(directory):
+            continue
+
+        for name in sorted(n for n in os.listdir(directory) if n.endswith(".onnx")):
+            path = os.path.join(directory, name)
+
+            if preferred in (name, os.path.splitext(name)[0]):
+                return path
+
+            installed.append(path)
+
+    return installed[0] if installed else None
+
+
 def find_stt(preferred_model=None):
     """A local speech-to-text program with a model to run, or None.
 
@@ -130,7 +206,7 @@ def find_stt(preferred_model=None):
     was never downloaded.
     """
     for name, arguments in STT_ENGINES:
-        found = shutil.which(name)
+        found = _find_program(name)
 
         if not found:
             continue
@@ -145,12 +221,45 @@ def find_stt(preferred_model=None):
     return None
 
 
-def find_tts():
-    """A local text-to-speech program, or None."""
+def _workspace():
+    """A directory for one utterance's scratch files, that the plugin can actually write in.
+
+    Not `tempfile.mkdtemp`. Since Python 3.13 that applies its 0700 as a real Windows ACL, which
+    replaces the inherited one and blocks further inheritance — so a confined plugin creates the
+    directory successfully and then cannot open a single file inside it. Every utterance came back
+    as `PermissionError: utterance.wav`, which reads like a broken recogniser and is not one.
+
+    Inheriting is not the weaker choice here. TEMP under the sandbox is the plugin's own working
+    directory: already the owner's, already granted to this one container and to no other, and
+    already unreachable by anything else. What 0700 defends against is a *shared* temp directory,
+    which is what POSIX still gets below.
+    """
+    directory = os.path.join(tempfile.gettempdir(), "aurora-voice-" + secrets.token_hex(6))
+
+    if os.name == "nt":
+        os.mkdir(directory)
+    else:
+        os.mkdir(directory, 0o700)
+
+    return directory
+
+
+def find_tts(voice=None):
+    """A local text-to-speech program, or None. `voice` names which one to speak with."""
     for name, arguments in TTS_ENGINES:
-        found = shutil.which(name)
-        if found:
-            return {"name": name, "path": found, "arguments": arguments}
+        found = _find_program(name)
+
+        if not found:
+            continue
+
+        model = find_voice_model(voice) if "{model}" in " ".join(arguments) else None
+
+        if "{model}" in " ".join(arguments) and model is None:
+            # Installed but with nothing to speak with. Skipped rather than returned, so a later
+            # engine that needs no model still gets its turn.
+            continue
+
+        return {"name": name, "path": found, "arguments": arguments, "model": model}
 
     return None
 
@@ -170,7 +279,7 @@ def has_transport():
                                        "voice_transport.py"))
 
 
-def readiness():
+def readiness(voice=None):
     """What voice can and cannot do on this machine, as a plain answer.
 
     Reported rather than discovered at the moment of failure: somebody deciding whether to have
@@ -181,7 +290,7 @@ def readiness():
 
     opus = find_opus()
     stt = find_stt()
-    tts = find_tts()
+    tts = find_tts(voice)
     transport = has_transport()
     e2ee = dave.available()
 
@@ -199,7 +308,7 @@ def readiness():
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
     if not stt:
-        if shutil.which("whisper-cli") and not find_model():
+        if _find_program("whisper-cli") and not find_model():
             missing.append(
                 "a whisper model file — the program is installed but has nothing to run; "
                 "put a ggml-*.bin in the plugin's models/ directory, where the sandbox can "
@@ -214,6 +323,9 @@ def readiness():
         "can_listen": bool(opus and stt and transport),
         "can_speak": bool(opus and tts and transport),
         "transport": transport,
+        # Which voice, not only that there is one. Two are commonly installed and they are
+        # different languages; "tts: piper" does not tell anybody which one is answering.
+        "voice": os.path.basename(tts["model"]) if tts and tts.get("model") else None,
         "e2ee": e2ee,
         "opus": opus,
         "stt": stt["name"] if stt else None,
@@ -263,7 +375,7 @@ def is_hallucination(text):
 
 
 def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
-               language="auto", prompt=""):
+               language="auto", prompt="", threads=None):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
     The audio touches the disk because these programs read files, and it is removed in the same
@@ -273,7 +385,7 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
     if engine is None:
         raise RuntimeError("no local speech-to-text program is installed")
 
-    directory = tempfile.mkdtemp(prefix="aurora-voice-")
+    directory = _workspace()
     source = os.path.join(directory, "utterance.wav")
 
     try:
@@ -285,6 +397,7 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
                     .replace("{model}", model or engine.get("model") or "")
                     .replace("{language}", language or "auto")
                     .replace("{prompt}", prompt or "")
+                    .replace("{threads}", str(threads or _default_threads()))
             for argument in engine["arguments"]
         ]
 
@@ -309,7 +422,9 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
         transcript = source + ".txt"
 
         if os.path.exists(transcript):
-            with open(transcript, "r") as handle:
+            # UTF-8 named: a transcript is speech, so it is exactly the file most likely
+            # to hold a character Python on Windows would otherwise fail to decode.
+            with open(transcript, "r", encoding="utf-8") as handle:
                 return handle.read().strip()
 
         return finished.stdout.decode(errors="replace").strip()
@@ -349,17 +464,90 @@ def voices():
     return found_voices
 
 
-def synthesise(engine, text, model=None, timeout=60, voice=None):
+def _length_scale_for(pitch):
+    """How much to slow piper down so that compressing by `pitch` lands back at normal speed.
+
+    Not `pitch` itself, which is the obvious guess and is wrong by half. `--length_scale` stretches
+    phoneme length, and the sentence silence around it does not stretch with it, so the duration a
+    given scale actually buys is about half of what it asks for. Measured on this machine, three
+    runs each because piper's noise makes any single one unreliable:
+
+        length_scale  1.0 -> 1.01x    1.2 -> 1.08x    1.4 -> 1.20x
+
+    which is a duration ratio of 1 + (scale - 1) / 2, so the scale needed for a ratio of `pitch` is
+    twice the distance from one. At 1.4 that predicts 1.20 and measured 1.20.
+    """
+    return 1.0 + (pitch - 1.0) * 2.0
+
+
+def _shift_pitch(wav_bytes, factor):
+    """Raises a voice by `factor` without changing how fast it talks.
+
+    Piper has no pitch control, so this is the two-step every vocoder-less engine uses: ask it to
+    speak *slower* by the factor, then resample the result *shorter* by the same factor. The two
+    cancel in duration and compound in pitch.
+
+    Needed because there is no other lever. Piper's entire Portuguese catalogue is five voices and
+    the highest of them measures 181 Hz — the same as a voice Windows ships as female — so "use a
+    different one" is not an option that exists. Kept as a setting, at 1.0 by default, because a
+    shifted voice is a processed voice and whether it sounds better is the owner's ear, not a fact.
+    """
+    source = wave.open(io.BytesIO(wav_bytes))
+    channels, width, rate, frames = (
+        source.getnchannels(), source.getsampwidth(), source.getframerate(), source.getnframes())
+    raw = source.readframes(frames)
+
+    if width != 2:
+        # Only 16-bit is resampled here. Anything else is handed back untouched rather than
+        # mangled: a wrong-width "shift" is silence or noise, and both are worse than a low voice.
+        return wav_bytes
+
+    samples = array.array("h")
+    samples.frombytes(raw)
+
+    total = len(samples) // channels
+    kept = int(total / factor)
+    shifted = array.array("h")
+
+    for i in range(kept):
+        # Linear interpolation between the two neighbouring frames. Nearest-neighbour is audible
+        # as a rasp on sibilants; this is one multiply more and does not have it.
+        position = i * factor
+        left = int(position)
+        right = min(left + 1, total - 1)
+        weight = position - left
+
+        for channel in range(channels):
+            a = samples[left * channels + channel]
+            b = samples[right * channels + channel]
+            shifted.append(int(a + (b - a) * weight))
+
+    out = io.BytesIO()
+    written = wave.open(out, "wb")
+    written.setnchannels(channels)
+    written.setsampwidth(width)
+    written.setframerate(rate)
+    written.writeframes(shifted.tobytes())
+    written.close()
+
+    return out.getvalue()
+
+
+def synthesise(engine, text, model=None, timeout=60, voice=None, pitch=1.0):
     """Turns text into audio, locally. Returns the bytes and leaves nothing behind."""
     if engine is None:
         raise RuntimeError("no local text-to-speech program is installed")
 
-    directory = tempfile.mkdtemp(prefix="aurora-voice-")
+    directory = _workspace()
     target = os.path.join(directory, "speech.wav")
+
+    # The caller may name one; otherwise the engine carries whatever it was found with.
+    model = model or engine.get("model")
 
     try:
         arguments = [
-            argument.replace("{output}", target).replace("{model}", model or "")
+            argument.replace("{output}", target)
+                    .replace("{length_scale}", "%.3f" % _length_scale_for(pitch)).replace("{model}", model or "")
                     .replace("{text}", text)
                     .replace("{voice}", "-v" + voice if voice else "")
             for argument in engine["arguments"]
@@ -378,6 +566,13 @@ def synthesise(engine, text, model=None, timeout=60, voice=None):
             raise RuntimeError("%s produced no audio" % engine["name"])
 
         with open(target, "rb") as handle:
-            return handle.read()
+            spoken = handle.read()
+
+        # Only where the engine was actually asked to slow down. Compressing audio that was
+        # rendered at normal speed would raise the pitch and speed the voice up with it.
+        if pitch != 1.0 and "{length_scale}" in " ".join(engine["arguments"]):
+            spoken = _shift_pitch(spoken, pitch)
+
+        return spoken
     finally:
         shutil.rmtree(directory, ignore_errors=True)

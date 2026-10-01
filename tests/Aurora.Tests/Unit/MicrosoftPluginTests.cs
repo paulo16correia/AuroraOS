@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Aurora.Core.Contracts;
+using Aurora.Tests.Support;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -36,37 +36,8 @@ public sealed class MicrosoftPluginTests
     private static string PluginSource() =>
         Path.Combine(Repository().FullName, "plugins", "microsoft");
 
-    private static string RunPython(string module, int expected)
-    {
-        using var python = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "python3",
-                WorkingDirectory = PluginSource(),
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-
-        python.StartInfo.ArgumentList.Add("-m");
-        python.StartInfo.ArgumentList.Add("unittest");
-        python.StartInfo.ArgumentList.Add(module);
-        python.StartInfo.ArgumentList.Add("-v");
-
-        python.Start();
-        var output = python.StandardOutput.ReadToEnd() + python.StandardError.ReadToEnd();
-        python.WaitForExit(180_000);
-
-        Assert.True(python.ExitCode == 0, output);
-
-        // Asserted so a module that stops being collected fails here rather than passing with
-        // nothing run.
-        Assert.Contains($"Ran {expected} test", output, StringComparison.Ordinal);
-
-        return output;
-    }
+    private static string RunPython(string module, int expected) =>
+        PythonSuite.Run(PluginSource(), module, expected);
 
     [Fact]
     public void TheGraphTransportHoldsItsRules()
@@ -431,22 +402,39 @@ public sealed class MicrosoftPluginTests
     /// <remarks>
     /// The plugin reads <c>AURORA_MICROSOFT_BASE</c> to point itself at a stand-in, which is only
     /// safe because a plugin's environment is built by Aurora rather than inherited. This asserts
-    /// that property over the source of both hosts, so the seam cannot quietly become reachable
-    /// in production by somebody removing one line.
+    /// that property over the source, so the seam cannot quietly become reachable in production by
+    /// somebody removing one line.
+    /// <para>
+    /// Both hosts used to build it themselves and this read both of them. They now go through one
+    /// type, because the environment grew a second entry that only one platform needs and two
+    /// copies of that is how they drift — so this asserts the same property in the two halves it
+    /// now has: that each host still routes through the one builder, and that the builder still
+    /// starts from nothing.
+    /// </para>
     /// </remarks>
     [Fact]
     public void APluginsEnvironmentIsBuiltRatherThanInherited()
     {
+        var plugins = Path.Combine(Repository().FullName, "src", "Aurora.Adapters", "Plugins");
+
         foreach (var host in new[] { "SubprocessPluginHost.cs", "ServiceProcess.cs" })
         {
-            var source = File.ReadAllText(
-                Path.Combine(Repository().FullName, "src", "Aurora.Adapters", "Plugins", host));
+            var source = File.ReadAllText(Path.Combine(plugins, host));
 
             Assert.True(
-                source.Contains("Environment.Clear()", StringComparison.Ordinal)
-                || source.Contains("new Dictionary<string, string>", StringComparison.Ordinal),
-                $"{host} no longer builds the child's environment from nothing");
+                source.Contains("PluginEnvironment.For(", StringComparison.Ordinal),
+                $"{host} no longer gets the child's environment from PluginEnvironment");
         }
+
+        var builder = File.ReadAllText(Path.Combine(plugins, "PluginEnvironment.cs"));
+
+        Assert.Contains("new Dictionary<string, string>", builder, StringComparison.Ordinal);
+
+        // And it never reads Aurora's own. Every value in there is a constant or something the
+        // caller named; a variable copied across would be the inheritance this forbids, arriving
+        // one entry at a time.
+        Assert.DoesNotContain("Environment.GetEnvironmentVariable", builder, StringComparison.Ordinal);
+        Assert.DoesNotContain("Environment.GetEnvironmentVariables", builder, StringComparison.Ordinal);
     }
 
     private static PluginManifest Manifest()

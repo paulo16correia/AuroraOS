@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Aurora.Adapters.Plugins;
@@ -48,37 +47,8 @@ public sealed class DiscordVoiceTests : IDisposable
     // ---- the turn-taking rules, tested where they live ----
 
     /// <summary>Runs one of the plugin's Python test modules and surfaces its output on failure.</summary>
-    private static string RunPython(string module, int expected)
-    {
-        using var python = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "python3",
-                WorkingDirectory = PluginSource(),
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-
-        python.StartInfo.ArgumentList.Add("-m");
-        python.StartInfo.ArgumentList.Add("unittest");
-        python.StartInfo.ArgumentList.Add(module);
-        python.StartInfo.ArgumentList.Add("-v");
-
-        python.Start();
-        var output = python.StandardOutput.ReadToEnd() + python.StandardError.ReadToEnd();
-        python.WaitForExit(120_000);
-
-        Assert.True(python.ExitCode == 0, output);
-
-        // The count is asserted so a module that silently stops being collected fails here rather
-        // than passing with nothing run.
-        Assert.Contains($"Ran {expected} test", output, StringComparison.Ordinal);
-
-        return output;
-    }
+    private static string RunPython(string module, int expected) =>
+        PythonSuite.Run(PluginSource(), module, expected);
 
     [Fact]
     public void TheCipherMatchesTheRfcTestVectors()
@@ -114,6 +84,32 @@ public sealed class DiscordVoiceTests : IDisposable
         RunPython("test_voice", 13);
     }
 
+    [Fact]
+    public void ARefusalDiscordWillRepeatIsNotAskedAgain()
+    {
+        // The join retry is paid for in public: every attempt is one more appearance and
+        // disappearance in front of everybody in the call. These tests count those appearances,
+        // which is the thing that was actually wrong (docs/adr/0080).
+        RunPython("test_voice_join", 11);
+    }
+
+    [Fact]
+    public void TheVoiceEnginesAreFoundBesideThePluginRatherThanOnAPath()
+    {
+        // What the confined plugin can reach is its own directory, so a program found only on the
+        // owner's PATH is one that readiness reports and the call never gets (docs/adr/0080).
+        RunPython("test_engine_discovery", 4);
+    }
+
+    [Fact]
+    public void TheScratchDirectoryIsOneTheConfinedPluginCanWriteIn()
+    {
+        // mkdtemp's 0700 became a real Windows ACL in Python 3.13, replacing the inherited
+        // protection and blocking inheritance — so every utterance came back as a PermissionError
+        // dressed up as a recogniser that could not understand anybody (docs/adr/0080).
+        RunPython("test_workspace", 8);
+    }
+
     // ---- the manifest and the program agree ----
 
     [Fact]
@@ -131,30 +127,11 @@ public sealed class DiscordVoiceTests : IDisposable
         // Asked of the program itself rather than of a list beside it. A manifest that promises a
         // capability nothing implements is a catalogue entry that fails on first use, and a
         // handler nobody declared is code Aurora will never route to.
-        using var python = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "python3",
-                WorkingDirectory = PluginSource(),
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-
-        python.StartInfo.ArgumentList.Add("-c");
-        python.StartInfo.ArgumentList.Add(
+        var output = PythonSuite.Evaluate(
+            PluginSource(),
             "import json, discord_service as d; "
             + "print(json.dumps(sorted(set(d.READS) | set(d.WRITES) "
             + "| set(d.GATEWAY_READS) | set(d.GATEWAY_WRITES))))");
-
-        python.Start();
-        var output = python.StandardOutput.ReadToEnd();
-        var errors = python.StandardError.ReadToEnd();
-        python.WaitForExit(30_000);
-
-        Assert.True(python.ExitCode == 0, errors);
 
         var handled = JsonSerializer.Deserialize<List<string>>(output.Trim())!;
 

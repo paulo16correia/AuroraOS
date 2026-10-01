@@ -6,8 +6,10 @@ loopback stand-in. What is replaced is Microsoft, and nothing else.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from fake_graph import FakeGraph
@@ -15,27 +17,34 @@ from fake_graph import FakeGraph
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def _write_config(settings):
-    with open(os.path.join(HERE, "config.json"), "w") as handle:
-        json.dump(settings, handle)
-
-
 class Plugin:
     """The plugin as a subprocess, pointed at a stand-in instead of Microsoft."""
 
     def __init__(self, service, secrets=None):
+        # Its own copy of the program, in its own directory. The plugin reads config.json from
+        # beside itself, so writing that into the checked-out folder would make it shared mutable
+        # state: two test processes at once — this module by hand while the .NET suite runs it, or
+        # two workers in CI — each overwrite the other's api_base, and each plugin then answers
+        # from the wrong stand-in. That surfaces as one test receiving another test's data, which
+        # is a long way from where the problem is. The C# runtime tests copy it for the same reason.
+        self._directory = tempfile.mkdtemp(prefix="aurora-microsoft-")
+
+        for name in os.listdir(HERE):
+            if name.endswith(".py"):
+                shutil.copy2(os.path.join(HERE, name), os.path.join(self._directory, name))
+
         # Where the stand-in is listening, written where the plugin reads its settings. Not the
         # environment: Aurora's plugin hosts clear it, so a seam there would work standalone and
         # be unreachable when Aurora is the one starting the program.
-        self._config = os.path.join(HERE, "config.json")
-        _write_config({"api_base": service.base})
+        with open(os.path.join(self._directory, "config.json"), "w", encoding="utf-8") as handle:
+            json.dump({"api_base": service.base}, handle)
 
         self._process = subprocess.Popen(
-            [sys.executable, os.path.join(HERE, "microsoft_service.py")],
+            [sys.executable, os.path.join(self._directory, "microsoft_service.py")],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=HERE,
+            cwd=self._directory,
             text=True,
         )
 
@@ -84,12 +93,18 @@ class Plugin:
         except Exception:
             self._process.kill()
 
-        # The config is a test artefact. Leaving it behind would point a real installation at a
-        # port that is no longer listening.
-        try:
-            os.remove(self._config)
-        except OSError:
-            pass
+        # Every pipe, not just the one written to. Left open they are file descriptors held for as
+        # long as the test process lives, which unittest reports as a ResourceWarning and Windows
+        # eventually reports as something less polite.
+        for pipe in (self._process.stdout, self._process.stderr):
+            try:
+                pipe.close()
+            except OSError:
+                pass
+
+        # The whole copy goes, config and all. Nothing of this test is left in the checked-out
+        # plugin folder, so a real installation cannot end up pointed at a port that has closed.
+        shutil.rmtree(self._directory, ignore_errors=True)
 
     def __enter__(self):
         return self

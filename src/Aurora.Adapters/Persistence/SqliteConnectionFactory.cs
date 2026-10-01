@@ -5,8 +5,9 @@ namespace Aurora.Adapters.Persistence;
 /// <summary>
 /// Creates and opens <see cref="SqliteConnection"/> instances against a single database,
 /// applying the connection-level pragmas Aurora relies on (busy timeout and foreign keys).
-/// Connections are pooled; WAL (set at initialization) gives every connection a consistent view of
-/// committed state without shared-cache SQLITE_LOCKED semantics. Callers own and dispose the result.
+/// Connections are pooled by default; WAL (set at initialization) gives every connection a
+/// consistent view of committed state without shared-cache SQLITE_LOCKED semantics. Callers own and
+/// dispose the result.
 /// </summary>
 public sealed class SqliteConnectionFactory
 {
@@ -14,13 +15,29 @@ public sealed class SqliteConnectionFactory
 
     private readonly string _connectionString;
 
-    public SqliteConnectionFactory(string dbPath)
+    /// <param name="dbPath">The database file, or an in-memory identifier.</param>
+    /// <param name="pooled">
+    /// Whether disposing a connection returns it to the pool or closes the file.
+    /// </param>
+    /// <remarks>
+    /// Pooling is right for the live database, where connections are taken and returned thousands
+    /// of times and the file stays open for as long as Aurora runs anyway.
+    /// <para>
+    /// It is wrong for a database Aurora is finished with. A pooled connection keeps the operating
+    /// system handle open after <c>Dispose</c>, and on Windows that is not invisible: the handle
+    /// SQLite holds is a writing one, so the next process to open the file for reading — a backup
+    /// being checked, an archive being made, the owner copying it — is refused with a sharing
+    /// violation. Unix has no mandatory locking and hides this entirely, which is why it went
+    /// unnoticed until Aurora ran on Windows (docs/adr/0076).
+    /// </para>
+    /// </remarks>
+    public SqliteConnectionFactory(string dbPath, bool pooled = true)
     {
         DbPath = dbPath;
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = dbPath,
-            Pooling = true,
+            Pooling = pooled,
         }.ToString();
     }
 

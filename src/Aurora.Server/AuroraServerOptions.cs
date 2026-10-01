@@ -56,6 +56,19 @@ public sealed class AuroraServerOptions
     public required string PluginKeyPath { get; init; }
 
     /// <summary>
+    /// Interpreter paths the owner named, by runtime — from <c>Aurora:Plugins:Interpreters</c>.
+    /// </summary>
+    /// <remarks>
+    /// Empty by default: Aurora resolves a script plugin's interpreter from the program's shebang
+    /// and from <c>PATH</c>. This is the escape hatch the interpreter resolver and <c>doctor</c>
+    /// already point at — a per-user Python that an AppContainer can be granted, named explicitly
+    /// so resolution does not depend on <c>PATH</c> order. A name here is authoritative: if the
+    /// file is not there the plugin is refused rather than a different interpreter being found.
+    /// </remarks>
+    public IReadOnlyDictionary<string, string> PluginInterpreters { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Whether plugins may run on a platform that cannot confine them (docs/adr/0052).
     /// </summary>
     /// <remarks>
@@ -168,6 +181,18 @@ public sealed class AuroraServerOptions
         var allowUnconfinedPlugins =
             config.GetValue<bool?>("Aurora:Plugins:AllowUnconfined") ?? false;
 
+        // Interpreter paths the owner named, e.g. Aurora:Plugins:Interpreters:python3. Absent by
+        // default; when set, they let a script plugin be confined against a per-user interpreter
+        // whose directory an AppContainer can be granted (see PluginInterpreters, doctor).
+        var interpreters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (IConfigurationSection entry in config.GetSection("Aurora:Plugins:Interpreters").GetChildren())
+        {
+            if (!string.IsNullOrWhiteSpace(entry.Value))
+            {
+                interpreters[entry.Key] = entry.Value;
+            }
+        }
+
         var pluginKeyPath = config["Aurora:PluginKeyPath"]
             ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(dbPath))!, "aurora.plugin.key");
 
@@ -210,6 +235,7 @@ public sealed class AuroraServerOptions
             PluginRoot = pluginRoot,
             PluginKeyPath = pluginKeyPath,
             AllowUnconfinedPlugins = allowUnconfinedPlugins,
+            PluginInterpreters = interpreters,
             HeartbeatInterval = TimeSpan.FromSeconds(Math.Max(0, heartbeatSeconds)),
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,

@@ -119,7 +119,8 @@ public static class PluginManifestReader
     {
         "plugin_id", "version", "publisher", "executable", "min_platform_version",
         "max_data_class", "documentation_ref", "required_permissions", "event_subscriptions",
-        "network_endpoints", "capabilities", "service", "required_secrets", "requires_gpu", "service", "required_secrets",
+        "network_endpoints", "capabilities", "service", "required_secrets", "requires_gpu",
+        "interpreter",
     };
 
     private static readonly HashSet<string> KnownCapability = new(StringComparer.Ordinal)
@@ -142,6 +143,14 @@ public static class PluginManifestReader
             problems.Add(
                 "executable must be relative to the plugin folder and must not contain '..'; "
                 + "a manifest naming an absolute path is describing the machine, not the plugin");
+        }
+
+        if (file.Interpreter is not null && !PluginRuntimes.IsKnown(file.Interpreter))
+        {
+            problems.Add(
+                $"interpreter '{file.Interpreter}' is not a runtime Aurora starts plugins with. "
+                + $"It must be one of {string.Join(", ", PluginRuntimes.All)}, by name — a path "
+                + "here would be a manifest choosing which program Aurora runs.");
         }
 
         if (!Sensitivity.IsKnown(file.MaxDataClass))
@@ -221,7 +230,8 @@ public static class PluginManifestReader
                 [
                     .. file.RequiredSecrets.Select(
                         secret => new PluginSecretRequirement(secret.Name, secret.Purpose)),
-                ]),
+                ],
+                Interpreter: PluginRuntimes.Canonical(file.Interpreter)),
             []);
     }
 

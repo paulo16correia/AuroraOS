@@ -4,6 +4,7 @@ using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
+using Aurora.Core.Time;
 using ModelContextProtocol.Server;
 
 namespace Aurora.Server.Mcp;
@@ -89,7 +90,7 @@ public sealed class AuroraTools
         CancellationToken ct = default)
     {
         var outcome = await review.ReviewAsync(
-            new ReviewRequest(principals.Current, timezone ?? TimeZoneInfo.Local.Id, after_audit_sequence),
+            new ReviewRequest(principals.Current, timezone ?? AuroraTimeZones.LocalId, after_audit_sequence),
             ct);
 
         return JsonSerializer.SerializeToElement(outcome, AuroraJson.Options);

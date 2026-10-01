@@ -40,6 +40,10 @@ else:
   anything, so nothing there reaches the caller. Put nothing in it that somebody needs to see.
 - **`AURORA_CAPABILITY`** tells you which of your capabilities was called; **`AURORA_PLUGIN_ID`** is
   your own id.
+- **Your environment is built, not inherited.** Nothing Aurora holds travels to you. Besides the two
+  above you get a `PATH` naming only system directories, and on Windows `SystemRoot`, without which
+  no socket can be opened at all. Anything else you need is a declared secret, which arrives over
+  the pipe rather than through the environment.
 
 Your program runs once per call. It is not a server, it does not need to loop, and it should not
 expect to keep anything between calls except what it writes to its own working directory.
@@ -56,8 +60,9 @@ On macOS and on Linux with bubblewrap installed, Aurora confines it:
 | Your working directory | Readable and writable. This is where anything you keep goes. |
 | Everything else | Readable if the system can read it; not writable. |
 
-On a platform Aurora cannot confine — Windows today — it **refuses to run plugins at all** unless
-the owner has explicitly accepted that. This is not something you can opt out of from the manifest.
+On a platform Aurora cannot confine, it **refuses to run plugins at all** unless the owner has
+explicitly accepted that. This is not something you can opt out of from the manifest. Which
+platforms those are is in `docs/reference/platform-support.md`.
 
 `aurora health` reports which of those applies:
 
@@ -73,6 +78,7 @@ plugin-sandbox PASS — plugins confined by sandbox-exec
   "version": "1.0.0",
   "publisher": "acme",
   "executable": "run.py",
+  "interpreter": "python3",
   "max_data_class": "PRIVATE",
   "required_permissions": ["notes.write"],
   "capabilities": [
@@ -99,6 +105,19 @@ plugin-sandbox PASS — plugins confined by sandbox-exec
 
 Every field is a limit rather than a licence. Declaring an effect does not grant it; it makes
 anything else a refusal.
+
+**`executable`** is your program, relative to the manifest. Absolute paths are refused: a manifest
+naming `/usr/bin/something` is describing the machine rather than the plugin.
+
+**`interpreter`** is what runs it, and you need it if your program is a script. macOS and Linux read
+`#!/usr/bin/env python3` and start Python for you; Windows has no equivalent, and without this line
+your plugin fails there with `SERVICE_UNAVAILABLE` and nothing to act on. Write both — the shebang
+and this — and keep them agreeing.
+
+It is a **name**, from a fixed list, and never a path. Today that list is `python3` (`python` and
+`python3.12` mean the same thing). Aurora resolves it to an interpreter on the machine, or refuses
+and says which one it was looking for; an owner who keeps Python somewhere unusual can name it with
+`Aurora:Plugins:Interpreters:python3`. A program that is a real executable needs none of this.
 
 **`key`** is the action id in Aurora's catalogue, so it is dotted like the rest. You cannot claim
 one Aurora already has, and `aurora.`, `kernel.` and `mind.` are reserved.

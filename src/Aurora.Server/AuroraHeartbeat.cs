@@ -1,5 +1,6 @@
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Core.Time;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -77,7 +78,7 @@ public sealed class AuroraHeartbeat : BackgroundService
 
         await RunAsync(
             () => services.GetRequiredService<IMaintenanceService>()
-                .RunAsync(new SituationContext(TimeZoneInfo.Local.Id), ct),
+                .RunAsync(new SituationContext(AuroraTimeZones.LocalId), ct),
             ct).ConfigureAwait(false);
 
         var bus = services.GetRequiredService<IEventBus>();

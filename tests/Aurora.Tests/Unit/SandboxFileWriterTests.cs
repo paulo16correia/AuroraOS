@@ -26,12 +26,12 @@ public sealed class SandboxFileWriterTests
             {
                 try
                 {
-                    if (Directory.Exists(dir))
-                    {
-                        Directory.Delete(dir, recursive: true);
-                    }
+                    // Through the helper, because these tests deliberately put a link inside the
+                    // sandbox and a plain recursive delete refuses a tree containing one.
+                    TestLinks.DeleteTree(dir);
                 }
-                catch (IOException)
+                catch (Exception leftBehind)
+                    when (leftBehind is IOException or UnauthorizedAccessException)
                 {
                 }
             }
@@ -103,7 +103,11 @@ public sealed class SandboxFileWriterTests
     {
         using var sandbox = new TempSandbox();
         var link = Path.Combine(sandbox.Root, "escape");
-        Directory.CreateSymbolicLink(link, sandbox.Outside);
+
+        // A symlink where the platform allows one, and a junction on a Windows that does not —
+        // which is the link a plugin could actually make there, since a junction needs no
+        // privilege and a symlink needs one the attacker would not have either.
+        TestLinks.Directory(link, sandbox.Outside);
 
         var writer = new SandboxFileWriter(sandbox.Root);
 
@@ -119,12 +123,28 @@ public sealed class SandboxFileWriterTests
         using var sandbox = new TempSandbox();
         var target = Path.Combine(sandbox.Outside, "target.txt");
         await File.WriteAllTextAsync(target, "original");
-        File.CreateSymbolicLink(Path.Combine(sandbox.Root, "innocent.txt"), target);
 
         var writer = new SandboxFileWriter(sandbox.Root);
 
+        if (TestLinks.TryFile(Path.Combine(sandbox.Root, "innocent.txt"), target))
+        {
+            await Assert.ThrowsAsync<SandboxViolationException>(
+                () => writer.WriteAsync("innocent.txt", "pwned", CancellationToken.None));
+
+            Assert.Equal("original", await File.ReadAllTextAsync(target));
+            return;
+        }
+
+        // Windows will not let an unprivileged process make a link to a *file* at all: junctions
+        // redirect directories only, and Developer Mode is off. So the same escape is built the
+        // way it could be built there — the file reached through a linked directory — and the same
+        // refusal is asserted. Nothing is left unchecked on this platform.
+        Assert.False(TestLinks.FileLinksAvailable);
+
+        TestLinks.Directory(Path.Combine(sandbox.Root, "escape"), sandbox.Outside);
+
         await Assert.ThrowsAsync<SandboxViolationException>(
-            () => writer.WriteAsync("innocent.txt", "pwned", CancellationToken.None));
+            () => writer.WriteAsync("escape/target.txt", "pwned", CancellationToken.None));
 
         Assert.Equal("original", await File.ReadAllTextAsync(target));
     }
@@ -134,7 +154,7 @@ public sealed class SandboxFileWriterTests
     {
         using var sandbox = new TempSandbox();
         var linkedRoot = TestTemp.Path("link");
-        Directory.CreateSymbolicLink(linkedRoot, sandbox.Root);
+        TestLinks.Directory(linkedRoot, sandbox.Root);
 
         try
         {
@@ -149,6 +169,37 @@ public sealed class SandboxFileWriterTests
         {
             Directory.Delete(linkedRoot);
         }
+    }
+
+    // ---- docs/adr/0078: a hard link at the destination is a name, not a hole ----
+
+    [Fact]
+    public async Task Write_ThroughAHardLinkReplacesTheNameAndSpareTheLinkedFile()
+    {
+        // A hard link is not a reparse point, so the link-component check does not catch one at
+        // the destination — and it does not need to. The writer lands content via a temp file and
+        // a replacing rename, which swaps the directory entry rather than writing through it. So a
+        // hard link planted at the destination, pointing at a file outside the sandbox, has its
+        // own name replaced while the outside file keeps its content.
+        //
+        // Why this is a defence and not the whole story: planting the link at all needs write
+        // access to the outside file (CreateHardLink's requirement), which the only actors who
+        // could do it — Aurora's own owner — already have. The property proven here is that even
+        // then, a WRITE cannot be turned into corruption of the linked target.
+        using var sandbox = new TempSandbox();
+        var outsideFile = Path.Combine(sandbox.Outside, "secret.txt");
+        await File.WriteAllTextAsync(outsideFile, "original-secret");
+
+        TestLinks.HardLink(Path.Combine(sandbox.Root, "notes.txt"), outsideFile);
+
+        var writer = new SandboxFileWriter(sandbox.Root);
+        await writer.WriteAsync("notes.txt", "replaced", CancellationToken.None);
+
+        // The linked-to file outside the sandbox is untouched: the rename replaced the name.
+        Assert.Equal("original-secret", await File.ReadAllTextAsync(outsideFile));
+
+        // And the sandbox now holds a real file with the new content, not a link.
+        Assert.Equal("replaced", await File.ReadAllTextAsync(Path.Combine(sandbox.Root, "notes.txt")));
     }
 
     // ---- docs/adr/0036: the residual TOCTOU risk, narrowed and made detectable ----

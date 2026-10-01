@@ -154,9 +154,6 @@ class RoundTrip(unittest.TestCase):
         self.assertEqual(sorted(transport._decoders), [111, 222])
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
 class Layout(unittest.TestCase):
     """How an rtpsize packet divides, which is not the obvious way."""
 
@@ -289,3 +286,6 @@ class Silence(unittest.TestCase):
         self.assertIsNotNone(transport.receive_packet(packet))
         self.assertEqual(transport.silence, 0)
 
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

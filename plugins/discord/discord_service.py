@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 
 import voice_engines
+import voice_transport
 from gateway import Gateway
 from voice_transport import VoiceTransport
 from conversation import Conversation
@@ -79,7 +80,10 @@ def _setting(name, default=None):
     here = os.path.dirname(os.path.abspath(__file__))
 
     try:
-        with open(os.path.join(here, "config.json"), "r") as handle:
+        # UTF-8 named, not inferred. JSON is UTF-8 by specification, and Python on
+        # Windows reads text as cp1252 unless told otherwise, so a config holding a
+        # name, a channel title or an accented word would be read wrong or not at all.
+        with open(os.path.join(here, "config.json"), "r", encoding="utf-8") as handle:
             settings = json.load(handle) or {}
     except (OSError, ValueError):
         return default
@@ -107,7 +111,7 @@ def api_base(allowed):
     chosen = DEFAULT_API
 
     try:
-        with open(os.path.join(here, "config.json"), "r") as handle:
+        with open(os.path.join(here, "config.json"), "r", encoding="utf-8") as handle:
             chosen = (json.load(handle) or {}).get("api_base") or DEFAULT_API
     except (OSError, ValueError):
         pass
@@ -514,7 +518,7 @@ def voice_status(state, args):
     deciding whether to have Aurora join a call should be able to find out first, and an error in
     the middle of a conversation is a bad way to learn that a codec is missing.
     """
-    ready = voice_engines.readiness()
+    ready = voice_engines.readiness(_setting("tts_voice"))
     session = state.get("voice")
 
     window = conversation_window(state)
@@ -543,7 +547,7 @@ def voice_list_channels(api, args):
 
 
 def voice_join(state, args, nonce=None):
-    ready = voice_engines.readiness()
+    ready = voice_engines.readiness(_setting("tts_voice"))
 
     if not ready["can_join"]:
         # Joining a call Aurora cannot hear or be heard in is worse than refusing: it puts a
@@ -613,6 +617,16 @@ def voice_join(state, args, nonce=None):
             attempts.append("%s: %s" % (type(retryable).__name__, str(retryable)[:90]))
             transport = None
 
+            settled = voice_transport.terminal_close_reason(retryable)
+
+            if settled:
+                # Discord has given a reason it will give again. Retrying it is not persistence:
+                # every attempt leaves the channel and rejoins to ask for credentials, and the
+                # people in the call watch Aurora appear and disappear five times for an answer
+                # that was final the first time. Stop, and say why (docs/adr/0080).
+                attempts.append("not retried: " + settled)
+                break
+
     if transport is None:
         broken = RuntimeError("; ".join(attempts[-3:]) or "no attempt was made")
 
@@ -672,9 +686,16 @@ def voice_listen(state, args, nonce=None):
         transport.deafen()
         state["voice_listening"] = False
         state.pop("voice_audio", None)
+
+        # The turn watcher's loop ends with this flag, so its thread is gone. Clearing the guard
+        # too, or listening could only ever be turned on once: the second enable would set the
+        # flag, find the guard already true, start nothing, and leave Aurora deaf while reporting
+        # that it was listening. Silence that says it is hearing you is the worst of the failures.
+        state.pop("voice_turns", None)
+
         return {"listening": False}
 
-    ready = voice_engines.readiness()
+    ready = voice_engines.readiness(_setting("tts_voice"))
 
     if not ready["can_listen"]:
         raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
@@ -728,6 +749,7 @@ def _watch_turns(state):
     """
     engine = voice_engines.find_stt(_setting("stt_model"))
     language = _setting("stt_language", "auto")
+    threads = _setting("stt_threads")
 
     # What the recogniser is told to expect. Aurora's own name, because that is the word it must
     # get right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
@@ -765,7 +787,7 @@ def _watch_turns(state):
 
             try:
                 transcript = voice_engines.transcribe(
-                    engine, _wav(audio), language=language, prompt=prompt)
+                    engine, _wav(audio), language=language, prompt=prompt, threads=threads)
             except Exception as unheard:
                 # The message. A recogniser that cannot run and one that heard nothing produce the
                 # same exception type and need entirely different fixes.
@@ -873,7 +895,7 @@ def voice_speak(state, args, nonce=None):
     if state.get("voice_muted"):
         raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
 
-    ready = voice_engines.readiness()
+    ready = voice_engines.readiness(_setting("tts_voice"))
 
     if not ready["can_speak"]:
         raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))
@@ -887,7 +909,9 @@ def voice_speak(state, args, nonce=None):
             "floor_taken",
             "somebody is speaking; Aurora does not talk over people")
 
-    audio = voice_engines.synthesise(voice_engines.find_tts(), args["text"])
+    audio = voice_engines.synthesise(
+        voice_engines.find_tts(_setting("tts_voice")), args["text"],
+        pitch=float(_setting("tts_pitch", 1.0)))
     transport = state.get("voice_transport")
 
     if transport is None:
@@ -981,7 +1005,8 @@ def speak_in_conversation(state, text, invited):
     synthesis_started = time.monotonic() * 1000
 
     audio = voice_engines.synthesise(
-        voice_engines.find_tts(), text, voice=_setting("tts_voice"))
+        voice_engines.find_tts(_setting("tts_voice")), text, voice=_setting("tts_voice"),
+        pitch=float(_setting("tts_pitch", 1.0)))
 
     spoke_at = time.monotonic() * 1000
     frames = transport.play(_pcm_from_wav(audio), speech)
@@ -1105,7 +1130,7 @@ def voice_converse(state, args, nonce=None):
     if session is None:
         raise Refused(E_NOT_IN_CALL, "Aurora is not in a voice channel")
 
-    ready = voice_engines.readiness()
+    ready = voice_engines.readiness(_setting("tts_voice"))
 
     if not ready["can_speak"]:
         raise Refused(E_VOICE_UNAVAILABLE, "speaking needs: " + "; ".join(ready["missing"]))

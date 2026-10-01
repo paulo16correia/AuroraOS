@@ -58,6 +58,11 @@ public sealed class NativeDialog : IOperatorPrompt
             start.ArgumentList.Add(argument);
         }
 
+        foreach ((var name, var value) in Variables(title, question))
+        {
+            start.Environment[name] = value;
+        }
+
         using var process = new Process { StartInfo = start };
         using var window = CancellationTokenSource.CreateLinkedTokenSource(ct);
         window.CancelAfter(timeout);
@@ -121,6 +126,24 @@ public sealed class NativeDialog : IOperatorPrompt
             // about. The signal it describes is on the bus either way.
         }
     }
+
+    /// <summary>
+    /// What the Windows prompt reads its text from.
+    /// </summary>
+    /// <remarks>
+    /// The PowerShell branch cannot take the question as an argument the way the others do — it is
+    /// a script, and text pasted into a script is text that can end it — so it reads two variables
+    /// instead. They were never set: the operator got an unlabelled box asking nothing, which is
+    /// the failure this class exists to prevent. A prompt whose question is missing is not a
+    /// weaker prompt, it is a prompt nobody can answer, and every approval on Windows came back
+    /// unanswered because of it.
+    /// </remarks>
+    internal static IReadOnlyDictionary<string, string> Variables(string title, string question) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AURORA_T"] = title,
+            ["AURORA_Q"] = question,
+        };
 
     private (string File, IReadOnlyList<string> Args) Command(string title, string question, bool secret)
     {

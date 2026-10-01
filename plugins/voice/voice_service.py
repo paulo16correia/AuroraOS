@@ -52,7 +52,10 @@ def _settings():
     here = os.path.dirname(os.path.abspath(__file__))
 
     try:
-        with open(os.path.join(here, "config.json"), "r") as handle:
+        # UTF-8 named, not inferred. JSON is UTF-8 by specification, and Python on
+        # Windows reads text as cp1252 unless told otherwise, so a config holding a
+        # name, a channel title or an accented word would be read wrong or not at all.
+        with open(os.path.join(here, "config.json"), "r", encoding="utf-8") as handle:
             return json.load(handle) or {}
     except (OSError, ValueError):
         return {}

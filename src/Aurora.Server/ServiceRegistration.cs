@@ -189,7 +189,8 @@ public static class ServiceRegistration
             sp.GetRequiredService<IPluginSecretSource>(),
             sp.GetRequiredService<IPluginObservationSink>(),
             sp.GetRequiredService<IClock>(),
-            options.AllowUnconfinedPlugins));
+            options.AllowUnconfinedPlugins,
+            new PluginInterpreters(options.PluginInterpreters)));
 
         services.AddSingleton<IPluginServiceSupervisor>(
             sp => sp.GetRequiredService<ServicePluginHost>());
@@ -202,7 +203,8 @@ public static class ServiceRegistration
             new SubprocessPluginHost(
                 options.PluginRoot,
                 sp.GetRequiredService<IPluginSandbox>(),
-                options.AllowUnconfinedPlugins),
+                options.AllowUnconfinedPlugins,
+                new PluginInterpreters(options.PluginInterpreters)),
             sp.GetRequiredService<ServicePluginHost>()));
         services.AddSingleton<IPluginRegistry>(sp => new SqlitePluginRegistry(
             sp.GetRequiredService<SqliteConnectionFactory>(),

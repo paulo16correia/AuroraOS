@@ -73,6 +73,13 @@ public static class OwnerOnly
     /// also be opened to change its ACL, and sharing the file while it is still unprotected is the
     /// thing being prevented.
     /// </para>
+    /// <para>
+    /// <b>Fail-closed.</b> Every caller of this method writes security-critical material — a
+    /// symmetric key, a genome private key, an operator passphrase verifier. If the owner-only
+    /// restriction cannot be established, the secret is <i>never written</i>: the empty placeholder
+    /// is removed and an <see cref="OwnerOnlyProtectionException"/> is thrown, rather than leaving
+    /// a secret behind a permission Aurora could not narrow (F-3, docs/adr/0079).
+    /// </para>
     /// </remarks>
     public static void Write(string path, FileMode mode, Action<Stream> write)
     {
@@ -80,10 +87,45 @@ public static class OwnerOnly
         {
         }
 
-        File(path);
+        if (!File(path))
+        {
+            // The placeholder is still empty — no secret has been written. Remove it so a retry
+            // starts clean and a zero-length key file cannot be mistaken for a real one later.
+            TryRemove(path);
+
+            throw new OwnerOnlyProtectionException(path);
+        }
 
         using var stream = new FileStream(path, Options(FileMode.Open));
         write(stream);
+    }
+
+    /// <summary>
+    /// Confirms an existing security-critical file is owner-only, establishing it if it is not.
+    /// </summary>
+    /// <remarks>
+    /// For the reload path: a key created on an earlier run, or one whose ACL drifted, is
+    /// re-restricted on load and — if that cannot be done — refused, so Aurora never reads a key
+    /// back from a file it can no longer prove is the owner's alone.
+    /// </remarks>
+    public static void Require(string path)
+    {
+        if (!File(path))
+        {
+            throw new OwnerOnlyProtectionException(path);
+        }
+    }
+
+    private static void TryRemove(string path)
+    {
+        try
+        {
+            System.IO.File.Delete(path);
+        }
+        catch (Exception leftBehind) when (leftBehind is IOException or UnauthorizedAccessException)
+        {
+            // A placeholder we could not remove is still empty; the throw below is what matters.
+        }
     }
 
     private static FileStreamOptions Options(FileMode mode)
@@ -118,6 +160,80 @@ public static class OwnerOnly
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Whether a file or directory is, right now, reachable by its owner alone. Read-only.
+    /// </summary>
+    /// <remarks>
+    /// The check the preflight (F-2) needs: it must confirm the protection <i>holds</i>, not that
+    /// the code that establishes it exists. <see langword="null"/> means the answer could not be
+    /// determined (the path is gone, or the platform would not say), which the caller reports as a
+    /// warning rather than a pass.
+    /// </remarks>
+    public static bool? IsRestricted(string path)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return IsRestrictedOnWindows(path);
+            }
+
+            UnixFileMode mode = System.IO.File.GetUnixFileMode(path);
+
+            // Owner-only means no group or other bits at all.
+            const UnixFileMode groupAndOther =
+                UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
+
+            return (mode & groupAndOther) == 0;
+        }
+        catch (Exception unreadable)
+            when (unreadable is IOException or UnauthorizedAccessException
+                      or PlatformNotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool? IsRestrictedOnWindows(string path)
+    {
+        FileSystemInfo info = System.IO.Directory.Exists(path)
+            ? new DirectoryInfo(path)
+            : new FileInfo(path);
+
+        if (!info.Exists)
+        {
+            return null;
+        }
+
+        FileSystemSecurity security = info is DirectoryInfo directory
+            ? directory.GetAccessControl()
+            : ((FileInfo)info).GetAccessControl();
+
+        // Inheritance must be off, or the file carries whatever the parent grants.
+        if (!security.AreAccessRulesProtected)
+        {
+            return false;
+        }
+
+        IdentityReference? owner = security.GetOwner(typeof(SecurityIdentifier));
+
+        // Every allow rule must name the owner. A single entry for anyone else — or for a broad
+        // group such as Users — means the material is not the owner's alone.
+        foreach (AuthorizationRule rule in
+            security.GetAccessRules(true, true, typeof(SecurityIdentifier)))
+        {
+            if (rule is FileSystemAccessRule { AccessControlType: AccessControlType.Allow } allow
+                && (owner is null || !allow.IdentityReference.Equals(owner)))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     [SupportedOSPlatform("windows")]

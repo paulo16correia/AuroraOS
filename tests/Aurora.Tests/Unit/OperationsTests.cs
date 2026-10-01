@@ -99,6 +99,10 @@ public sealed class OperationsTests
 
     // ---- health ----
 
+    /// <summary>Whether this Linux has the only sandbox Aurora can drive without root.</summary>
+    private static bool Bubblewrap() =>
+        File.Exists("/usr/bin/bwrap") || File.Exists("/bin/bwrap");
+
     [Fact]
     public async Task AHealthyInstanceReportsEveryComponentPassing()
     {
@@ -119,13 +123,25 @@ public sealed class OperationsTests
         // machine. A test that demanded PASS here would fail on a Linux without bubblewrap — and
         // would be right to, which is exactly why it must not be an incidental assertion inside a
         // test about something else.
+        //
+        // Every platform Aurora confines on is named, and named by its mechanism as well as its
+        // status: asking only for PASS would be satisfied by the wrong sandbox being chosen. This
+        // said "macOS or WARN" while it only ever ran on a Mac, which made it wrong on two
+        // platforms at once — a Linux with bubblewrap installed and a Windows, both of which do
+        // confine and both of which it demanded WARN from.
         HealthCheck sandbox = checks.Single(c => c.Component == "plugin-sandbox");
 
-        Assert.Equal(
+        (string Status, string Mechanism) expected =
             OperatingSystem.IsMacOS() && File.Exists("/usr/bin/sandbox-exec")
-                ? HealthStatus.Pass
-                : HealthStatus.Warn,
-            sandbox.Status);
+                ? (HealthStatus.Pass, "sandbox-exec")
+                : OperatingSystem.IsLinux() && Bubblewrap()
+                    ? (HealthStatus.Pass, "bubblewrap")
+                    : OperatingSystem.IsWindows()
+                        ? (HealthStatus.Pass, "AppContainer")
+                        : (HealthStatus.Warn, string.Empty);
+
+        Assert.Equal(expected.Status, sandbox.Status);
+        Assert.Contains(expected.Mechanism, sandbox.DetailSafe, StringComparison.Ordinal);
     }
 
     [Fact]

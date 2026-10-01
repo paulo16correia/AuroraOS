@@ -7,8 +7,10 @@ and how much of it has actually been run.
 | --- | --- | --- | --- |
 | Kernel, Mind, memory, planning, cognition | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | MCP surface and control panel | **VERIFIED** | **VERIFIED** | **VERIFIED** |
-| Plugin execution | **VERIFIED** | **VERIFIED** | **UNVERIFIED** |
-| Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **UNVERIFIED** — AppContainer |
+| Plugin execution | **VERIFIED** | **VERIFIED** | **VERIFIED** |
+| Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **VERIFIED** — AppContainer |
+| Time zones — canonical IANA ids | **VERIFIED** | **VERIFIED** | **VERIFIED** |
+| Backup and restore-testing | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Owner-only key files | **VERIFIED** — mode bits | **VERIFIED** | **UNVERIFIED** — ACL |
 | Discord messaging and gateway | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in | **VERIFIED** against a stand-in |
 | Discord against the real service | **VERIFIED** | **UNVERIFIED** | **UNVERIFIED** |
@@ -45,18 +47,30 @@ open until somebody runs the suite on Linux with bubblewrap installed.
 
 Without bubblewrap, Linux behaves like Windows below.
 
-**Windows — UNVERIFIED.** An AppContainer, implemented and never run (docs/adr/0072). It was
-written on a Mac; no line of its interop has met a Windows kernel.
+**Windows — VERIFIED (2026-09-07).** An AppContainer, now run on a Windows machine against a real
+hostile plugin through the real `ServicePluginHost` (docs/adr/0078). Getting there took three
+one-value fixes the off-Windows tests could not surface: a confined `CreateProcess` needs
+`LOCALAPPDATA` in the built environment; the "profile already exists" code was `0x800700B5` where
+Windows returns `0x800700B7`, so no plugin could start a second time; and the internetClient
+capability was a wrong `WELL_KNOWN_SID_TYPE`, so no networked plugin could start confined. Each
+failed closed — a refusal or a failed creation, never an unconfined plugin reported as confined —
+which is exactly what docs/adr/0072 designed for.
 
-What that means in practice is decided by how it fails. The process is created **suspended**, its
-token is opened and questioned, and only a token that is an app container — and the *right* app
-container — earns a `ResumeThread`. Anything else is terminated having executed nothing. So if the
-interop is wrong, the first Windows machine to run a plugin gets a refusal naming the missing
-property, not a plugin running unconfined while Aurora reports it as confined.
+What a Windows kernel then enforced, with a plugin trying to break out: it is the right AppContainer
+(checked by Aurora before `ResumeThread` and independently from inside the plugin's own token);
+Aurora's database and vault key, other plugins' directories, the owner's home, the temp and system
+directories are all DENIED; junctions planted inside the working directory leading to Aurora's state
+are DENIED; the loopback control plane is DENIED with and without a network grant; a detached child
+is killed when Aurora's job handle closes; and a child process is itself an AppContainer rather than
+an escape. See docs/adr/0078 for the full matrix and the hard-link analysis.
 
-That is why UNVERIFIED here is a different risk from UNVERIFIED on Linux. Both mean "never run";
-bubblewrap's failure mode if the flags are wrong is a plugin with more access than intended,
-and this one's is a plugin that does not start.
+**Two honest caveats.** Outbound reachability *with* a network grant is UNVERIFIED — the machine has
+no DNS, so even unconfined Aurora cannot resolve a name, and the grant's positive effect could not
+be shown (its security-critical negative — the control plane stays unreachable — was shown).
+Confinement also needs an interpreter directory Aurora can grant the container read-and-execute on:
+a system-wide Python a non-administrator cannot re-ACL is refused fail-closed, so a Windows
+deployment needs a per-user interpreter or an administrator to open the directory to application
+packages.
 
 **What is confined, when it works.** An AppContainer reaches no filesystem it has not been named
 on, so Aurora names exactly two paths: read-and-execute where the plugin's program lives, and full
@@ -313,9 +327,13 @@ host. That is worth having and it is not verification.
 There are no live tests and no simulated live tests. What a real tenant would settle is listed in
 `docs/integrations/microsoft.md`.
 
-**On Windows this plugin does not run at all**, for two separate reasons: plugin confinement there
-is unverified, and `CreateProcess` will not run a `.py` the way a shebang does on Unix, so a script
-plugin needs its interpreter named in the manifest. The second is unaddressed.
+**On Windows this plugin now runs**, end to end, through the real `ServicePluginHost` against the
+loopback stand-in. Two things had to be fixed first and neither was Microsoft's: `CreateProcess`
+will not run a `.py` the way a shebang does on Unix, so the manifest names its interpreter; and a
+process without `SystemRoot` in its environment cannot initialise Winsock, so it could start and
+reach nothing. Both are `docs/adr/0075`.
+
+Plugin confinement on Windows is still unverified, which is a separate row and a separate risk.
 
 ## Discord
 
@@ -340,18 +358,29 @@ anybody tries to use them. See `docs/adr/0068`.
 
 ## What would change this
 
-**Windows** moves from UNVERIFIED to VERIFIED the first time the suite runs on a Windows machine
-and a plugin actually starts, is confined, and is proved so. No code change is needed for the
-attempt — only a run. What a run would settle, and nothing here can:
+**Windows plugin execution moved to VERIFIED on 2026-09-07**, when the suite first ran on a
+Windows machine. It found two launch bugs and one file-lifecycle bug, all fixed (docs/adr/0075,
+docs/adr/0076, docs/adr/0077); the question at the end of this list — "whether a plugin whose
+executable is a script can start at all" — was answered no, and then answered.
 
-- whether `CreateAppContainerProfile` and the security-capabilities attribute are used correctly;
-- whether the three inherited pipe handles reach the child and carry its stdio;
-- whether the ACEs Aurora writes are enough for a container to execute its own program;
-- whether the token verification reads what it believes it reads;
-- whether a plugin whose executable is a script can start at all — `CreateProcess` will not run a
-  `.py` the way a shebang does on Unix, so a plugin like Discord's may need its interpreter named
-  in the manifest. This is a limitation of the manifest, not of the confinement, and it is
-  unaddressed.
+**Windows plugin confinement moved to VERIFIED on 2026-09-07** (docs/adr/0078). A real hostile
+plugin was started inside a real AppContainer through the real `ServicePluginHost`, and the Windows
+kernel was observed to enforce every boundary. Getting there settled each question that was open
+here, and fixed three defects found in the settling:
+
+- `CreateAppContainerProfile` and the security-capabilities attribute are used correctly now — the
+  "already exists" code and the internetClient capability SID were both wrong and are fixed;
+- the three inherited pipe handles reach the child and carry its stdio (the plugin held a full
+  JSONL conversation over them);
+- the ACEs Aurora writes let a container execute its own program and read its interpreter — and
+  where the interpreter directory cannot be granted, the plugin is refused rather than run
+  unconfined;
+- the token verification reads what it believes it reads — confirmed both by Aurora's pre-resume
+  check and independently by the plugin querying its own token.
+
+What remains UNVERIFIED on Windows is narrow and stated in the confinement detail above: outbound
+network reachability *with* a grant (the machine has no DNS), and any run on a second Windows
+build.
 
 **Linux** moves from UNVERIFIED to VERIFIED the first time the suite runs on a Linux machine with
 bubblewrap and the sandbox tests pass — no code change needed, only a run.

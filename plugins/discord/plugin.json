@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "publisher": "aurora",
   "executable": "discord_service.py",
+  "interpreter": "python3",
   "min_platform_version": 1,
   "max_data_class": "PRIVATE",
   "documentation_ref": "docs/guides/discord.md",

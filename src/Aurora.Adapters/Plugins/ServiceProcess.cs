@@ -94,22 +94,12 @@ internal sealed class ServiceProcess : IAsyncDisposable
     {
         State = State with { Status = PluginServiceStatus.Starting };
 
-        // The same cleared environment as a one-shot plugin. Nothing about the owner's shell
+        // The same built environment as a one-shot plugin. Nothing about the owner's shell
         // travels into a plugin, and no secret travels this way either.
-        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["AURORA_PLUGIN_ID"] = _manifest.PluginId,
-            ["AURORA_MODE"] = "service",
-
-            // The system directories, plus where package managers put things. A plugin that needs
-            // a local program — speech recognition, a codec tool — finds it here or not at all,
-            // and "not at all" reads as the feature being unavailable rather than as a path being
-            // short. Still a fixed list rather than the owner's own PATH, which can name a
-            // directory anybody can write to.
-            ["PATH"] = OperatingSystem.IsWindows()
-                ? "C:\\Windows\\System32"
-                : "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-        };
+        Dictionary<string, string> environment = PluginEnvironment.For(
+            _working,
+            ("AURORA_PLUGIN_ID", _manifest.PluginId),
+            ("AURORA_MODE", "service"));
 
         // The sandbox starts it, because on one platform confinement is a property of the token
         // the process is created with rather than of the command line (docs/adr/0072). A sandbox
@@ -265,7 +255,9 @@ internal sealed class ServiceProcess : IAsyncDisposable
         {
             return new PluginResult(
                 false, null, Text(frame, "refusal") ?? "plugin_failed",
-                Detail(frame) ?? "no detail", stopwatch.ElapsedMilliseconds);
+                Detail(frame) ?? "no detail", stopwatch.ElapsedMilliseconds,
+                // A frame came back, well formed, saying no. The plugin is alive and answering.
+                Answered: true);
         }
 
         return new PluginResult(
@@ -324,18 +316,35 @@ internal sealed class ServiceProcess : IAsyncDisposable
             return;
         }
 
+        // Bounded, because a service plugin's stdout is untrusted and a single unterminated line
+        // would otherwise make the host buffer without limit (F-4, docs/adr/0079).
+        var reader = new BoundedLineReader(output, AuroraLimits.MaxPluginFrameChars);
+
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var line = await output.ReadLineAsync(ct).ConfigureAwait(false);
+                LineResult read = await reader.ReadLineAsync(ct).ConfigureAwait(false);
 
-                if (line is null)
+                if (read.Status == LineStatus.End)
                 {
                     break;
                 }
 
-                Dispatch(line, ct);
+                if (read.Status == LineStatus.OverLimit)
+                {
+                    // Dropped before it was ever fully held. Recorded so a plugin that does this
+                    // is visible rather than silently ignored, and the connection is kept: one
+                    // oversized frame is not a reason to lose the stream it came in on.
+                    State = State with
+                    {
+                        Detail = "a plugin frame exceeded the size limit and was dropped",
+                    };
+
+                    continue;
+                }
+
+                Dispatch(read.Line!, ct);
             }
         }
         catch (Exception ending) when (ending is OperationCanceledException or IOException
@@ -467,10 +476,23 @@ internal sealed class ServiceProcess : IAsyncDisposable
                     ? declared
                     : _manifest.MaxDataClass;
 
+            var payload = frame["payload"]?.ToJsonString() ?? "{}";
+
+            // An observation is a notification, not a bulk transfer. A payload past the ceiling is
+            // dropped rather than published — the whole frame was already within the frame limit,
+            // so this is a second, tighter bound on what reaches the event bus (F-4).
+            if (System.Text.Encoding.UTF8.GetByteCount(payload) > AuroraLimits.MaxObservationPayloadBytes)
+            {
+                State = State with
+                {
+                    Detail = "a plugin observation payload exceeded the size limit and was dropped",
+                };
+
+                return;
+            }
+
             await _observations.ReceiveAsync(
-                new PluginObservation(
-                    _manifest.PluginId, kind,
-                    frame["payload"]?.ToJsonString() ?? "{}", sensitivity),
+                new PluginObservation(_manifest.PluginId, kind, payload, sensitivity),
                 ct).ConfigureAwait(false);
         }
         catch (Exception lost) when (lost is not OperationCanceledException)

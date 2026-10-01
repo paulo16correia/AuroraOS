@@ -71,6 +71,23 @@ public sealed record PluginManifestFile
     /// <summary>Secrets the plugin cannot run without, by name. Values never appear here.</summary>
     [JsonPropertyName("required_secrets")]
     public IReadOnlyList<PluginSecretFile> RequiredSecrets { get; init; } = [];
+
+    /// <summary>
+    /// The runtime that runs <see cref="Executable"/>, for a program the platform cannot start
+    /// on its own — a script.
+    /// </summary>
+    /// <remarks>
+    /// A name from <see cref="PluginRuntimes.All"/>, such as <c>python3</c>. Never a path: the
+    /// same rule as <see cref="Executable"/>, for the same reason, and here it is also what keeps
+    /// a manifest from naming an arbitrary program for Aurora to start.
+    /// <para>
+    /// Optional. A script beginning <c>#!/usr/bin/env python3</c> has already said this, and
+    /// Aurora reads that where the field is absent. Declaring it is how a plugin whose program is
+    /// a script with no shebang, or with an unusual name, still starts on Windows.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("interpreter")]
+    public string? Interpreter { get; init; }
 }
 
 /// <summary>A long-lived plugin process, as its author declares it (docs/adr/0067).</summary>

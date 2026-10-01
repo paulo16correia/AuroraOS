@@ -12,4 +12,14 @@
   <ItemGroup>
     <ProjectReference Include="../Aurora.Core/Aurora.Core.csproj" />
   </ItemGroup>
+
+  <!--
+    The test project sees internals. The platform sandboxes and their Win32 constants are internal
+    on purpose — nothing outside this assembly should construct them — but a wrong constant here is
+    the kind of defect that only shows on a real Windows kernel (docs/adr/0078), so the values that
+    were wrong get a cheap unit guard alongside the live verification.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Aurora.Tests" />
+  </ItemGroup>
 </Project>

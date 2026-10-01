@@ -40,6 +40,11 @@ public sealed class SubprocessPluginHost : IPluginHost
     /// </summary>
     private readonly bool _allowUnconfined;
 
+    /// <summary>
+    /// What runs a plugin whose program the platform cannot start on its own (docs/adr/0075).
+    /// </summary>
+    private readonly PluginInterpreters _interpreters;
+
     /// <param name="root">The directory under which each plugin gets a working directory.</param>
     /// <param name="sandbox">
     /// The confinement to apply. Defaults to the strongest this machine can deliver.
@@ -49,11 +54,13 @@ public sealed class SubprocessPluginHost : IPluginHost
     /// platform Aurora cannot confine gets a refusal, not a quiet exception to rule 2.
     /// </param>
     public SubprocessPluginHost(
-        string root, IPluginSandbox? sandbox = null, bool allowUnconfined = false)
+        string root, IPluginSandbox? sandbox = null, bool allowUnconfined = false,
+        PluginInterpreters? interpreters = null)
     {
         _root = Path.GetFullPath(root);
         _sandbox = sandbox ?? PluginSandbox.ForThisMachine();
         _allowUnconfined = allowUnconfined;
+        _interpreters = interpreters ?? new PluginInterpreters();
         Directory.CreateDirectory(_root);
     }
 
@@ -74,11 +81,22 @@ public sealed class SubprocessPluginHost : IPluginHost
         var workingDirectory = Path.Combine(_root, manifest.PluginId);
         Directory.CreateDirectory(workingDirectory);
 
+        // What actually runs the program: nothing where the kernel reads a shebang, and on Windows
+        // the interpreter the manifest names or the script asks for. A refusal here names the
+        // interpreter that was wanted, which is the difference between a fixable message and a
+        // Win32Exception (docs/adr/0075).
+        InterpreterResolution resolved = _interpreters.Resolve(manifest, manifest.Executable);
+
         var request = new SandboxRequest(
-            manifest.PluginId, manifest.Executable, workingDirectory, invocation.NetworkGranted);
+            manifest.PluginId, manifest.Executable, workingDirectory, invocation.NetworkGranted,
+            GpuGranted: false, resolved.Interpreter);
 
         SandboxPlan plan = _sandbox.Plan(request);
 
+        // Confinement is decided first, and is decided whatever else is wrong. A platform that
+        // cannot confine refuses every plugin, including one that would not have started anyway —
+        // answering "no interpreter" here would report a fixable problem in place of a security
+        // one, and somebody fixing it would arrive back at the refusal they should have seen.
         if (plan.Level == SandboxLevel.Process && !_allowUnconfined)
         {
             // Named in full, because the owner has to decide, and can only decide against a
@@ -92,21 +110,17 @@ public sealed class SubprocessPluginHost : IPluginHost
                 0);
         }
 
+        if (!resolved.Ok)
+        {
+            return new PluginResult(false, null, "no_interpreter", resolved.Refused!, 0);
+        }
+
         // Nothing of Aurora's travels. A key path or a connection string sitting in the parent's
         // environment is exactly the sort of thing that leaks without anybody deciding to pass it.
-        var environment = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["AURORA_PLUGIN_ID"] = manifest.PluginId,
-            ["AURORA_CAPABILITY"] = invocation.CapabilityKey,
-
-            // A fixed PATH, not an inherited one. The property that matters is that nothing of
-            // Aurora's travels, and a constant naming only system directories carries nothing —
-            // while without it a script beginning "#!/usr/bin/env python3" cannot find an
-            // interpreter and every plugin written the ordinary way fails with exit 127.
-            ["PATH"] = OperatingSystem.IsWindows()
-                ? @"C:\Windows\System32"
-                : "/usr/bin:/bin:/usr/local/bin",
-        };
+        Dictionary<string, string> environment = PluginEnvironment.For(
+            workingDirectory,
+            ("AURORA_PLUGIN_ID", manifest.PluginId),
+            ("AURORA_CAPABILITY", invocation.CapabilityKey));
 
         var stopwatch = Stopwatch.StartNew();
 

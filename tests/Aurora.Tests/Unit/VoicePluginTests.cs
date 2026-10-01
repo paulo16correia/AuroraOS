@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using Aurora.Tests.Support;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -31,32 +31,8 @@ public sealed class VoicePluginTests
         return Path.Combine(directory!.FullName, "plugins", "voice");
     }
 
-    private static void RunPython(string module, int expected)
-    {
-        using var python = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "python3",
-                WorkingDirectory = PluginSource(),
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
-        };
-
-        python.StartInfo.ArgumentList.Add("-m");
-        python.StartInfo.ArgumentList.Add("unittest");
-        python.StartInfo.ArgumentList.Add(module);
-        python.StartInfo.ArgumentList.Add("-v");
-
-        python.Start();
-        var output = python.StandardOutput.ReadToEnd() + python.StandardError.ReadToEnd();
-        python.WaitForExit(180_000);
-
-        Assert.True(python.ExitCode == 0, output);
-        Assert.Contains($"Ran {expected} test", output, StringComparison.Ordinal);
-    }
+    private static void RunPython(string module, int expected) =>
+        _ = PythonSuite.Run(PluginSource(), module, expected);
 
     [Fact]
     public void TheRealRealtimeTransportHoldsItsRules()

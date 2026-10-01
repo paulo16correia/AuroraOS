@@ -19,10 +19,11 @@ inside Aurora's own process is a check a bug in that process can be talked aroun
 subprocess that holds no Aurora key is a boundary enforced by the operating system. Aurora's
 process opens no sockets, and `LocalOnlyTests` fails the build if it ever does.
 
-**On Windows this plugin does not run yet.** Plugin confinement there is implemented and
-unverified (`docs/adr/0072`), and there is a second, separate problem: `CreateProcess` will not run
-a `.py` the way a shebang does on Unix, so a script plugin needs its interpreter named. That is
-unaddressed. See `docs/reference/platform-support.md`.
+**On Windows this plugin runs**, through the real `ServicePluginHost`, since 2026-09-07. Its
+manifest names its interpreter, because `CreateProcess` will not run a `.py` the way a shebang does
+on Unix, and the plugin process is given `SystemRoot` so Winsock can start at all (`docs/adr/0075`).
+Plugin confinement on Windows is a separate matter and remains unverified (`docs/adr/0072`). See
+`docs/reference/platform-support.md`.
 
 ## Setting it up
 

@@ -19,14 +19,22 @@ public sealed class UnconfinedSandbox : WrapperSandbox
         _because = because;
     }
 
-    public override SandboxPlan Plan(SandboxRequest request) => new(
-        request.Executable,
-        [],
-        SandboxLevel.Process,
-        _because,
-        [
-            "the plugin can open network connections",
-            "the plugin can read every file the owner can read, including Aurora's database and key files",
-            "the plugin can write anywhere the owner can write",
-        ]);
+    public override SandboxPlan Plan(SandboxRequest request)
+    {
+        // Nothing stands in front of the plugin here, so the plan is its own command: the program
+        // itself, or — where the platform cannot start that alone — the interpreter, with the
+        // program as its argument.
+        IReadOnlyList<string> command = PluginCommand.For(request);
+
+        return new SandboxPlan(
+            command[0],
+            [.. command.Skip(1)],
+            SandboxLevel.Process,
+            _because,
+            [
+                "the plugin can open network connections",
+                "the plugin can read every file the owner can read, including Aurora's database and key files",
+                "the plugin can write anywhere the owner can write",
+            ]);
+    }
 }

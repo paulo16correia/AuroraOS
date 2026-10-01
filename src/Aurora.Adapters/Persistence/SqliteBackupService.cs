@@ -54,10 +54,9 @@ public sealed class SqliteBackupService
         var anchorPath = databasePath + ".anchor";
 
         await using (SqliteConnection source = await _factory.OpenAsync(ct).ConfigureAwait(false))
-        await using (var destination = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString()))
+        await using (SqliteConnection destination =
+            await Snapshot(databasePath).OpenAsync(ct).ConfigureAwait(false))
         {
-            await destination.OpenAsync(ct).ConfigureAwait(false);
             source.BackupDatabase(destination);
         }
 
@@ -76,8 +75,23 @@ public sealed class SqliteBackupService
     /// <summary>Verifies an existing backup with the current signing key.</summary>
     public async Task<AuditVerification> VerifyAsync(string databasePath, string anchorPath, CancellationToken ct)
     {
-        var factory = new SqliteConnectionFactory(databasePath);
-        var store = new SqliteAuditStore(factory, _clock, _auditKey, new AuditAnchorFile(anchorPath));
+        var store = new SqliteAuditStore(
+            Snapshot(databasePath), _clock, _auditKey, new AuditAnchorFile(anchorPath));
+
         return await store.VerifyChainAsync(ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// A connection factory for a backup file, which Aurora opens, finishes with, and lets go of.
+    /// </summary>
+    /// <remarks>
+    /// Unpooled, which is the whole point of it existing. A backup is a file somebody is about to
+    /// read, copy, or hand to another machine, and this method returning leaves nothing of Aurora's
+    /// holding it open. Pooled, the handle survives every <c>Dispose</c> until the pool is cleared
+    /// — and on Windows a reader then gets "the process cannot access the file because it is being
+    /// used by another process", from a backup Aurora had already reported as complete
+    /// (docs/adr/0076).
+    /// </remarks>
+    private static SqliteConnectionFactory Snapshot(string databasePath) =>
+        new(databasePath, pooled: false);
 }

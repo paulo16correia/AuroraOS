@@ -27,7 +27,17 @@ namespace Aurora.Adapters.Plugins.Sandboxes.Windows;
 [SupportedOSPlatform("windows")]
 internal static class Win32
 {
-    internal const int ErrorAlreadyExists = unchecked((int)0x800700B5);
+    /// <summary>
+    /// <c>HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS)</c>, which is what
+    /// <see cref="CreateAppContainerProfile"/> returns for a container that is already there.
+    /// </summary>
+    /// <remarks>
+    /// 0xB7 is 183. This read 0xB5, which is <c>ERROR_ALIAS_EXISTS</c> and is returned by nothing
+    /// here — so the branch that reuses an existing container was unreachable and every start
+    /// after a plugin's first failed outright. Found by running it on Windows; two hex digits are
+    /// exactly the kind of thing that cannot be found any other way (docs/adr/0078).
+    /// </remarks>
+    internal const int ErrorAlreadyExists = unchecked((int)0x800700B7);
     internal const uint CreateSuspended = 0x00000004;
     internal const uint ExtendedStartupInfoPresent = 0x00080000;
     internal const uint CreateUnicodeEnvironment = 0x00000400;
@@ -42,7 +52,20 @@ internal static class Win32
     internal const int TokenIsAppContainer = 29;
     internal const int TokenAppContainerSid = 31;
 
-    internal const int WinCapabilityInternetClientSid = 116;
+    /// <summary>
+    /// The internetClient capability, as its SID string.
+    /// </summary>
+    /// <remarks>
+    /// A literal, not a <c>WELL_KNOWN_SID_TYPE</c>. The code once passed <c>116</c> to
+    /// <c>CreateWellKnownSid</c> believing it meant internetClient; on this Windows 116 is a
+    /// mandatory-label SID (<c>S-1-18-5</c>), and CreateProcess rejected the malformed capability
+    /// with <c>ERROR_INVALID_PARAMETER</c> — so no networked plugin could ever start confined.
+    /// Enumerating the whole range found that <c>CreateWellKnownSid</c> produces no
+    /// <c>S-1-15-3-*</c> capability SID at all here. The capability SIDs are fixed and documented,
+    /// so Aurora builds them from their strings, which needs no version-specific enum
+    /// (docs/adr/0078). internetClient is <c>S-1-15-3-1</c>.
+    /// </remarks>
+    internal const string InternetClientCapabilitySid = "S-1-15-3-1";
 
     internal const uint JobObjectExtendedLimitInformation = 9;
     internal const uint JobObjectLimitKillOnJobClose = 0x00002000;
@@ -162,10 +185,16 @@ internal static class Win32
 
     // ---- identifiers ----
 
+    [DllImport("advapi32.dll", EntryPoint = "ConvertStringSidToSidW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ConvertStringSidToSid(string stringSid, out IntPtr sid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    internal static extern int GetLengthSid(IntPtr sid);
+
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static extern bool CreateWellKnownSid(
-        int wellKnownSidType, IntPtr domainSid, IntPtr sid, ref uint sidSize);
+    internal static extern bool CopySid(uint destinationLength, IntPtr destination, IntPtr source);
 
     [DllImport("advapi32.dll", EntryPoint = "ConvertSidToStringSidW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

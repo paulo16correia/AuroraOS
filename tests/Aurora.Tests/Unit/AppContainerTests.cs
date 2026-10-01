@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using Aurora.Adapters.Plugins.Sandboxes.Windows;
 using Aurora.Core.Abstractions;
+using Aurora.Core.Contracts;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -189,6 +190,67 @@ public sealed class AppContainerTests
         // writable one is the plugin's own directory, so that is the one that stands.
         AppContainerGrant only = Assert.Single(profile.Grants);
         Assert.Equal(AppContainerAccess.Full, only.Access);
+    }
+
+    // ---- what a script plugin needs to be startable at all ----
+
+    [Fact]
+    public void AScriptPluginSInterpreterIsReachableFromInsideTheContainer()
+    {
+        var python = Path.Combine(Path.GetTempPath(), "aurora-appcontainer", "python", "python.exe");
+
+        AppContainerProfile profile = AppContainerProfiles.For(
+            Request(executable: Path.Combine(Installed, "run.py")) with
+            {
+                Interpreter = new PluginInterpreter(PluginRuntimes.Python, python),
+            });
+
+        // The AppContainer default is deny and it applies to the interpreter exactly as it applies
+        // to the script: a Python the container cannot read is a container that cannot start the
+        // plugin. Windows was where every Python plugin failed, and confining the interpreter
+        // rather than exempting it is what keeps the fix from being a hole (docs/adr/0075).
+        AppContainerGrant interpreter = Assert.Single(
+            profile.Grants,
+            g => string.Equals(g.Path, Path.GetDirectoryName(python), StringComparison.Ordinal));
+
+        Assert.Equal(AppContainerAccess.ReadExecute, interpreter.Access);
+
+        // Three and no more: where it writes, where its program is, where its interpreter is.
+        Assert.Equal(3, profile.Grants.Count);
+        Assert.Single(profile.Grants, g => g.Access == AppContainerAccess.Full);
+    }
+
+    [Fact]
+    public void TheInterpreterIsNeverGrantedWritable()
+    {
+        var python = Path.Combine(Path.GetTempPath(), "aurora-appcontainer", "python", "python.exe");
+
+        AppContainerProfile profile = AppContainerProfiles.For(
+            Request(executable: Path.Combine(Installed, "run.py")) with
+            {
+                Interpreter = new PluginInterpreter(PluginRuntimes.Python, python),
+            });
+
+        // A shared installation of somebody else's software. A plugin able to write to it could
+        // replace the interpreter that every other plugin is then started with.
+        Assert.DoesNotContain(
+            profile.Grants,
+            g => g.Access == AppContainerAccess.Full
+                && string.Equals(g.Path, Path.GetDirectoryName(python), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AnInterpreterBesideThePluginIsGrantedOnce()
+    {
+        AppContainerProfile profile = AppContainerProfiles.For(
+            Request(executable: Path.Combine(Installed, "run.py")) with
+            {
+                Interpreter = new PluginInterpreter(
+                    PluginRuntimes.Python, Path.Combine(Installed, "python.exe")),
+            });
+
+        // Same path twice is an ACL nobody can reason about, and here the two happen to coincide.
+        Assert.Equal(2, profile.Grants.Count);
     }
 
     // ---- the container's name ----

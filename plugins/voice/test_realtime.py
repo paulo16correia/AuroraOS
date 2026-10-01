@@ -318,12 +318,25 @@ class ThePluginOverTheRealTransport(unittest.TestCase):
 
     def _plugin(self, server, script=None, key="sk-test-key"):
         import os
+        import shutil
         import subprocess
         import sys
+        import tempfile
 
         here = os.path.dirname(os.path.abspath(__file__))
 
-        with open(os.path.join(here, "config.json"), "w") as handle:
+        # Its own copy of the program, in its own directory. The plugin reads config.json from
+        # beside itself, so writing that into the checked-out folder makes it shared mutable
+        # state — two test processes at once each overwrite the other's settings, and each plugin
+        # then answers from the wrong stand-in.
+        directory = tempfile.mkdtemp(prefix="aurora-voice-plugin-")
+        self._copies.append(directory)
+
+        for name in os.listdir(here):
+            if name.endswith(".py"):
+                shutil.copy2(os.path.join(here, name), os.path.join(directory, name))
+
+        with open(os.path.join(directory, "config.json"), "w", encoding="utf-8") as handle:
             # Named explicitly. `local` is the default provider now, so a test that wants the
             # remote one has to say so — which is the right way round: the stack that needs
             # nobody's network is what an unconfigured installation gets.
@@ -333,9 +346,9 @@ class ThePluginOverTheRealTransport(unittest.TestCase):
             }, handle)
 
         process = subprocess.Popen(
-            [sys.executable, os.path.join(here, "voice_service.py")],
+            [sys.executable, os.path.join(directory, "voice_service.py")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            cwd=here, text=True)
+            cwd=directory, text=True)
 
         def send(frame):
             process.stdin.write(json.dumps(frame) + "\n")
@@ -372,19 +385,29 @@ class ThePluginOverTheRealTransport(unittest.TestCase):
 
         return process, send, receive, ready, events
 
-    def _close(self, process):
-        import os
+    def setUp(self):
+        self._copies = []
 
+    def tearDown(self):
+        import shutil
+
+        for directory in self._copies:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    def _close(self, process):
         try:
             process.stdin.close()
             process.wait(timeout=5)
         except Exception:
             process.kill()
 
-        try:
-            os.remove(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json"))
-        except OSError:
-            pass
+        # Every pipe, not only the one written to: left open they are descriptors held for as long
+        # as the test process lives.
+        for pipe in (process.stdout, process.stderr):
+            try:
+                pipe.close()
+            except OSError:
+                pass
 
     def test_the_plugin_opens_a_real_session_and_carries_a_tool_request_back(self):
         with FakeRealtimeServer() as server:

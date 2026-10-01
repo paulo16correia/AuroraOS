@@ -129,6 +129,63 @@ public sealed class BackupTests
     }
 
     [Fact]
+    public async Task Backup_LeavesNothingOfAurorasHoldingTheFile()
+    {
+        using var db = new SqliteTestDb();
+        using var dir = new TempDir();
+        var (audit, backup, _) = Build(db, dir.Path);
+        await audit.AppendAsync(
+            new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
+
+        BackupResult result = await backup.BackupAsync(
+            Path.Combine(dir.Path, "out"), CancellationToken.None);
+
+        // A backup is a file somebody is about to read, copy, or move to another machine, and
+        // BackupAsync returning has to mean Aurora is finished with it. Microsoft.Data.Sqlite
+        // pools connections, so a disposed one keeps the operating system handle open — and the
+        // handle SQLite holds is a writing one. On Windows the next reader is then refused with a
+        // sharing violation, which is what this asserts is not happening; on Unix there is no
+        // mandatory locking and this passes either way, which is exactly why the bug survived to
+        // be found on Windows (docs/adr/0076).
+        Assert.NotEmpty(await File.ReadAllBytesAsync(result.DatabasePath));
+
+        // Opened the strict way on purpose: FileShare.None fails if anybody at all still holds it,
+        // where the read above only fails against a writer.
+        using (File.Open(result.DatabasePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+        }
+
+        // And the proof that it is really let go of: the file can be deleted, which Windows
+        // refuses outright while a handle is open.
+        File.Delete(result.DatabasePath);
+        Assert.False(File.Exists(result.DatabasePath));
+    }
+
+    [Fact]
+    public async Task Backup_Verified_StillLeavesTheFileAlone()
+    {
+        // Verification opens the backup a second time, with a second connection factory. That one
+        // has to let go as well, or checking a backup is what locks it.
+        using var db = new SqliteTestDb();
+        using var dir = new TempDir();
+        var (audit, backup, _) = Build(db, dir.Path);
+        await audit.AppendAsync(
+            new AuditEntry("c1", "u1", "echo.say", "ih1", "completed"), CancellationToken.None);
+
+        BackupResult result = await backup.BackupAsync(
+            Path.Combine(dir.Path, "out"), CancellationToken.None);
+
+        AuditVerification again = await backup.VerifyAsync(
+            result.DatabasePath, result.AnchorPath, CancellationToken.None);
+
+        Assert.True(again.Ok, again.Reason);
+
+        using (File.Open(result.DatabasePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+        }
+    }
+
+    [Fact]
     public async Task Backup_OfAnEmptyDatabase_Verifies()
     {
         using var db = new SqliteTestDb();

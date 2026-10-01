@@ -35,6 +35,13 @@ public static class LocalKeyFile
 
         if (File.Exists(path))
         {
+            // Fail-closed on reload as well as on creation: a key file from an earlier run, or one
+            // whose ACL has drifted, is re-restricted to the owner here, and if that cannot be
+            // done the key is not handed back (F-3, docs/adr/0079). Reading a key from a file
+            // Aurora can no longer prove is the owner's alone is the exact silent-continue this
+            // closes.
+            OwnerOnly.Require(path);
+
             var existing = File.ReadAllBytes(path);
             if (existing.Length != KeyLengthBytes)
             {

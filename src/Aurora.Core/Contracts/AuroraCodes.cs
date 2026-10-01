@@ -51,4 +51,27 @@ public static class AuroraLimits
 
     /// <summary>Maximum length of an idempotency key.</summary>
     public const int MaxIdempotencyKeyChars = 200;
+
+    /// <summary>
+    /// Maximum size of a single plugin protocol frame (one JSON line), in UTF-16 code units.
+    /// </summary>
+    /// <remarks>
+    /// The service protocol is line-delimited JSON, and nothing on the wire bounds a line — a
+    /// plugin that emitted one enormous line would make the host buffer all of it (F-4,
+    /// docs/adr/0079). One mebibyte comfortably holds a large legitimate result — pages of mail,
+    /// a long message history — while capping the host's allocation for any one frame to a fixed
+    /// ceiling. Applied as a character budget while the line is still being read, so an over-limit
+    /// frame is dropped before it is ever fully held in memory; the ceiling on retained memory is
+    /// therefore about twice this many bytes (a UTF-16 code unit is two bytes). A frame at exactly
+    /// this size is accepted; the first character beyond it drops the frame.
+    /// </remarks>
+    public const int MaxPluginFrameChars = 1024 * 1024;
+
+    /// <summary>Maximum size of a plugin observation payload, in UTF-8 bytes.</summary>
+    /// <remarks>
+    /// An observation is a notification — a message arrived, a gateway reconnected — not a bulk
+    /// transfer, so it is capped well below a whole frame. A payload larger than this is either a
+    /// defect or an attempt to flood the event bus, and is dropped rather than published (F-4).
+    /// </remarks>
+    public const int MaxObservationPayloadBytes = 256 * 1024;
 }

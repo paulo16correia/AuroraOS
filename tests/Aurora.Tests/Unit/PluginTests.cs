@@ -33,6 +33,11 @@ public sealed class PluginTests
 
         public bool Succeed { get; set; } = true;
 
+        /// <summary>
+        /// When failing, whether the plugin answered with a refusal or the host gave up on it.
+        /// </summary>
+        public bool Refuses { get; set; }
+
         public int Invocations { get; private set; }
 
         public Task<PluginResult> InvokeAsync(
@@ -40,8 +45,14 @@ public sealed class PluginTests
         {
             Invocations++;
 
-            return Task.FromResult(Succeed
-                ? new PluginResult(true, Output, null, "completed", 1)
+            if (Succeed)
+            {
+                return Task.FromResult(new PluginResult(true, Output, null, "completed", 1));
+            }
+
+            return Task.FromResult(Refuses
+                ? new PluginResult(
+                    false, null, "floor_taken", "somebody is speaking", 1, Answered: true)
                 : new PluginResult(false, null, "nonzero_exit", "exited 1", 1));
         }
     }
@@ -336,6 +347,64 @@ public sealed class PluginTests
         var before = host.Invocations;
         await registry.InvokeAsync(Call(), Ct);
         Assert.Equal(before, host.Invocations);
+    }
+
+    [Fact]
+    public async Task APluginThatDeclinesIsNotQuarantinedForDeclining()
+    {
+        // The circuit is there to stop calling something broken. A plugin that receives a call,
+        // considers it and says no is the opposite of broken — and counting those quarantined a
+        // voice plugin for refusing, three times, to talk over the people in a call, which then
+        // stopped it doing anything at all (docs/adr/0081).
+        using var db = new SqliteTestDb();
+        var (registry, host, _) = Build(db);
+        await registry.InstallAsync(Manifest(), ["notes.write"], "approval/1", Ct);
+
+        host.Succeed = false;
+        host.Refuses = true;
+
+        for (var i = 0; i < 10; i++)
+        {
+            PluginResult result = await registry.InvokeAsync(Call(), Ct);
+
+            Assert.False(result.Ok);
+            Assert.Equal("floor_taken", result.Refusal);
+        }
+
+        PluginInstallation installation = (await registry.GetAsync("plugin/notes", Ct))!;
+
+        Assert.Equal(InstallationStatus.Installed, installation.Status);
+        Assert.Equal(0, installation.ConsecutiveFailures);
+
+        // And it keeps being asked, which is the whole difference.
+        var before = host.Invocations;
+        await registry.InvokeAsync(Call(), Ct);
+        Assert.Equal(before + 1, host.Invocations);
+    }
+
+    [Fact]
+    public async Task RefusalsDoNotLaunderRealFailures()
+    {
+        // The other half. A refusal must not reset the count either, or a plugin that fails twice
+        // and refuses once would never reach the circuit at all.
+        using var db = new SqliteTestDb();
+        var (registry, host, _) = Build(db);
+        await registry.InstallAsync(Manifest(), ["notes.write"], "approval/1", Ct);
+
+        host.Succeed = false;
+
+        await registry.InvokeAsync(Call(), Ct);
+        await registry.InvokeAsync(Call(), Ct);
+
+        host.Refuses = true;
+        await registry.InvokeAsync(Call(), Ct);
+
+        host.Refuses = false;
+        await registry.InvokeAsync(Call(), Ct);
+
+        PluginInstallation installation = (await registry.GetAsync("plugin/notes", Ct))!;
+
+        Assert.Equal(InstallationStatus.Quarantined, installation.Status);
     }
 
     [Fact]

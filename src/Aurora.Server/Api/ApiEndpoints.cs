@@ -3,6 +3,7 @@ using Aurora.Core;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
+using Aurora.Core.Time;
 using Aurora.Server.Security;
 
 namespace Aurora.Server.Api;
@@ -382,7 +383,7 @@ public static class ApiEndpoints
         try
         {
             assessment = await situation.AssessAsync(
-                new SituationContext(timezone ?? TimeZoneInfo.Local.Id), ct);
+                new SituationContext(timezone ?? AuroraTimeZones.LocalId), ct);
         }
         catch (SituationException unknownZone)
         {
@@ -415,7 +416,7 @@ public static class ApiEndpoints
         CancellationToken ct)
     {
         var correlationId = ApiEnvelopes.CorrelationOf(request);
-        var zone = timezone ?? TimeZoneInfo.Local.Id;
+        var zone = timezone ?? AuroraTimeZones.LocalId;
 
         return ApiIdempotency.RunAsync(
             idempotency, principals.Current, KeyOf(request), new { zone }, correlationId,

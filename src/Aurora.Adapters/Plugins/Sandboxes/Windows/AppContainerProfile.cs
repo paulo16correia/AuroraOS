@@ -99,17 +99,36 @@ public static class AppContainerProfiles
             new(Path.GetFullPath(request.WorkingDirectory), AppContainerAccess.Full),
         };
 
-        if (!string.IsNullOrEmpty(program)
-            && !string.Equals(
-                program,
-                Path.GetFullPath(request.WorkingDirectory),
-                StringComparison.OrdinalIgnoreCase))
+        // Where the program itself lives, read-only. Without it the container cannot execute the
+        // plugin at all; with more than read-and-execute, a plugin could rewrite its own installed
+        // code and the manifest hash would be describing something that no longer runs.
+        Add(program);
+
+        // And where its interpreter lives, on the same terms, when there is one. A Python that the
+        // container cannot read is a container that cannot start the plugin — the AppContainer
+        // default is deny, and it applies to the interpreter exactly as it applies to the script.
+        //
+        // Read-and-execute, not full: this is a shared installation of somebody else's software,
+        // and a plugin able to write to it could replace the interpreter that every other plugin
+        // is then started with.
+        if (request.Interpreter is { } interpreter)
         {
-            // Where the program itself lives, read-only. Without it the container cannot execute
-            // the plugin at all; with more than read-and-execute, a plugin could rewrite its own
-            // installed code and the manifest hash would be describing something that no longer
-            // runs.
-            grants.Add(new AppContainerGrant(program, AppContainerAccess.ReadExecute));
+            Add(Path.GetDirectoryName(Path.GetFullPath(interpreter.Path)));
+        }
+
+        void Add(string? directory)
+        {
+            if (string.IsNullOrEmpty(directory)
+                || string.Equals(
+                    directory,
+                    Path.GetFullPath(request.WorkingDirectory),
+                    StringComparison.OrdinalIgnoreCase)
+                || grants.Any(g => string.Equals(g.Path, directory, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            grants.Add(new AppContainerGrant(directory, AppContainerAccess.ReadExecute));
         }
 
         return new AppContainerProfile(

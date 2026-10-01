@@ -1,0 +1,30 @@
+{
+  "plugin_id": "you/test-plugin",
+  "version": "1.0.0",
+  "publisher": "you",
+  "executable": "run.py",
+  "interpreter": "python3",
+  "max_data_class": "PRIVATE",
+  "documentation_ref": "README.md",
+  "required_permissions": [],
+  "capabilities": [
+    {
+      "key": "test-plugin.greet",
+      "title": "Greet somebody",
+      "description": "Returns a greeting. Replace this with something useful.",
+      "input_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 64 } }
+      },
+      "output_schema": { "type": "object" },
+      "effects": [],
+      "risk": "LOW",
+      "approval_required": false,
+      "reversible": true,
+      "idempotent": true
+    }
+  ]
+}

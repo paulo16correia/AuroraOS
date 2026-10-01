@@ -22,5 +22,37 @@ dist/
 node_modules/
 obj/
 plugins/*/config.json
+plugins/discord/bin/
 plugins/discord/models/
 plugins/discord/vendor/
+
+# Runtime state and operator secrets. The real deployment lives outside this tree
+# (%LOCALAPPDATA%\Aurora on Windows, ~/.local/share/aurora elsewhere), so these are
+# defensive: they keep a key or a database out of history if anyone ever points a
+# data root at the checkout.
+*.db
+*.db-shm
+*.db-wal
+*.db.anchor
+*.key
+*.pem
+*.pfx
+*.p12
+aurora.passphrase.json
+bearer.txt
+*.token
+secrets.json
+sandbox/
+
+# Third-party speech engines and voice models are downloaded, not authored here.
+# (plugins/discord/{bin,models,vendor} are already excluded above.)
+*.onnx
+*.onnx.json
+ggml-*.bin
+piper.exe
+whisper-cli.exe
+
+# Temporary
+*.tmp
+*.bak
+*.orig

@@ -35,6 +35,9 @@ public sealed class EcdsaGenomeSigner : IGenomeSigner, IDisposable
 
         if (File.Exists(path))
         {
+            // Fail-closed on reload: the genome private key is re-restricted to the owner before it
+            // is read back, and refused if that cannot be done (F-3, docs/adr/0079).
+            OwnerOnly.Require(path);
             key.ImportPkcs8PrivateKey(File.ReadAllBytes(path), out _);
             return new EcdsaGenomeSigner(key);
         }

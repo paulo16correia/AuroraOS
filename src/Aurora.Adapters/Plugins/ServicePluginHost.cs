@@ -38,6 +38,15 @@ public sealed class ServicePluginHost
     private readonly IClock _clock;
     private readonly bool _allowUnconfined;
 
+    /// <summary>
+    /// What runs a plugin whose program the platform cannot start on its own (docs/adr/0075).
+    /// </summary>
+    /// <remarks>
+    /// Held rather than reached for statically, so an owner-named interpreter reaches every start
+    /// through one object and the search behind it happens once.
+    /// </remarks>
+    private readonly PluginInterpreters _interpreters;
+
     private readonly ConcurrentDictionary<string, ServiceProcess> _running = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -54,7 +63,8 @@ public sealed class ServicePluginHost
 
     public ServicePluginHost(
         string root, IPluginSandbox sandbox, IPluginSecretSource secrets,
-        IPluginObservationSink observations, IClock clock, bool allowUnconfined = false)
+        IPluginObservationSink observations, IClock clock, bool allowUnconfined = false,
+        PluginInterpreters? interpreters = null)
     {
         _root = root;
         _sandbox = sandbox;
@@ -62,6 +72,7 @@ public sealed class ServicePluginHost
         _observations = observations;
         _clock = clock;
         _allowUnconfined = allowUnconfined;
+        _interpreters = interpreters ?? new PluginInterpreters();
     }
 
     /// <summary>
@@ -250,22 +261,43 @@ public sealed class ServicePluginHost
         var working = Path.Combine(_root, manifest.PluginId);
         Directory.CreateDirectory(working);
 
+        // What actually runs the program. Nothing on macOS or Linux, where the kernel reads the
+        // shebang; on Windows the interpreter the manifest names or the script asks for, resolved
+        // to one absolute path. A plugin whose interpreter cannot be resolved is not started —
+        // and says which one was wanted, rather than failing later as a Win32Exception nobody can
+        // act on.
+        InterpreterResolution resolved = _interpreters.Resolve(manifest, executable);
+
         SandboxPlan plan = _sandbox.Plan(
             new SandboxRequest(
-                manifest.PluginId, executable, working, networkGranted, gpuGranted));
+                manifest.PluginId, executable, working, networkGranted, gpuGranted,
+                resolved.Interpreter));
 
+        // Confinement first, and whatever else is wrong. A platform that cannot confine refuses
+        // every plugin, including one that would not have started anyway.
         if (plan.Level != SandboxLevel.Confined && !_allowUnconfined)
+        {
+            var unconfined = new PluginServiceState(
+                manifest.PluginId, PluginServiceStatus.Failed, failures,
+                PluginRefusal.SandboxUnavailable);
+
+            _running[manifest.PluginId] = ServiceProcess.NeverStarted(unconfined);
+            return unconfined;
+        }
+
+        if (!resolved.Ok)
         {
             var state = new PluginServiceState(
                 manifest.PluginId, PluginServiceStatus.Failed, failures,
-                PluginRefusal.SandboxUnavailable);
+                $"{PluginRefusal.ServiceUnavailable}: {resolved.Refused}");
 
             _running[manifest.PluginId] = ServiceProcess.NeverStarted(state);
             return state;
         }
 
         var request = new SandboxRequest(
-            manifest.PluginId, executable, working, networkGranted, gpuGranted);
+            manifest.PluginId, executable, working, networkGranted, gpuGranted,
+            resolved.Interpreter);
 
         var service = new ServiceProcess(
             manifest, _sandbox, request, plan, executable, working, _observations, _clock, failures);

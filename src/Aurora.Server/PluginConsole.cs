@@ -517,6 +517,7 @@ public static class PluginConsole
           "version": "1.0.0",
           "publisher": "you",
           "executable": "run.py",
+          "interpreter": "python3",
           "max_data_class": "PRIVATE",
           "documentation_ref": "README.md",
           "required_permissions": [],
@@ -553,9 +554,12 @@ public static class PluginConsole
         means the call failed.
         
         Almost nothing is inherited: none of Aurora's environment, and on macOS and Linux no network and
-        no access to the owner's files. Three variables are passed deliberately — AURORA_PLUGIN_ID,
-        AURORA_CAPABILITY, and a PATH holding only the system directories, so that this line can find an
-        interpreter at all.
+        no access to the owner's files. What is passed is passed deliberately — AURORA_PLUGIN_ID,
+        AURORA_CAPABILITY, a PATH holding only the system directories so that the line above can find an
+        interpreter at all, and on Windows SystemRoot, without which no socket can be opened.
+
+        The line above is what macOS and Linux read to know this is Python. Windows has no equivalent, so
+        plugin.json names the interpreter as well — keep both, and they agree.
         """
         import json
         import os

@@ -3,6 +3,7 @@ using Aurora.Adapters.Persistence;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Scheduling;
+using Aurora.Core.Time;
 using Microsoft.Data.Sqlite;
 
 namespace Aurora.Adapters.Scheduling;
@@ -63,6 +64,12 @@ public sealed class SqliteScheduler : IScheduler
         // cannot resolve is a schedule that would fire at the wrong time, silently.
         TimeZoneInfo zone = ResolveZone(request.Timezone);
 
+        // Stored under Aurora's canonical name for it. Somebody scheduling from Windows can
+        // reasonably name the zone the way Windows does; persisting "GMT Standard Time" would
+        // make the row unreadable to the same installation started on a Mac. An id that is
+        // already IANA is kept exactly as it was written.
+        var timezone = AuroraTimeZones.Canonical(request.Timezone);
+
         // Rule 3: scheduling something that reaches outside Aurora is itself a decision the person
         // has to make. The per-occurrence checks still apply on top of this one.
         if (request.ReachesOutsideAurora && string.IsNullOrWhiteSpace(approvalRef))
@@ -73,7 +80,7 @@ public sealed class SqliteScheduler : IScheduler
 
         var schedule = new Schedule(
             Guid.NewGuid().ToString("N"), request.OwnerId, request.Title, request.Trigger,
-            request.Timezone, request.Expression, NextRunAtUtc: null, LastRunAtUtc: null,
+            timezone, request.Expression, NextRunAtUtc: null, LastRunAtUtc: null,
             request.Target, request.PayloadRef, Enabled: true,
             request.QuietHoursPolicy, request.MissedRunPolicy, ScheduleStatus.Active);
 
@@ -575,16 +582,12 @@ public sealed class SqliteScheduler : IScheduler
             throw new SchedulingException("A schedule needs a time zone; UTC is not assumed.");
         }
 
-        try
-        {
-            // IANA ids resolve on every platform .NET supports, so a schedule written on macOS
-            // means the same thing on Windows.
-            return TimeZoneInfo.FindSystemTimeZoneById(timezone);
-        }
-        catch (Exception found) when (found is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            throw new SchedulingException($"'{timezone}' is not a time zone this machine knows.");
-        }
+        // Through AuroraTimeZones, so that the IANA id stored on the schedule means the same
+        // thing wherever Aurora is next started. Resolving it with TimeZoneInfo directly worked
+        // on Unix and failed on every Windows machine, which is the whole reason that type exists.
+        return AuroraTimeZones.TryFind(timezone, out TimeZoneInfo? zone)
+            ? zone
+            : throw new SchedulingException($"'{timezone}' is not a time zone this machine knows.");
     }
 
     // ---- plumbing ----
