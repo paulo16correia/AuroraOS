@@ -9,9 +9,9 @@ That is the whole contract.
 ## Five minutes
 
 ```bash
-aurora plugin new ~/my-plugin
-aurora plugin validate ~/my-plugin
-aurora plugin install ~/my-plugin
+dotnet run --project src/Aurora.Server -- plugin new ~/my-plugin
+dotnet run --project src/Aurora.Server -- plugin validate ~/my-plugin
+dotnet run --project src/Aurora.Server -- plugin install ~/my-plugin
 ```
 
 `plugin new` writes a working plugin. Change it into yours, run `validate` until it stops
@@ -254,7 +254,7 @@ that. What re-verification proves on every call is that nothing has changed sinc
 
 ## Distributing one
 
-A folder. Tell people to run `aurora plugin validate` on it before `install`, so they read what they
+A folder. Tell people to run `plugin validate` on it before `install`, so they read what they
 are agreeing to.
 
 Publish your `plugin.json` where people can read it without downloading anything. It is the whole of

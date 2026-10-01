@@ -70,9 +70,9 @@ Aurora's result path and into its audit, which is exactly where a credential mus
 ### 3. Put the three values in the vault
 
 ```bash
-aurora secret set plugin/microsoft tenant_id
-aurora secret set plugin/microsoft client_id
-aurora secret set plugin/microsoft refresh_token
+dotnet run --project src/Aurora.Server -- secret set plugin/microsoft tenant_id
+dotnet run --project src/Aurora.Server -- secret set plugin/microsoft client_id
+dotnet run --project src/Aurora.Server -- secret set plugin/microsoft refresh_token
 ```
 
 They are encrypted at rest and delivered to the plugin over its pipe rather than through its

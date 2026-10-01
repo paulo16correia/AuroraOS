@@ -48,7 +48,7 @@ are Python programs. You need CPython 3 available as `python3` (or `python`).
 >   PACKAGES`, or
 > - point Aurora at a specific interpreter you control (see §3).
 >
-> `aurora doctor` (§8) checks this for every installed plugin and names the exact directory if it
+> `doctor` (§8) checks this for every installed plugin and names the exact directory if it
 > cannot be granted.
 
 **Native dependencies (only for the features that use them).**
@@ -75,6 +75,30 @@ Run the server from the built `Aurora.Server`:
 ```bash
 dotnet run --project src/Aurora.Server -c Release
 ```
+
+### There is no `aurora` on your PATH
+
+Every operator command in these guides is the same program with a verb — `secret`, `plugin`,
+`doctor`, `ops`, `passphrase` — reached the same way:
+
+```bash
+dotnet run --project src/Aurora.Server -- <verb> …
+```
+
+Nothing installs a shorter name, and these guides used to print one as though something did. If you
+are going to type it often, make the short name yourself rather than wait for Aurora to:
+
+```powershell
+# PowerShell, for this session — or put it in $PROFILE
+function aurora { dotnet run --project src/Aurora.Server -- @args }
+```
+
+```bash
+# bash or zsh
+aurora() { dotnet run --project src/Aurora.Server -- "$@"; }
+```
+
+It has to run from the repository root either way, because the path to the project is relative.
 
 On first start Aurora creates its data directory and, in it, the database, the key files, the audit
 anchor, and the plugin and sandbox roots. With no configuration these all live under:
@@ -130,7 +154,7 @@ you want first on `PATH`, or install it per-user.
 ## 4. Security prerequisites
 
 These hold automatically with the default per-user data directory. If you change paths, confirm
-each with `aurora doctor`.
+each with `doctor`.
 
 - **AppContainer confinement (Windows).** Plugins run inside a per-plugin AppContainer, created
   suspended, its token verified before it is allowed to run, torn down if verification fails. It
@@ -163,12 +187,12 @@ purpose `plugin/<plugin_id>/<secret_name>`:
 
 ```bash
 # Placeholders — substitute the real plugin id, secret name, and value.
-dotnet run --project src/Aurora.Server -- secret set plugin/plugin/discord/bot_token <TOKEN>
+dotnet run --project src/Aurora.Server -- secret set plugin/discord bot_token
 dotnet run --project src/Aurora.Server -- secret list
 ```
 
 Required vs optional: a secret in a plugin's `required_secrets` must be present or the plugin will
-not start — `aurora doctor` reports a missing one as **FAIL**. Anything else is optional.
+not start — `doctor` reports a missing one as **FAIL**. Anything else is optional.
 
 Shipped plugins and their required secrets (names only):
 
@@ -198,7 +222,7 @@ dotnet run --project src/Aurora.Server -- plugin list
 To check a plugin's live readiness (native deps, sign-in) once Aurora is running, call its own
 status capability through your MCP client — for example `discord.voice.status` or `voice.status`.
 
-To diagnose a plugin that will not start, run `aurora doctor` (§8): it reports manifest validity,
+To diagnose a plugin that will not start, run `doctor` (§8): it reports manifest validity,
 interpreter resolution, whether the interpreter directory is grantable, and whether required
 secrets are present, naming the exact plugin and path at fault.
 
@@ -227,7 +251,7 @@ panel's decisions.
 
 ---
 
-## 8. `aurora doctor`
+## 8. `doctor`
 
 `doctor` is the deployment preflight. Run it **before** starting plugins — it turns the failures you
 would otherwise hit at first plugin call into an explicit list:
@@ -267,7 +291,7 @@ Common FAILs and their fix:
    `Aurora:BearerToken` so the token is stable for your client.
 2. **Install plugins**, then **restart** so they are picked up.
 3. **Provision credentials** for the plugins you will demo (`secret set …`).
-4. **Run `aurora doctor`** and resolve every FAIL. WARN items are acceptable for a controlled demo.
+4. **Run `doctor`** and resolve every FAIL. WARN items are acceptable for a controlled demo.
 5. **Start Aurora**, connect your MCP client (§7), and confirm `aurora_catalog` lists the expected
    capabilities.
 6. **Warm the plugins** you will use: the first call to a service plugin pays a few seconds of
@@ -312,7 +336,7 @@ these against their stand-ins, or on macOS where the real Discord path is verifi
   program) directory cannot be re-permissioned by the running account. Use a per-user interpreter,
   or have an administrator grant the directory to application packages. This is fail-closed, correct
   behaviour, not a crash.
-- **A required secret is missing** — the plugin starts "degraded" or refuses; `aurora doctor` names
+- **A required secret is missing** — the plugin starts "degraded" or refuses; `doctor` names
   it. Provision it with `secret set plugin/<id>/<name> <value>` and restart.
 - **Plugin fails to start on Windows with a `Win32Exception`** — the interpreter could not be
   resolved. Ensure `python3` is on `PATH` (per-user install), then re-run `doctor`.
@@ -339,7 +363,7 @@ these against their stand-ins, or on macOS where the real Discord path is verifi
 [ ] Per-user Python on PATH (NOT a system dir a non-admin cannot re-ACL)
 [ ] Plugins installed, then Aurora RESTARTED
 [ ] Required secrets provisioned (secret set …), none in any file
-[ ] `aurora doctor` run — 0 FAIL (WARN reviewed and accepted)
+[ ] `doctor` run — 0 FAIL (WARN reviewed and accepted)
 [ ] Aurora started; MCP client connected; aurora_catalog lists expected capabilities
 [ ] Service plugins warmed with one call each
 [ ] External connectivity + native deps confirmed via each plugin's *.status

@@ -74,7 +74,7 @@ on its owner's behalf, in the room where that is least recoverable.
 ### 2. The speech key goes in the vault, never in configuration
 
 ```bash
-aurora secret set plugin/voice elevenlabs_api_key
+dotnet run --project src/Aurora.Server -- secret set plugin/voice elevenlabs_api_key
 ```
 
 It reaches the plugin over its pipe, is held in memory for the life of the process, and goes into

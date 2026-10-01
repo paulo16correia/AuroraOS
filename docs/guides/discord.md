@@ -25,8 +25,8 @@ You need a Discord application with a bot, from the Discord developer portal. Au
 anything that bot can do, so give it the narrowest permissions that let it do what you want.
 
 ```bash
-aurora plugin validate plugins/discord
-aurora plugin install plugins/discord
+dotnet run --project src/Aurora.Server -- plugin validate plugins/discord
+dotnet run --project src/Aurora.Server -- plugin install plugins/discord
 ```
 
 Installing asks you two things separately, and both are decisions:
@@ -37,7 +37,7 @@ Installing asks you two things separately, and both are decisions:
 The bot token goes in the vault, never in the manifest:
 
 ```bash
-aurora secret set plugin/discord bot_token
+dotnet run --project src/Aurora.Server -- secret set plugin/discord bot_token
 ```
 
 It asks for the value on the next line with the terminal's echo off. It is never taken as an
