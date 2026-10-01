@@ -12,6 +12,7 @@ import http.server
 import json
 import struct
 import threading
+import os
 import unittest
 
 import voice_engines
@@ -247,6 +248,43 @@ class QuandoFalha(unittest.TestCase):
                 Servidor.pedacos = 4
 
         self.assertIn("no audio", str(erro.exception))
+
+
+class AVozEUmaSo(unittest.TestCase):
+    """There is one speech client in Aurora, and this plugin does not get to have a second."""
+
+    def test_the_vendored_client_is_the_voice_plugins_byte_for_byte(self):
+        # A copy rather than an import, because plugins do not share a process, a sandbox or a
+        # directory — each is granted its own and nothing outside it is readable. A copy nobody
+        # checks is how two implementations come back, so it is checked here: edit
+        # plugins/voice/speech.py and copy it over, and this passes; edit the copy and it does not.
+        import os
+
+        aqui = os.path.dirname(os.path.abspath(__file__))
+        copia = os.path.join(aqui, "vendor", "aurora_voice", "speech.py")
+        original = os.path.join(os.path.dirname(aqui), "voice", "speech.py")
+
+        self.assertTrue(os.path.exists(copia), copia)
+        self.assertTrue(os.path.exists(original),
+                        "the voice plugin is the source of this file and it is not there: "
+                        + original)
+
+        with open(copia, "rb") as c, open(original, "rb") as o:
+            self.assertEqual(
+                o.read(), c.read(),
+                "the vendored speech client has drifted from plugins/voice/speech.py — copy it "
+                "over rather than editing the copy")
+
+    def test_this_plugin_does_not_write_its_own_request_to_the_speech_service(self):
+        # The duplication this replaced: the URL, the key header and the model were written out
+        # again here, each free to disagree with the voice plugin's. Whatever else changes, the
+        # request itself is built in one place.
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "voice_engines.py"), encoding="utf-8") as h:
+            fonte = h.read()
+
+        self.assertNotIn("xi-api-key", fonte)
+        self.assertNotIn("/v1/text-to-speech/", fonte)
 
 
 if __name__ == "__main__":

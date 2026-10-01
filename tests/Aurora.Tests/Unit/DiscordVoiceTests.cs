@@ -80,7 +80,12 @@ public sealed class DiscordVoiceTests : IDisposable
         // chosen for which language, that one channel became two, that audio arrives in pieces
         // rather than in one lump at the end, and that a refusal says why instead of returning
         // silence somebody would mistake for a quiet room.
-        RunPython("test_speech_service", 15);
+        //
+        // And that there is still only one of it. The client lived twice — once in the voice
+        // plugin and once written out again here — until this plugin was given a copy of the
+        // voice plugin's instead. Two of the tests guard that: the copy is compared byte for
+        // byte, and this plugin is checked for not having quietly grown a second request.
+        RunPython("test_speech_service", 17);
     }
 
     [Fact]
@@ -215,10 +220,9 @@ public sealed class DiscordVoiceTests : IDisposable
         var directory = Path.Combine(root, "plugin-discord");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        foreach (var file in Directory.EnumerateFiles(PluginSource()))
-        {
-            File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
-        }
+        // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
+        // folder is not the plugin, and the symptom is a process that will not start.
+        PluginCopy.Into(PluginSource(), directory);
 
         _executable = Path.Combine(directory, "discord_service.py");
 
@@ -282,10 +286,9 @@ public sealed class DiscordVoiceTests : IDisposable
         var directory = Path.Combine(root, "plugin-discord");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        foreach (var file in Directory.EnumerateFiles(PluginSource()))
-        {
-            File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
-        }
+        // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
+        // folder is not the plugin, and the symptom is a process that will not start.
+        PluginCopy.Into(PluginSource(), directory);
 
         _executable = Path.Combine(directory, "discord_service.py");
 
@@ -347,10 +350,9 @@ public sealed class DiscordVoiceTests : IDisposable
         var directory = Path.Combine(root, "plugin-discord");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        foreach (var file in Directory.EnumerateFiles(PluginSource()))
-        {
-            File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
-        }
+        // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
+        // folder is not the plugin, and the symptom is a process that will not start.
+        PluginCopy.Into(PluginSource(), directory);
 
         _executable = Path.Combine(directory, "discord_service.py");
 

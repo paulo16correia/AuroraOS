@@ -286,58 +286,30 @@ def has_transport():
 # about to say leaves the machine. Audio never does — recognition stays local, and `readiness`
 # reports both facts separately so neither can be mistaken for the other.
 
-ELEVENLABS_HOST = "api.elevenlabs.io"
+from vendor.aurora_voice import speech as _speech
 
-# Flash: the low-latency model, and the one that honours an explicit language code rather than
-# guessing from the text. Guessing is the failure that matters here — "no" is a word in several
-# languages and a wrong guess reads the whole sentence in the wrong one.
-ELEVENLABS_MODEL = "eleven_flash_v2_5"
+# One voice in Aurora, and this is where this plugin borrows it. The client used to be written out
+# again here — the same request to the same host, with its own idea of which model to ask for and
+# its own words for a missing key. Two implementations are two places for an answer to come back
+# wrong, so the names below are the voice plugin's, and only what Discord needs on top of them is
+# written here.
+#
+# A copy rather than an import across plugins, because plugins do not share a process, a sandbox or
+# a directory. `vendor/aurora_voice/METADATA` says where it came from, and a test fails the build
+# if the two drift apart.
+
+ELEVENLABS_HOST = _speech.ElevenLabsSpeaker.HOST
+ELEVENLABS_BASE = _speech.ElevenLabsSpeaker.BASE
+ELEVENLABS_MODEL = _speech.ElevenLabsSpeaker.MODEL
+ELEVENLABS_TIMEOUT = _speech.ElevenLabsSpeaker.TIMEOUT
 
 # 48kHz because that is what Discord's Opus encoder takes. Asking for anything else would buy a
-# resampling step and the artefacts that come with it, for nothing.
+# resampling step and the artefacts that come with it, for nothing. The only number here that is
+# Discord's rather than the speech service's.
 ELEVENLABS_RATE = 48000
 
-ELEVENLABS_TIMEOUT = 30.0
-
-
-def resolve_voice(setting, language=None):
-    """Which voice to speak with, from whatever shape the installer wrote.
-
-    Whoever installs Aurora chooses the voice, and there are two reasonable things to want. One
-    voice for everything gives Aurora a single recognisable identity — at the cost of carrying that
-    speaker's accent into every other language she speaks. One voice per language gives a native
-    accent everywhere, at the cost of Aurora not having a voice of her own.
-
-    Neither is wrong, so this does not choose: the setting is either a string, used whatever the
-    language, or a mapping from language to voice with an optional "default" for the rest.
-    """
-    if not setting:
-        return None
-
-    if isinstance(setting, str):
-        return setting.strip() or None
-
-    if not isinstance(setting, dict):
-        return None
-
-    # "pt-PT" should find a voice filed under "pt", and "pt" should not be found by "pt-BR".
-    candidates = []
-
-    if language:
-        candidates.append(str(language))
-
-        if "-" in str(language):
-            candidates.append(str(language).split("-")[0])
-
-    candidates.append("default")
-
-    for key in candidates:
-        found = setting.get(key)
-
-        if isinstance(found, str) and found.strip():
-            return found.strip()
-
-    return None
+resolve_voice = _speech.resolve_voice
+_speech_base = _speech._speech_base
 
 
 def cloud_tts(voice_setting, api_key, language=None):
@@ -346,20 +318,18 @@ def cloud_tts(voice_setting, api_key, language=None):
     Both halves have to be present: a key without a voice cannot speak and a voice without a key
     cannot either. `readiness` is what explains which is missing.
     """
-    voice_id = resolve_voice(voice_setting, language)
+    falante = _speech.ElevenLabsSpeaker(
+        voice=voice_setting, api_key=api_key, locale=language or "", rate=ELEVENLABS_RATE)
 
-    if not voice_id or not api_key:
-        return None
-
-    return {"name": "elevenlabs", "voice_id": voice_id, "model": ELEVENLABS_MODEL,
-            "rate": ELEVENLABS_RATE, "language": language}
+    return falante if falante.available() else None
 
 
 def _to_stereo(mono):
     """Duplicates each sample into both channels.
 
-    ElevenLabs returns one channel and Discord carries two. Done here rather than later because
-    the framing downstream counts bytes, and handing it mono would silently halve every frame.
+    The speech service returns one channel and Discord carries two. Done here rather than later
+    because the framing downstream counts bytes, and handing it mono would silently halve every
+    frame. This is the one thing in the speaking path that is Discord's own.
     """
     out = bytearray(len(mono) * 2)
     out[0::4] = mono[0::2]
@@ -369,101 +339,26 @@ def _to_stereo(mono):
     return bytes(out)
 
 
-ELEVENLABS_BASE = "https://" + ELEVENLABS_HOST
-
-
-def _speech_base(base):
-    """The service to talk to, refusing any address that would send the key in clear.
-
-    The override exists so the protocol can be tested without a network, a key or somebody's quota.
-    It is deliberately narrow: plain HTTP is allowed only to loopback, because an API key on the
-    wire in clear is exactly the kind of mistake a test helper quietly turns into production.
-    """
-    if not base:
-        return ELEVENLABS_BASE
-
-    base = base.rstrip("/")
-
-    if "://" not in base:
-        base = "https://" + base
-
-    scheme, _, rest = base.partition("://")
-    host = rest.split("/")[0].split(":")[0]
-
-    if scheme != "https" and host not in ("127.0.0.1", "localhost", "::1", "[::1]"):
-        raise RuntimeError(
-            "refusing to send the speech key to %s over %s — only https, or loopback for tests"
-            % (host, scheme))
-
-    return base
-
-
 def synthesise_stream(engine, text, api_key, timeout=ELEVENLABS_TIMEOUT, base=None):
     """Yields 48kHz stereo PCM as it arrives, so speaking can start before the sentence is made.
 
     The generator is the cancellation mechanism. Closing it — which is what the transport does when
-    somebody interrupts — stops reading and closes the connection, and nothing keeps working in the
-    background afterwards.
+    somebody interrupts — closes the one underneath, which stops reading and drops the connection.
 
     Raises RuntimeError on anything that means no audio, rather than yielding silence: a refusal
-    that says the quota ran out is useful, and half a second of nothing is not.
+    that says the quota ran out is useful, and half a second of nothing is not. The speech client
+    raises its own exception for that, translated here because this plugin's callers give the floor
+    back on RuntimeError and a sentence that fails has to reach them.
     """
-    import json
-    import urllib.error
-    import urllib.request
-
-    if not text or not text.strip():
-        raise RuntimeError("nothing to say")
-
-    body = {"text": text, "model_id": engine.get("model") or ELEVENLABS_MODEL}
-
-    # Sent only when known. An empty language code is not the same as an absent one: the API
-    # rejects the former and infers for the latter.
-    if engine.get("language"):
-        body["language_code"] = str(engine["language"])
-
-    url = "%s/v1/text-to-speech/%s/stream?output_format=pcm_%d" % (
-        _speech_base(base), engine["voice_id"], engine.get("rate") or ELEVENLABS_RATE)
-
-    request = urllib.request.Request(
-        url, data=json.dumps(body).encode("utf-8"), method="POST",
-        headers={"xi-api-key": api_key, "Content-Type": "application/json",
-                 "Accept": "audio/pcm"})
-
-    try:
-        response = urllib.request.urlopen(request, timeout=timeout)
-    except urllib.error.HTTPError as error:
-        # The body carries the reason — a bad voice id, an exhausted quota — and it is short.
-        # Worth reading, because "HTTP 401" alone sends somebody looking in the wrong place.
-        detail = ""
-
-        try:
-            detail = error.read()[:400].decode("utf-8", "replace")
-        except Exception:
-            pass
-
-        raise RuntimeError("the speech service refused (HTTP %d) %s"
-                           % (error.code, detail.strip())) from error
-    except Exception as error:
-        raise RuntimeError("the speech service could not be reached: %s: %s"
-                           % (type(error).__name__, error)) from error
+    falante = _speech.ElevenLabsSpeaker(
+        voice=engine.voice_id, api_key=api_key or engine.api_key,
+        locale=engine.locale, rate=engine.rate or ELEVENLABS_RATE, base=base)
+    falante.TIMEOUT = timeout
 
     pendente = b""
-    entregou = False
-
-    # `read(n)` is the wrong call here and it took a test to notice: it blocks until it has all n
-    # bytes or the response ends, so the first audio would wait for a full buffer to accumulate
-    # instead of going out as it arrived — which is the whole point of streaming. `read1` returns
-    # whatever one underlying read produced, however little.
-    ler = getattr(response, "read1", None) or response.read
 
     try:
-        while True:
-            pedaco = ler(4096)
-
-            if not pedaco:
-                break
-
+        for pedaco in falante.stream(text):
             pendente += pedaco
 
             # A 16-bit sample must not be split across a channel duplication, so an odd trailing
@@ -471,14 +366,10 @@ def synthesise_stream(engine, text, api_key, timeout=ELEVENLABS_TIMEOUT, base=No
             inteiro = len(pendente) - (len(pendente) % 2)
 
             if inteiro:
-                entregou = True
                 yield _to_stereo(pendente[:inteiro])
                 pendente = pendente[inteiro:]
-    finally:
-        response.close()
-
-    if not entregou:
-        raise RuntimeError("the speech service answered with no audio")
+    except _speech.SpeechUnavailable as mudo:
+        raise RuntimeError(str(mudo)) from mudo
 
 
 def readiness(voice=None, api_key=None, language=None):

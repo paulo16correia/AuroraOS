@@ -24,7 +24,14 @@ obj/
 plugins/*/config.json
 plugins/discord/bin/
 plugins/discord/models/
-plugins/discord/vendor/
+# Everything vendored except Aurora's own. The compiled library does not belong in history; the
+# speech client is a copy of plugins/voice/speech.py, and a checkout without it is a Discord plugin
+# that will not start. Written as vendor/* rather than vendor/ because git does not look inside a
+# directory it has already excluded, so nothing below it could be let back in.
+plugins/discord/vendor/*
+!plugins/discord/vendor/__init__.py
+!plugins/discord/vendor/aurora_voice/
+plugins/discord/vendor/aurora_voice/__pycache__/
 
 # Runtime state and operator secrets. The real deployment lives outside this tree
 # (%LOCALAPPDATA%\Aurora on Windows, ~/.local/share/aurora elsewhere), so these are

@@ -84,10 +84,9 @@ public sealed class DiscordGatewayTests : IDisposable
 
         var source = Path.Combine(Repository().FullName, "plugins", "discord");
 
-        foreach (var file in Directory.EnumerateFiles(source))
-        {
-            File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
-        }
+        // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
+        // folder is not the plugin, and the symptom is a process that will not start.
+        PluginCopy.Into(source, directory);
 
         _executable = Path.Combine(directory, "discord_service.py");
 
