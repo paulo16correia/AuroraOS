@@ -92,7 +92,7 @@ def _session_for(settings, api_key, instructions, tools):
         tools=tools,
         voice=str(config.get("voice") or "alloy"),
         model=str(config.get("model") or DEFAULT_MODEL),
-        locale=str(config.get("locale") or "pt-PT"))
+        locale=str(config.get("locale") or "en"))
 
 
 def _transport_for(settings, api_key):

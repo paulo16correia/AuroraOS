@@ -26,7 +26,7 @@ The desired result is a cognitive personal operating system: a platform on which
 
 ### 3.1 Product objectives
 
-1. Provide a natural conversational interface in European Portuguese, with a consistent identity and communication style.
+1. Provide a natural conversational interface in the language the owner speaks, with a consistent identity and communication style. Language is a property of the owner's profile and of the conversation, never of Aurora: the defaults are English because a default is what everybody who installs Aurora receives, and a preference is what one person chooses.
 2. Maintain a persistent, searchable and correctable memory of facts, events, documents, procedures, preferences and decisions.
 3. Represent important relationships through a knowledge graph, allowing you to navigate between related entities and explain the origin of the connections.
 4. Convert larger requests into verifiable goals, plans, tasks, dependencies and states.
@@ -154,7 +154,7 @@ The project will be considered successful in stages, not by an isolated visual d
 
 ### 8.1 Minimum viable core
 
-- The user can chat in European Portuguese with a consistent identity profile.
+- The user can chat in their own language with a consistent identity profile.
 - Aurora stores and retrieves explicitly approved memories, showing their origin.
 - The user can correct or erase a memory and confirm that it is no longer used.
 - An external test action goes through policy, approval and audit registration.

@@ -481,6 +481,10 @@ def build(settings, identity, action_ids, opener=None):
         identity=identity,
         tools=thinking.tools_from(action_ids),
         settings=settings.get("llm"),
-        opener=opener)
+        opener=opener,
+        # The language the model answers in travels with the session rather than being baked into
+        # the instructions, so one Aurora can speak to a Dutch owner and a Portuguese one without
+        # being rebuilt for either.
+        locale=settings.get("locale") or "en")
 
     return LocalSession(recogniser, speaker, brain)

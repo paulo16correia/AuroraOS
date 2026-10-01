@@ -54,7 +54,12 @@ public sealed class VoicePluginTests
     {
         // Turn detection, the loop, and what none of it may do, with the three engines faked.
         // Whether the path exists at all is LocalVoiceTests, through the real host and Kernel.
-        RunPython("test_local", 48);
+        // Two more than before: the language the model answers in used to be written into the
+        // channel instructions in European Portuguese, which made it a property of Aurora rather
+        // than of whoever is talking to her. It is a parameter now, and the two new tests cover
+        // the part that matters — a language is asked for by name, because a model follows
+        // "European Portuguese (Portugal)" where it drifts on "pt-PT".
+        RunPython("test_local", 50);
     }
 
     [Fact]

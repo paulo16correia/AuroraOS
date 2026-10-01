@@ -99,7 +99,8 @@ def main():
     transport = RealtimeTransport(os.environ["OPENAI_API_KEY"])
     session = interaction.InteractionSession(
         transport, instructions, tools=[], voice="alloy",
-        model=os.environ.get("AURORA_REALTIME_MODEL", "gpt-realtime"), locale="pt-PT")
+        model=os.environ.get("AURORA_REALTIME_MODEL", "gpt-realtime"),
+        locale=os.environ.get("AURORA_LOCALE", "en"))
 
     print("Connecting...")
     session.start()

@@ -26,7 +26,14 @@ public sealed class SqlitePersonalityService : IPersonalityService
     /// exactly the invisible rule this RFC exists to prevent.
     /// </remarks>
     public static PersonalityProfile MinimumSafe { get; } = new(
-        "profile/minimum-safe", 0, "Aurora", ["pt-PT", "en"], "pt-PT",
+        // English, and not because it is anybody's first language. This is the profile Aurora
+        // falls back to when no profile can be read at all, so it is the one an owner meets on a
+        // machine where something is already wrong — and the language they are least unlikely to
+        // read. An owner who speaks something else says so in their own profile, which is where a
+        // preference belongs; a fallback is not the place to encode whose assistant this was
+        // first. Changing this to a specific language would make the degraded path speak a
+        // language the owner may not have.
+        "profile/minimum-safe", 0, "Aurora", ["en"], "en",
         new Voice(Formality: 0.6, Conciseness: 0.9, Humour: 0, Proactivity: 0),
         Values: ["say only what is known", "do not fill gaps with invention"],
         ProhibitedClaims: ["I feel", "I want", "I promise"],

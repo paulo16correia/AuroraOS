@@ -121,7 +121,7 @@ class FasterWhisperRecogniser:
 
     name = "faster-whisper"
 
-    def __init__(self, model="turbo", device="auto", compute_type="auto", language="pt"):
+    def __init__(self, model="turbo", device="auto", compute_type="auto", language="auto"):
         self.model_name = model
         self.language = language
         self._device = device
@@ -197,7 +197,7 @@ class WhisperCppRecogniser:
     # rather than failing, which is the worse of the two.
     MODELS = ["ggml-large-v3-turbo.bin", "ggml-medium.bin", "ggml-small.bin", "ggml-base.bin"]
 
-    def __init__(self, model=None, language="pt", vocabulary=None):
+    def __init__(self, model=None, language="auto", vocabulary=None):
         self.language = language
         self.model = model or self.find_model()
 
@@ -278,7 +278,7 @@ class XttsSpeaker:
     DEFAULT_SPEAKER = "Sofia Hellen"
 
     def __init__(self, model="tts_models/multilingual/multi-dataset/xtts_v2",
-                 language="pt", speaker_wav=None, speaker=None):
+                 language="en", speaker_wav=None, speaker=None):
         self.model_name = model
         self.language = language
         self.speaker_wav = speaker_wav
@@ -460,12 +460,12 @@ def best_recogniser(settings):
         if FasterWhisperRecogniser.available():
             return FasterWhisperRecogniser(
                 model=(settings or {}).get("model", "turbo"),
-                language=(settings or {}).get("language", "pt"))
+                language=(settings or {}).get("language", "auto"))
 
     if wanted in (None, "whisper.cpp") and WhisperCppRecogniser.available():
         return WhisperCppRecogniser(
             model=(settings or {}).get("model"),
-            language=(settings or {}).get("language", "pt"))
+            language=(settings or {}).get("language", "auto"))
 
     return None
 
@@ -479,7 +479,7 @@ def best_speaker(settings):
 
     if wanted in (None, "xtts") and XttsSpeaker.available():
         return XttsSpeaker(
-            language=(settings or {}).get("language", "pt"),
+            language=(settings or {}).get("language", "auto"),
             speaker_wav=(settings or {}).get("speaker_wav"),
             speaker=(settings or {}).get("speaker"))
 
