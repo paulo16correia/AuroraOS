@@ -69,8 +69,8 @@ no DNS, so even unconfined Aurora cannot resolve a name, and the grant's positiv
 be shown (its security-critical negative — the control plane stays unreachable — was shown).
 Confinement also needs an interpreter directory Aurora can grant the container read-and-execute on:
 a system-wide Python a non-administrator cannot re-ACL is refused fail-closed, so a Windows
-deployment needs a per-user interpreter or an administrator to open the directory to application
-packages.
+deployment needs a per-user interpreter — named in `Aurora:Plugins:Interpreters:python3` if `PATH`
+finds a system-wide one first — or an administrator to open the directory to application packages.
 
 **What is confined, when it works.** An AppContainer reaches no filesystem it has not been named
 on, so Aurora names exactly two paths: read-and-execute where the plugin's program lives, and full

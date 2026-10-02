@@ -302,7 +302,7 @@ Common FAILs and their fix:
 
 | Line | Cause | Fix |
 | --- | --- | --- |
-| `… interpreter … cannot grant its directory` | system-wide Python a non-admin cannot re-ACL | use a per-user Python, or have an admin grant the directory |
+| `… interpreter … cannot grant its directory` | system-wide Python a non-admin cannot re-ACL | set `Aurora:Plugins:Interpreters:python3` to a per-user Python (§3), or have an admin grant the directory |
 | `… secret '…' missing` | a required secret is not provisioned | `secret set plugin/<id>/<name> <value>` |
 | `… key: present but NOT owner-only` | data directory on a volume that will not restrict | move the data directory to a per-user location |
 | `… program is not where the manifest says` | plugin files moved after install | reinstall the plugin from its folder |
@@ -357,13 +357,14 @@ these against their stand-ins, or on macOS where the real Discord path is verifi
 ## 11. Troubleshooting
 
 - **`SERVICE_UNAVAILABLE: '<dir>' could not be granted to the container`** — the interpreter (or
-  program) directory cannot be re-permissioned by the running account. Use a per-user interpreter,
-  or have an administrator grant the directory to application packages. This is fail-closed, correct
-  behaviour, not a crash.
+  program) directory cannot be re-permissioned by the running account. Name a per-user interpreter
+  in `Aurora:Plugins:Interpreters:python3` (§3), or have an administrator grant the directory to
+  application packages. This is fail-closed, correct behaviour, not a crash.
 - **A required secret is missing** — the plugin starts "degraded" or refuses; `doctor` names
   it. Provision it with `secret set plugin/<id>/<name> <value>` and restart.
 - **Plugin fails to start on Windows with a `Win32Exception`** — the interpreter could not be
-  resolved. Ensure `python3` is on `PATH` (per-user install), then re-run `doctor`.
+  resolved. Ensure `python3` is on `PATH` (per-user install), or name it in
+  `Aurora:Plugins:Interpreters:python3` (§3), then re-run `doctor`.
 - **Missing native dependency** (`libopus`, a speech engine) — the feature reports itself
   unavailable via its `*.status` capability; install the dependency. Optional features never fail
   the whole plugin.
