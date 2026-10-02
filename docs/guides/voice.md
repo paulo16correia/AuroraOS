@@ -182,16 +182,45 @@ while it happened.
 Interrupting and hanging up bump a generation. Work carrying an older number is dropped rather than
 spoken, so a sentence synthesised after a conversation ended never reaches anybody.
 
-### Speaking starts before the sentence is finished
+### Speaking starts before the thinking has finished
 
-The speech client offers two ways to ask for the same thing. `speak()` returns the whole sentence,
-for callers that need it in one piece; `stream()` yields it as it arrives, for callers that can
-start playing before it is finished — which is the difference between answering in a quarter of a
-second and answering in two. Discord streams. The generator is also the cancellation mechanism:
-closing it stops reading and drops the connection, and nothing goes on working afterwards.
+The wait before anybody hears anything used to be the model's entire generation. On a local 8B that
+is the whole wait — the speech service answers in about 75ms, a rounding error beside it — and it was
+spent on text that was already finished, waiting for the rest of the paragraph to catch up.
+
+A sentence cannot be synthesised before it exists. It can be synthesised before the *next* one
+exists. So the model's answer is read as it arrives and each finished clause is handed to the
+synthesiser while the rest is still being generated. Measured against itself on the same answer:
+**1004ms to first audio before, 446ms after**, and the gap widens with length.
+
+A clause ends at a full stop, question mark, semicolon or line break with at least forty characters
+in front of it. Below that floor nothing is handed over early, which is why a short reply behaves
+exactly as it did — one synthesis at the end, because a synthesiser asked twice for "São duas e meia"
+would sound like two. Above a ceiling it is handed over at a space anyway, for a model that does not
+punctuate.
+
+What Aurora said is still reported once, whole, as the model sent it. Only the audio arrives in
+pieces, and `voice.poll` carries however many are ready.
+
+Interrupting stops the model as well as the speech. Closing the generator stops reading, so a
+conversation that ended does not go on paying for tokens nobody will hear.
+
+### Two ways to ask for audio
+
+The speech client offers both. `speak()` returns the whole sentence, for callers that need it in one
+piece; `stream()` yields it as it arrives, for callers that can start playing before it is finished.
+Discord streams. The generator is also the cancellation mechanism: closing it stops reading and drops
+the connection, and nothing goes on working afterwards.
 
 A failure raises rather than yielding silence. A refusal that says the quota ran out is useful; half
 a second of nothing is indistinguishable from a quiet room.
+
+### Reading the latency record
+
+`voice.poll` carries what the conversation spent, and the stages overlap now: `llm_ms` and `tts_ms`
+cover the same seconds, so their sum can exceed `total_ms`. Read them as two things that happened
+rather than as a breakdown of one. What somebody actually waited for is `total_ms`, and the overlap
+is what makes it smaller.
 
 ## Security
 
