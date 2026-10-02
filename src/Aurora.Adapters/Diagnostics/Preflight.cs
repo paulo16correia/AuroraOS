@@ -224,11 +224,18 @@ public static class Preflight
                 true => new PreflightCheck($"{id} interpreter", PreflightStatus.Pass,
                     $"{resolution.Interpreter.Runtime} at '{interpreterPath}', "
                     + "and its directory can be granted to an AppContainer"),
+                // Three remedies, and the cheapest one named first. This said only "use a
+                // per-user interpreter, or have an administrator grant it" — so an owner who had a
+                // per-user interpreter already, beside a system-wide one that PATH found first,
+                // read it as needing an administrator or a reinstall. Neither is true: the setting
+                // below is authoritative and takes one line.
                 false => new PreflightCheck($"{id} interpreter", PreflightStatus.Fail,
                     $"{resolution.Interpreter.Runtime} at '{interpreterPath}', but Aurora cannot "
                     + $"grant its directory '{interpreterDirectory}' to an AppContainer — a "
                     + "system-wide install often cannot be re-permissioned without administrator "
-                    + "rights. Use a per-user interpreter, or have an administrator grant it"),
+                    + $"rights. Set Aurora:Plugins:Interpreters:{resolution.Interpreter.Runtime} to "
+                    + "an interpreter whose directory can be granted (a per-user install lands "
+                    + "under %LocalAppData%), or have an administrator grant this one"),
                 null => new PreflightCheck($"{id} interpreter", PreflightStatus.Warn,
                     $"{resolution.Interpreter.Runtime} at '{interpreterPath}', but whether its "
                     + "directory can be granted to an AppContainer could not be determined"),

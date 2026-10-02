@@ -46,7 +46,8 @@ are Python programs. You need CPython 3 available as `python3` (or `python`).
 > - a **per-user Python** (install "for me only", which lands under `%LocalAppData%`), or
 > - a Python directory an **administrator has granted** read-and-execute to `ALL APPLICATION
 >   PACKAGES`, or
-> - point Aurora at a specific interpreter you control (see §3).
+> - name the interpreter in `Aurora:Plugins:Interpreters:python3` (§3) — the cheapest of the
+>   three, needs no administrator, and does not touch what is installed.
 >
 > `doctor` (§8) checks this for every installed plugin and names the exact directory if it
 > cannot be granted.
@@ -142,12 +143,35 @@ arguments. All keys are optional; sensible per-user defaults apply.
 | `Aurora:VaultKeyPath` / `GenomeKeyPath` / `SnapshotKeyPath` / `DeliberationKeyPath` / `PluginKeyPath` | Key files | beside the database |
 | `Aurora:PassphrasePath` | Operator passphrase verifier | beside the database |
 | `Aurora:Plugins:AllowUnconfined` | Run plugins even where the OS cannot confine them | `false` |
+| `Aurora:Plugins:Interpreters:python3` | The interpreter to confine script plugins against | from `PATH` |
 | `Aurora:HeartbeatSeconds` | Upkeep interval (0 disables) | `300` |
+| `Aurora:Voice:Enabled` | Whether voice runs at all | `false` |
+| `Aurora:Voice:MaxConcurrentSessions` | Across every channel, not per channel | `2` |
+| `Aurora:Voice:MaxSessionDuration` | The longest a grant may ask for | `00:15:00` |
 
-There is deliberately no configuration for interpreter paths beyond what the plugin manifest
-declares and what is on `PATH`; Aurora resolves `python3` from `PATH` (and from a script's shebang)
-and, on Windows, will not accept an arbitrary interpreter path from a manifest. Keep the interpreter
-you want first on `PATH`, or install it per-user.
+### Naming the interpreter
+
+Aurora resolves `python3` from `PATH` and from a script's shebang, and on Windows will not accept an
+interpreter path from a **manifest** — a plugin does not get to choose what runs it. The owner does:
+
+```
+Aurora:Plugins:Interpreters:python3    (absent by default)
+```
+
+A name here is authoritative. If the file is not there, that is a refusal rather than a reason to go
+looking for a different Python, which is the point: the thing being prevented is a plugin being
+confined against an interpreter nobody chose.
+
+This is the answer to the Windows blocker in §2, and it is worth saying plainly because this section
+used to claim no such setting existed. On a machine with a system-wide Python that `PATH` finds first
+and a per-user one beside it, `doctor` fails both plugins and the remedy is one line — not an
+administrator, and not reinstalling anything:
+
+```powershell
+$env:Aurora__Plugins__Interpreters__python3 = "$env:LocalAppData\Aurora\runtime\python\python.exe"
+```
+
+Otherwise: keep the interpreter you want first on `PATH`, or install it per-user.
 
 ---
 
