@@ -75,6 +75,63 @@ class LocalUnavailable(Exception):
         self.message = message
 
 
+# ---------------------------------------------------------------------------
+# where a sentence can be handed over
+# ---------------------------------------------------------------------------
+#
+# A sentence cannot be synthesised before it exists, but it can be synthesised before the next one
+# exists. The model is the whole wait on a local 8B — the speech service's share is a rounding error
+# beside it — so the first thing anybody hears should cost the first clause rather than the whole
+# answer.
+#
+# The floor is why a short reply behaves exactly as it did before: under it nothing is handed over
+# early, there is one synthesis at the end, and nothing is gained by splitting "Sao duas e meia" in
+# half. Above it, each finished clause goes as soon as it is finished.
+#
+# The ceiling is for a model that does not punctuate. Without it, a paragraph without a full stop
+# would be held to the end, which is the case this exists to avoid.
+FALA_MINIMA = 40
+FALA_MAXIMA = 240
+
+# `;` and the line break are in here with the full stops because a synthesiser reads them as a stop
+# too, and a clause that ends at one does not sound cut off.
+FIM_DE_FRASE = ".!?\u2026;\n"
+
+
+def _primeira_fala(texto):
+    """The first part of `texto` that can be spoken on its own, and what is left of it.
+
+    Returns `(None, texto)` when nothing can be handed over yet, which is the ordinary answer while
+    a sentence is still arriving.
+    """
+    for at, letra in enumerate(texto):
+        if letra not in FIM_DE_FRASE or at + 1 < FALA_MINIMA:
+            continue
+
+        seguinte = texto[at + 1:at + 2]
+
+        # A full stop between digits is a number, not the end of anything.
+        if letra == "." and texto[at - 1:at].isdigit() and seguinte.isdigit():
+            continue
+
+        # Punctuation with a letter hard against it is an abbreviation or a URL. At the end of what
+        # has arrived it is a sentence that finished, which is exactly what this is looking for.
+        if seguinte and not seguinte.isspace():
+            continue
+
+        return texto[:at + 1], texto[at + 1:].lstrip()
+
+    if len(texto) >= FALA_MAXIMA:
+        # No punctuation and too long to keep waiting. Broken at a space, because breaking inside a
+        # word makes the synthesiser read two words that nobody said.
+        at = texto.rfind(" ", 0, FALA_MAXIMA)
+
+        if at >= FALA_MINIMA:
+            return texto[:at], texto[at:].lstrip()
+
+    return None, texto
+
+
 class LocalSession:
     """One local conversation, presenting the interaction contract the runtime already pumps."""
 
@@ -339,44 +396,100 @@ class LocalSession:
         self._think(generation)
 
     def _think(self, generation):
-        """One pass of the language layer: either a request for Aurora, or something to say."""
+        """One pass of the language layer: either a request for Aurora, or something to say.
+
+        Spoken as it arrives. The model's answer comes in pieces and each finished clause is
+        synthesised while the rest is still being generated, so what somebody waits for before
+        hearing anything is the first clause rather than the whole reply.
+        """
         self._turn = self._turn or {}
         self._turn["llm_started"] = self._now()
 
+        thinking_stream = self._brain.respond_stream()
+
+        # What the model actually sent, kept apart from what has been handed to the synthesiser.
+        # Rebuilding it from the clauses would mean inventing the whitespace between them, and what
+        # Aurora reports having said has to be what the model said rather than a reassembly of it.
+        received = []
+        pending = ""
+
         try:
-            decided = self._brain.respond()
+            for kind, value in thinking_stream:
+                if not self._still(generation):
+                    # Interrupted. Closing the generator stops reading the model, which is the
+                    # point of checking here rather than at the end.
+                    return
+
+                if kind == "tool":
+                    self._turn["llm_completed"] = self._now()
+                    self._turn.update(self._brain.last_call())
+                    self._ask_aurora(value)
+                    return
+
+                received.append(value)
+                pending += value
+
+                while True:
+                    ready, pending = _primeira_fala(pending)
+
+                    if ready is None:
+                        break
+
+                    if not self._speak(ready, generation):
+                        return
+
         except thinking.ThinkingUnavailable as unavailable:
             self._emit({"kind": "failed", "detail": unavailable.message})
             return
+        finally:
+            thinking_stream.close()
 
         self._turn["llm_completed"] = self._now()
         self._turn.update(self._brain.last_call())
 
-        if not self._still(generation):
+        rest = pending.strip()
+        whole = "".join(received).strip()
+
+        if not whole:
             return
 
-        if decided["kind"] == "tool":
-            action = thinking.action_of(decided["name"])
-            self._turn["tool_name"] = decided["name"]
-            self._turn["tool_requested"] = self._now()
+        # Said before the last clause is synthesised, because this is the first moment the whole
+        # sentence is known and a caller waiting for the text should not also wait for the audio.
+        # For a reply short enough not to be split — which is most of them — this is still the
+        # order it always was: what Aurora said, then the sound of it.
+        self._emit({"kind": "said", "text": whole[:4000]})
 
-            # Reported, never executed. Aurora decides and calls back through `deliver`.
-            self._emit({
-                "kind": "tool_requested",
-                "request_id": "local-%d" % int(self._now()),
-                "action_id": action,
-                "input_json": decided["arguments"],
-            })
+        if rest and not self._speak(rest, generation):
             return
 
-        self._say(decided["text"], generation)
+        self._turn["turn_completed"] = self._now()
+        self.turns.append(_latency(self._turn))
+        self._turn = None
 
-    def _say(self, text, generation):
+    def _ask_aurora(self, decided):
+        """Reported, never executed. Aurora decides and calls back through `deliver`."""
+        self._turn["tool_name"] = decided["name"]
+        self._turn["tool_requested"] = self._now()
+
+        self._emit({
+            "kind": "tool_requested",
+            "request_id": "local-%d" % int(self._now()),
+            "action_id": thinking.action_of(decided["name"]),
+            "input_json": decided["arguments"],
+        })
+
+    def _speak(self, text, generation):
+        """One clause, synthesised and handed over. False when the turn should stop.
+
+        `tts_started` is stamped once, on the first clause, because what it measures is how long
+        somebody waited before hearing anything — and that is the only part of synthesis a person
+        experiences as waiting. The clauses after it are made while the earlier ones are playing.
+        """
         if not text:
-            return
+            return True
 
         self._turn = self._turn or {}
-        self._turn["tts_started"] = self._now()
+        self._turn.setdefault("tts_started", self._now())
 
         try:
             audio = self._speaker.speak(text)
@@ -385,25 +498,23 @@ class LocalSession:
                 "kind": "failed",
                 "detail": "the synthesiser failed (%s)" % type(unspeakable).__name__,
             })
-            return
+            return False
 
         self._turn["tts_completed"] = self._now()
-        self._turn["turn_completed"] = self._now()
 
         if not self._still(generation):
-            # Synthesised into a call that ended while it was being synthesised. The measurement
-            # is still worth keeping; the audio is not.
+            # Synthesised into a conversation that ended while it was being synthesised. The
+            # measurement is still worth keeping; the audio is not.
+            self._turn["turn_completed"] = self._now()
             self.turns.append(_latency(self._turn))
             self._turn = None
-            return
+            return False
 
         self._speaking = True
 
-        self._emit({"kind": "said", "text": text[:4000]})
         self._emit({"kind": "audio", "audio": base64.b64encode(audio).decode()})
 
-        self.turns.append(_latency(self._turn))
-        self._turn = None
+        return True
 
     # ---- what it cost ----
 
@@ -437,7 +548,17 @@ class LocalSession:
 
 
 def _latency(turn):
-    """The measurements the turn actually produced. Nothing estimated, nothing filled in."""
+    """The measurements the turn actually produced. Nothing estimated, nothing filled in.
+
+    **These do not add up to the total, and that is the point.** Thinking and speaking overlap: a
+    clause is synthesised while the model is still generating the next one, so `llm_ms` and `tts_ms`
+    cover the same seconds and their sum can exceed `total_ms`. Read them as two things that
+    happened, not as a breakdown of one.
+
+    `tts_ms` spans the first clause handed over to the last one finished, which is the whole of
+    synthesis rather than how long anybody waited for it. What somebody waited for is
+    `total_ms` — and the reason the stages overlap is to make that smaller.
+    """
     def span(start, end):
         if turn.get(start) is None or turn.get(end) is None:
             return None

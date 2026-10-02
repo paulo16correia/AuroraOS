@@ -71,6 +71,9 @@ class FakeOllama:
 
     def __init__(self):
         self.script = []
+
+        # Answers to be streamed rather than handed over whole, one list of pieces per call.
+        self.pieces = []
         self.seen = []
         self.status = 200
         self._lock = threading.Lock()
@@ -87,8 +90,31 @@ class FakeOllama:
 
                 with service._lock:
                     service.seen.append(body)
+                    pieces = service.pieces.pop(0) if service.pieces else None
                     reply = service.script.pop(0) if service.script else {
                         "message": {"content": "Está bem."}}
+
+                if pieces is not None:
+                    # One object per line, flushed as it is written, which is what Ollama does when
+                    # it streams. No Content-Length: the reader stops at the end of the body, and
+                    # that is the only way to send a length nobody knows yet.
+                    self.send_response(service.status)
+                    self.send_header("Content-Type", "application/x-ndjson")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+
+                    for piece in pieces:
+                        self.wfile.write(
+                            (json.dumps({"message": {"content": piece}, "done": False})
+                             + "\n").encode())
+                        self.wfile.flush()
+
+                    self.wfile.write(
+                        (json.dumps({"message": {"content": ""}, "done": True,
+                                     "prompt_eval_count": 40, "eval_count": 30,
+                                     "eval_duration": 120_000_000}) + "\n").encode())
+                    self.close_connection = True
+                    return
 
                 encoded = json.dumps(reply).encode()
 
@@ -125,6 +151,11 @@ class FakeOllama:
             "prompt_eval_duration": 40_000_000,
             "eval_duration": 120_000_000,
         })
+        return self
+
+    def says_in_pieces(self, *pieces):
+        """One answer, arriving a piece at a time the way a model generates it."""
+        self.pieces.append(list(pieces))
         return self
 
     def asks_for(self, function, arguments=None):
@@ -463,6 +494,132 @@ class TheModelHasNoAuthority(VoiceTest):
         # No shell, no subprocess, no eval. The provider reports and speaks; it never acts.
         for forbidden in ("subprocess", "os.system", "eval(", "exec(", "Popen"):
             self.assertNotIn(forbidden, source, forbidden)
+
+
+class SpeakingBeforeTheAnswerIsFinished(VoiceTest):
+    """A clause is synthesised while the model is still generating the next one.
+
+    The whole wait before anybody hears anything used to be the model's entire generation. On a
+    local 8B that is the whole wait — the speech service's share of it is a rounding error beside
+    it — so a finished clause is handed over as soon as it is finished.
+    """
+
+    LONGA = ["Bom dia.", " Hoje está sol e vai estar assim toda a tarde, portanto podes ir sem ",
+             "guarda-chuva.", " A temperatura chega aos vinte e quatro graus por volta das três."]
+
+    def test_a_long_answer_is_spoken_in_pieces(self):
+        with FakeOllama() as ollama:
+            ollama.says_in_pieces(*self.LONGA)
+            speaker = FakeSpeaker()
+            session = session_for(ollama, speaker=speaker)
+
+            speak_a_turn(session)
+            pump(session, until=lambda seen: sum(1 for e in seen if e["kind"] == "audio") >= 2)
+
+        # Two sentences past the floor, so two handovers rather than one at the end.
+        self.assertEqual(2, len(speaker.said), speaker.said)
+
+        # Each one whole. A synthesiser handed half a clause reads it as a sentence that stops.
+        for piece in speaker.said:
+            self.assertTrue(piece.rstrip().endswith((".", "!", "?", ";")), piece)
+
+    def test_what_aurora_said_is_reported_once_and_whole(self):
+        with FakeOllama() as ollama:
+            ollama.says_in_pieces(*self.LONGA)
+            session = session_for(ollama)
+
+            speak_a_turn(session)
+            seen = pump(session, until=lambda seen: any(e["kind"] == "said" for e in seen))
+
+        said = [e for e in seen if e["kind"] == "said"]
+
+        # Once, not once per clause: what Aurora said is one thing, however many times the
+        # synthesiser was asked.
+        self.assertEqual(1, len(said))
+        self.assertEqual("".join(self.LONGA).strip(), said[0]["text"])
+
+    def test_an_answer_short_enough_not_to_be_split_is_one_synthesis(self):
+        # The behaviour this had before, kept: nothing is gained by cutting a short reply in half,
+        # and a synthesiser asked twice for it would sound like two.
+        with FakeOllama() as ollama:
+            ollama.says_in_pieces("São duas ", "e meia ", "da tarde.")
+            speaker = FakeSpeaker()
+            session = session_for(ollama, speaker=speaker)
+
+            speak_a_turn(session)
+            pump(session, until=lambda seen: any(e["kind"] == "audio" for e in seen))
+
+        self.assertEqual(["São duas e meia da tarde."], speaker.said)
+
+    def test_a_streamed_answer_goes_into_the_thread_as_one_message(self):
+        # What the model is shown next turn has to be what it said, not forty fragments of it.
+        with FakeOllama() as ollama:
+            ollama.says_in_pieces(*self.LONGA).says("E hoje é tudo.")
+
+            # Two transcripts, because the second turn is the point: an empty one is not a turn and
+            # the model would never be asked a second time.
+            session = session_for(
+                ollama, recogniser=FakeRecogniser("Que horas são?", "E depois?"))
+
+            speak_a_turn(session)
+            pump(session, until=lambda seen: any(e["kind"] == "said" for e in seen))
+
+            speak_a_turn(session)
+            pump(session, until=lambda seen: sum(1 for e in seen if e["kind"] == "said") >= 2)
+
+        # The second request carries the first answer. One assistant message, with all of it.
+        thread = ollama.seen[-1]["messages"]
+        spoken = [m for m in thread if m["role"] == "assistant"]
+
+        self.assertEqual(1, len(spoken), thread)
+        self.assertEqual("".join(self.LONGA).strip(), spoken[0]["content"])
+
+    def test_the_model_is_asked_to_stream(self):
+        # The one thing a fake cannot prove by behaving correctly: that the request asked for it.
+        with FakeOllama() as ollama:
+            ollama.says("Está bem.")
+            session = session_for(ollama)
+
+            speak_a_turn(session)
+            pump(session, until=lambda seen: any(e["kind"] == "audio" for e in seen))
+
+        self.assertIs(True, ollama.seen[-1]["stream"])
+
+
+class WhereASentenceCanBeHandedOver(unittest.TestCase):
+    """What counts as a clause, decided without a model or a synthesiser in the way."""
+
+    def test_nothing_is_handed_over_while_a_sentence_is_still_arriving(self):
+        self.assertEqual((None, "Hoje está sol e vai"),
+                         local_provider._primeira_fala("Hoje está sol e vai"))
+
+    def test_a_full_stop_between_digits_is_a_number(self):
+        texto = "Custa 3.50 euros e abre às 9.30, portanto tens tempo de sobra para chegar."
+        ready, rest = local_provider._primeira_fala(texto)
+
+        self.assertEqual(texto, ready)
+        self.assertEqual("", rest)
+
+    def test_a_short_first_sentence_waits_for_the_next(self):
+        # Under the floor. Two words are not worth a round trip to the speech service, and a reply
+        # that opens with "Sim." would otherwise pay one for it.
+        ready, rest = local_provider._primeira_fala("Sim. " + "a" * 60 + ".")
+
+        self.assertTrue(ready.startswith("Sim. a"), ready)
+        self.assertEqual("", rest)
+
+    def test_a_model_that_does_not_punctuate_is_still_spoken(self):
+        # The case the ceiling exists for: without it a paragraph with no full stop would be held
+        # until the model finished, which is the thing this is all meant to avoid.
+        texto = "palavra " * 60
+        ready, rest = local_provider._primeira_fala(texto)
+
+        self.assertIsNotNone(ready)
+        self.assertLessEqual(len(ready), local_provider.FALA_MAXIMA)
+
+        # Broken at a space: inside a word, the synthesiser would read two words nobody said.
+        self.assertTrue(ready.endswith("palavra"), repr(ready[-20:]))
+        self.assertTrue(rest)
 
 
 class UntrustedSpeech(VoiceTest):

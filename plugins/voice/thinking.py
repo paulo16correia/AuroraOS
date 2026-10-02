@@ -186,42 +186,80 @@ class Thinking:
         })
         self._trim()
 
-    def respond(self):
-        """One turn of thinking.
+    def respond_stream(self):
+        """One turn of thinking, as it arrives.
 
-        Returns either something to say or something to ask Aurora for. Never both, and never an
-        action — this function cannot execute anything, which is the point of it.
+        One way of talking to the model and not two: there was a `respond()` beside this that waited
+        for the whole answer, and nothing called it once the provider stopped waiting. Two would be
+        two places for the thread, the token counts and the tool handling to disagree.
+
+        Yields `("say", piece)` for each piece of text the model produced, in order, and
+        `("tool", decided)` once instead if it asked Aurora for a capability. A turn is one or the
+        other and never both.
+
+        **Why in pieces.** A sentence cannot be synthesised before it exists, but it can be
+        synthesised before the *next* one exists. Waiting for the whole answer made the time before
+        anybody hears anything the model's entire generation — which on a local 8B is the whole
+        wait, the speech service's share of it being a rounding error. The caller decides what a
+        speakable piece is; this only promises not to hold text back.
+
+        **Abandoning it is allowed.** Closing the generator — which is what an interrupted sentence
+        does — stops reading and records what had arrived by then, because what arrived is what
+        Aurora said and the thread has to hold the conversation that actually happened rather than
+        the one the model was partway through.
         """
-        answer = self._chat()
-        message = answer.get("message") or {}
+        pieces = []
+        calls = []
 
-        calls = message.get("tool_calls") or []
+        try:
+            for frame in self._chat_stream():
+                message = frame.get("message") or {}
+                asked = message.get("tool_calls") or []
+
+                if asked:
+                    # A request for a capability is the whole answer. Nothing after it is text to
+                    # say, and reading on would be reading a second answer to one question.
+                    calls = asked
+                    break
+
+                piece = str(message.get("content") or "")
+
+                if piece:
+                    pieces.append(piece)
+                    yield "say", piece
+        finally:
+            if calls:
+                # Recorded so the model sees its own request in the thread when the answer arrives.
+                self._messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": calls})
+            else:
+                self._messages.append(
+                    {"role": "assistant", "content": "".join(pieces).strip()})
+                self._trim()
 
         if calls:
             call = calls[0]
             function = call.get("function") or {}
-            name = str(function.get("name", ""))
             arguments = function.get("arguments")
 
             if not isinstance(arguments, str):
                 arguments = json.dumps(arguments or {}, ensure_ascii=False)
 
-            # Recorded so the model sees its own request in the thread when the answer arrives.
-            self._messages.append({"role": "assistant", "content": "", "tool_calls": calls})
+            yield "tool", {
+                "kind": "tool",
+                "name": str(function.get("name", "")),
+                "arguments": arguments,
+            }
 
-            return {"kind": "tool", "name": name, "arguments": arguments}
-
-        said = str(message.get("content") or "").strip()
-        self._messages.append({"role": "assistant", "content": said})
-        self._trim()
-
-        return {"kind": "say", "text": said}
-
-    def _chat(self):
+    def _chat_stream(self):
         body = {
             "model": self.settings.model,
             "messages": [{"role": "system", "content": self._system}] + self._messages,
-            "stream": False,
+            # Streamed, so a sentence can start being spoken while the rest is still being
+            # generated. Ollama answers one JSON object per line either way — with `false` it is
+            # one line, which is also what every fake in the tests writes, so the reader below
+            # handles both without knowing which it got.
+            "stream": True,
             "options": {
                 "temperature": self.settings.temperature,
                 "num_ctx": self.settings.context_size,
@@ -240,8 +278,7 @@ class Thinking:
         request.add_header("Content-Type", "application/json")
 
         try:
-            with self._opener.open(request, timeout=self.settings.timeout_seconds) as answer:
-                decoded = json.loads(answer.read().decode("utf-8", "replace"))
+            answer = self._opener.open(request, timeout=self.settings.timeout_seconds)
 
         except urllib.error.HTTPError as failed:
             raise ThinkingUnavailable(
@@ -259,25 +296,50 @@ class Thinking:
             raise ThinkingUnavailable(
                 E_UNREACHABLE, "the model did not answer within %ds" % self.settings.timeout_seconds)
 
-        except ValueError:
-            raise ThinkingUnavailable(E_REFUSED, "the model answered with something unreadable")
-
         self.calls += 1
-        self.prompt_tokens += int(decoded.get("prompt_eval_count") or 0)
-        self.completion_tokens += int(decoded.get("eval_count") or 0)
+        self._last = {}
+
+        try:
+            # One object per line, read as each line arrives rather than once the body is complete.
+            # A non-streamed answer is one line and arrives here the same way, which is why this
+            # reads both.
+            for line in answer:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    frame = json.loads(line)
+                except ValueError:
+                    raise ThinkingUnavailable(
+                        E_REFUSED, "the model answered with something unreadable")
+
+                self._count(frame)
+
+                yield frame
+        finally:
+            # Always, including when the caller walked away mid-sentence. A response left open is
+            # a socket Ollama is still writing into.
+            answer.close()
+
+    def _count(self, frame):
+        """What the model said about its own work, taken from whichever frame carries it.
+
+        Streaming puts the counts and the durations in the last object rather than in every one, so
+        this adds what it finds and ignores what is absent.
+        """
+        self.prompt_tokens += int(frame.get("prompt_eval_count") or 0)
+        self.completion_tokens += int(frame.get("eval_count") or 0)
 
         # Nanoseconds from Ollama, milliseconds here, and absent rather than zero when it did not
         # say — a measurement nobody took should not read as a measurement of nothing.
-        self._last = {}
-
         for reported, named in (
                 ("load_duration", "llm_load_ms"),
                 ("prompt_eval_duration", "llm_prompt_ms"),
                 ("eval_duration", "llm_generate_ms")):
-            if decoded.get(reported) is not None:
-                self._last[named] = round(int(decoded[reported]) / 1e6)
-
-        return decoded
+            if frame.get(reported) is not None:
+                self._last[named] = round(int(frame[reported]) / 1e6)
 
     def _trim(self):
         """Keeps the thread bounded.
