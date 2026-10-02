@@ -1,3 +1,4 @@
+using Aurora.Adapters.Presence;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Time;
@@ -85,6 +86,15 @@ public sealed class AuroraHeartbeat : BackgroundService
 
         foreach (IEventConsumer consumer in services.GetServices<IEventConsumer>())
         {
+            if (consumer.Name == VoiceConversationConsumer.Pumped)
+            {
+                // Pumped by VoiceConversationPump instead, every quarter of a second rather than
+                // every five minutes. Skipped here rather than subscribed twice: two subscriptions
+                // under two ids are two checkpoints, and two checkpoints over one conversation is
+                // Aurora answering the same question twice.
+                continue;
+            }
+
             await RunAsync(
                 async () =>
                 {
@@ -103,8 +113,14 @@ public sealed class AuroraHeartbeat : BackgroundService
     /// At-least-once, because the alternative loses an event on a crash between delivery and
     /// acknowledgement — and every consumer here is written to tolerate seeing one twice.
     /// </remarks>
-    private static Subscription Subscribe(IEventConsumer consumer) => new(
-        $"heartbeat:{consumer.Name}",
+    /// <summary>One consumer's standing interest, in the shape the bus expects.</summary>
+    /// <remarks>
+    /// Public because <see cref="VoiceConversationPump"/> subscribes the same way and a second copy
+    /// of this would be a second set of answers to the same questions — how far back to read, how
+    /// many attempts, which schema versions.
+    /// </remarks>
+    public static Subscription Subscribe(IEventConsumer consumer, string by = "heartbeat") => new(
+        $"{by}:{consumer.Name}",
         consumer.Name,
         consumer.EventTypes.Count > 0
             ? consumer.EventTypes

@@ -394,6 +394,10 @@ public static class ServiceRegistration
         {
             services.AddSingleton(options);
             services.AddHostedService<AuroraHeartbeat>();
+
+            // The voice consumer, on its own schedule. Gated the same way for the same reason: an
+            // instance doing something underneath a test is not a deterministic one.
+            services.AddHostedService<VoiceConversationPump>();
         }
 
         return services;

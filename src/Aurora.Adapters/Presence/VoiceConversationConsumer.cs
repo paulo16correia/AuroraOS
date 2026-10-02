@@ -48,7 +48,17 @@ public sealed class VoiceConversationConsumer : IEventConsumer
         _boundary = boundary;
     }
 
-    public string Name => "voice-conversation";
+    /// <summary>
+    /// What this consumer is called, and the name the pump looks for.
+    /// </summary>
+    /// <remarks>
+    /// A constant because two things agree on it: the pump drains it every quarter of a second, and
+    /// the heartbeat skips it for that reason. A conversation answered on the heartbeat's schedule
+    /// would arrive up to five minutes after the question.
+    /// </remarks>
+    public const string Pumped = "voice-conversation";
+
+    public string Name => Pumped;
 
     public IReadOnlyList<string> EventTypes => [EventCatalogue.PluginObservationReported];
 
