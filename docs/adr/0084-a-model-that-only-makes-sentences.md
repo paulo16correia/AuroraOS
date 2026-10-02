@@ -1,6 +1,10 @@
 # Design 0084 — A model that only makes sentences
 
-**Status:** Implemented, provider-agnostic. No runtime chosen · **Date:** 2026-09-08
+**Status:** Implemented, provider-agnostic · **Date:** 2026-09-08
+**Partly superseded by `docs/adr/0087`:** the contract, the boundary and everything here about what a
+model may not do stand. Where the implementation lives does not — it is reached through the voice
+plugin rather than from inside Aurora, because Aurora's own process opens no connection and the
+graphics card this record reasons from belongs to Ollama's process either way.
 **Rests on:** `docs/adr/0073` (voice tool bridge), `docs/adr/0074` (the conversation window),
 `docs/adr/0080`/`0081` (voice refusals), LAW-002, LAW-003, LAW-007
 

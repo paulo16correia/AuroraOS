@@ -34,6 +34,15 @@ E_PROVIDER = "voice_failed"
 # until that module went with the telephone, and the reference outlived the file.
 FAILED = "Failed"
 
+# How asking the model ended, in the words Aurora's own contract uses. A caller that is told
+# "failed" for a runtime that is not running and for a runtime that took too long will do neither of
+# the two different things those need.
+ANSWERED = "answered"
+UNAVAILABLE = "unavailable"
+TIMED_OUT = "timed_out"
+TOO_LONG = "too_long"
+MALFORMED = "malformed"
+
 
 class Refused(Exception):
     """A refusal with a code Aurora can act on, rather than a stack trace it cannot.
@@ -333,6 +342,115 @@ def hangup(state, args):
     return {"session_id": session_id, "state": "ended", "reason": reason}
 
 
+def answer(state, args):
+    """One sentence for a conversation Aurora is holding somewhere else, and nothing else.
+
+    The other capabilities here carry a conversation: audio in, audio out, a session that remembers
+    its own last turn. This one holds nothing. Aurora composed the instruction, chose which turns the
+    model may see, and said how long it may take and how much it may say; this asks the model and
+    hands back what it said.
+
+    **It is the same model as the one a voice session uses, reached the same way.** That is the point
+    of it being here rather than in Aurora: Aurora's own process opens no sockets, and a second
+    implementation of "ask the model" would be a second place for an answer to come back wrong.
+
+    Nothing in `conversation` is an instruction. Each turn travels with its speaker beside it rather
+    than folded into one string, all the way to the model, because that is the only thing that lets a
+    model tell a quoted sentence from something it was told to do.
+    """
+    import thinking
+
+    instruction = str(args.get("instruction") or "")
+    turns = args.get("conversation") or []
+
+    if not isinstance(turns, list) or not turns:
+        raise Refused(E_SCHEMA, "there is nothing to answer")
+
+    limit = int(args.get("max_characters") or 400)
+    seconds = int(args.get("timeout_seconds") or 30)
+
+    settings = dict((_settings().get("local") or {}).get("llm") or {})
+    settings["timeout_seconds"] = seconds
+    settings["max_tokens"] = max(1, limit // 3)
+
+    # No tools. This cannot ask Aurora for anything, and there is no parameter through which it
+    # could: a sentence is the only thing it is able to produce.
+    brain = thinking.Thinking(
+        identity=instruction, tools=[], settings=settings, channel_rules=False)
+
+    for turn in turns[-12:]:
+        if not isinstance(turn, dict):
+            continue
+
+        said = str(turn.get("said") or "").strip()
+
+        if said:
+            brain.heard(said[:4000], speaker=turn.get("speaker"))
+
+    # Returned rather than raised, and this is the one design decision in this function. A capability
+    # that fails cannot explain itself: the Kernel answers a failed execution with "Execution
+    # failed." on purpose and keeps the reason in the audit, so a caller reading the refusal learns
+    # nothing it can act on. "The model is not running" and "the model took too long" need different
+    # things done about them, so they come back as outcomes.
+    spent = brain.telemetry()
+
+    def answered(outcome, text=None, detail=None):
+        return {
+            "outcome": outcome,
+            "text": text,
+            "detail": detail,
+            "model": spent.get("model"),
+            "prompt_tokens": spent.get("prompt_tokens"),
+            "completion_tokens": spent.get("completion_tokens"),
+        }
+
+    try:
+        pieces = [piece for kind, piece in brain.respond_stream() if kind == "say"]
+    except thinking.ThinkingUnavailable as unavailable:
+        return answered(
+            TIMED_OUT if unavailable.code == thinking.E_UNREACHABLE
+            and "within" in unavailable.message else UNAVAILABLE,
+            detail=unavailable.message)
+
+    text = "".join(pieces).strip()
+
+    if not text:
+        return answered(MALFORMED, detail="the model answered with nothing")
+
+    if len(text) > limit:
+        # Not cut. Half a sentence spoken aloud is worse than silence, and the caller said what it
+        # could use.
+        return answered(
+            TOO_LONG,
+            detail="the model answered with %d characters and the limit was %d" % (len(text), limit))
+
+    return answered(ANSWERED, text=text)
+
+
+def model(state, args):
+    """Which model and runtime would actually answer, asked of the thing that would answer.
+
+    Not read from configuration. A recorded name says what somebody intended to run, which is a
+    different fact from what is running — and a runtime that has unloaded its model is not ready,
+    which is worth finding out before a conversation spends its silence discovering it.
+    """
+    import thinking
+
+    settings = dict((_settings().get("local") or {}).get("llm") or {})
+    settings["timeout_seconds"] = int(args.get("timeout_seconds") or 10)
+
+    brain = thinking.Thinking(identity="", tools=[], settings=settings, channel_rules=False)
+
+    try:
+        found = brain.identify()
+    except thinking.ThinkingUnavailable as unavailable:
+        return {"available": False, "detail": unavailable.message}
+
+    found["available"] = True
+
+    return found
+
+
 def _session(state, args):
     session_id = str(args["session_id"])[:128]
     session = state["sessions"].get(session_id)
@@ -346,9 +464,14 @@ def _session(state, args):
 READS = {
     "voice.status": status,
     "voice.poll": poll,
+    "voice.model": model,
 }
 
 WRITES = {
+    # A write because it spends the machine's time and the model's, which is the thing Aurora
+    # budgets. It changes nothing and reads nothing of the owner's.
+    "voice.answer": answer,
+
     "voice.listen": listen,
     "voice.session.start": session_start,
     "voice.tool_result": tool_result,

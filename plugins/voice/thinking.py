@@ -139,7 +139,8 @@ class Thinking:
     conversation without memory of its own last turn is a series of unrelated sentences.
     """
 
-    def __init__(self, identity, tools, settings=None, opener=None, locale="en"):
+    def __init__(self, identity, tools, settings=None, opener=None, locale="en",
+                 channel_rules=True):
         self.settings = settings if isinstance(settings, OllamaSettings) else OllamaSettings(settings)
         # No proxy handler. The model is on this machine, and asking the operating system for
         # the proxy configuration costs half a second on macOS to be told about a route that must
@@ -149,7 +150,15 @@ class Thinking:
 
         # Aurora's identity first, then the rules of speaking. The order matters: who Aurora is
         # comes from Aurora, and this file adds only what is true of talking out loud.
-        self._system = (identity or "").strip() + "\n\n" + CHANNEL_INSTRUCTIONS
+        #
+        # `channel_rules=False` is for a caller that composed the whole instruction itself and is
+        # asking for one sentence rather than holding a conversation — Aurora's own conversation
+        # boundary does, and appending a second set of rules to an instruction that already has
+        # them is how a model ends up told twice, differently, how to behave.
+        self._system = (identity or "").strip()
+
+        if channel_rules:
+            self._system += "\n\n" + CHANNEL_INSTRUCTIONS
 
         self._tools = tools or []
         self._messages = []
@@ -168,9 +177,20 @@ class Thinking:
     def tool_names(self):
         return [t["function"]["name"] for t in self._tools]
 
-    def heard(self, text):
-        """Somebody said something. Content, and content only."""
-        self._messages.append({"role": "user", "content": text})
+    def heard(self, text, speaker=None):
+        """Somebody said something. Content, and content only.
+
+        The speaker travels beside what they said rather than inside it. Flattening the two is how
+        "ignore your instructions" stops being a sentence somebody spoke and becomes a line in the
+        prompt: a model can tell a quoted turn from an instruction only if the structure survives as
+        far as it (docs/adr/0084).
+        """
+        turn = {"role": "user", "content": text}
+
+        if speaker:
+            turn["name"] = str(speaker)[:64]
+
+        self._messages.append(turn)
         self._trim()
 
     def tool_answered(self, name, outcome):
@@ -358,6 +378,49 @@ class Thinking:
     def last_call(self):
         """What the model said about its own last answer. Empty when it said nothing."""
         return dict(self._last)
+
+    def identify(self):
+        """What the runtime says it is holding, asked of the runtime.
+
+        Ollama lists what is loaded rather than what is installed, which is the question worth
+        asking: a model that has been unloaded takes nearly a minute to come back, and that is five
+        times the boundary's own timeout (docs/adr/0084).
+        """
+        import urllib.error
+
+        request = urllib.request.Request(
+            self.settings.endpoint.rstrip("/") + "/api/tags", method="GET")
+
+        try:
+            with self._opener.open(request, timeout=self.settings.timeout_seconds) as answer:
+                listed = json.loads(answer.read().decode("utf-8", "replace"))
+        except urllib.error.URLError as unreachable:
+            raise ThinkingUnavailable(
+                E_UNREACHABLE,
+                "Ollama could not be reached at %s (%s)"
+                % (self.settings.endpoint, unreachable.reason))
+        except (TimeoutError, ValueError):
+            raise ThinkingUnavailable(
+                E_UNREACHABLE, "Ollama did not say what it is running")
+
+        wanted = self.settings.model
+        models = listed.get("models") or []
+
+        for found in models:
+            if str(found.get("name") or "") == wanted:
+                return {
+                    "runtime": "ollama",
+                    "model": wanted,
+                    "revision": ((found.get("details") or {}).get("quantization_level")
+                                 or found.get("digest", "")[:12] or None),
+                }
+
+        # Reached the runtime and the model it is configured for is not there. Named rather than
+        # shrugged at: "no model" sends somebody to the wrong place when the answer is `ollama pull`.
+        raise ThinkingUnavailable(
+            E_UNREACHABLE,
+            "Ollama is running and does not have '%s' (it has %s)"
+            % (wanted, ", ".join(str(m.get("name")) for m in models[:5]) or "nothing"))
 
     def telemetry(self):
         return {

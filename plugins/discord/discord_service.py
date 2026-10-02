@@ -934,10 +934,21 @@ def _watch_turns(state):
 
                 del waiting[:-3]
 
+                # The pending turns rather than only the latest. Aurora decides what to say from
+                # the conversation, and a plugin that reported one line would be choosing for it.
+                # Where it happened goes too: it is not used to reach the plugin back — the plugin
+                # knows which call it is in — but a record that cannot say where a sentence was
+                # said is a record somebody has to take on trust.
                 report("voice.wants_to_answer", {
+                    "guild_id": session.guild_id if session else None,
+                    "channel_id": session.channel_id if session else None,
                     "speaker_id": speaker,
                     "transcript": transcript,
                     "reason": decision["reason"],
+                    "conversation": [
+                        {"speaker": str(turn["speaker_id"]), "said": turn["transcript"]}
+                        for turn in waiting
+                    ],
                 })
 
 

@@ -56,7 +56,7 @@ public sealed class VoicePluginTests
         // telephone left `session.transport` in voice.poll and `interaction.FAILED` in
         // voice.tool_result; the first raised on every poll, after the event queue had been
         // drained, so a working conversation looked exactly like silence.
-        RunPython("test_service", 14);
+        RunPython("test_service", 25);
     }
 
     [Fact]

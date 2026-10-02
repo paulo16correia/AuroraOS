@@ -112,6 +112,24 @@ public static class ServiceRegistration
             // principal here, and treating them as one would make caller ID an authentication
             // mechanism.
             new Principal("voice", Environment.UserName)));
+        // The model, reached through the voice plugin rather than from inside Aurora. This is the
+        // one place that decision shows: Aurora's own process opens no connection, and the plugin
+        // that already talks to a model is the only thing that does (docs/adr/0087).
+        services.AddSingleton<ILocalLanguageModel>(sp => new PluginLanguageModel(
+            sp.GetRequiredService<AuroraKernel>(),
+            new Principal("voice", Environment.UserName)));
+
+        // Everything between "somebody spoke to Aurora" and "Aurora spoke". It was written and
+        // tested and registered by nothing, which meant the only thing that had ever held a voice
+        // conversation was the test suite (docs/adr/0084).
+        services.AddSingleton<IVoiceConversationBoundary>(sp => new VoiceConversationBoundary(
+            sp.GetRequiredService<ILocalLanguageModel>(),
+            sp.GetRequiredService<AuroraKernel>(),
+
+            // Aurora on its own account. Somebody in a voice channel is not a principal, and
+            // treating them as one would make being in the call an authentication mechanism.
+            new Principal("voice", Environment.UserName)));
+
         services.AddSingleton(sp => new VoiceRuntime(
             sp.GetRequiredService<IVoiceSessionStore>(),
             sp.GetRequiredService<IVoicePolicy>(),
@@ -251,11 +269,12 @@ public static class ServiceRegistration
         // allows nothing: every caller has already refused before it is told (docs/adr/0064).
         services.AddSingleton<ISecurityWatch, SecurityWatch>();
 
-        // The two things that consume events in process (docs/adr/0063). Both are registered as
-        // IEventConsumer, which is what the heartbeat pumps; neither is reachable any other way,
-        // so an event nobody subscribed to reaches nobody.
+        // The things that consume events in process (docs/adr/0063). All are registered as
+        // IEventConsumer, which is what the heartbeat pumps; none is reachable any other way, so an
+        // event nobody subscribed to reaches nobody — which is exactly what had happened to voice.
         services.AddSingleton<IEventConsumer, QuarantineIncidentConsumer>();
         services.AddSingleton<IEventConsumer, PluginEventConsumer>();
+        services.AddSingleton<IEventConsumer, VoiceConversationConsumer>();
         services.AddSingleton<IObservationService, SqliteObservationService>();
 
         // The low-risk pilot: the first vertical slice, using no external tool (step 9).
