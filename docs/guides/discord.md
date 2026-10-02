@@ -135,10 +135,15 @@ half is missing the capability refuses and names what to install. Raw audio is n
 
 `discord.voice.status` reports what this machine can actually do before you need it.
 
-**The audio transport is not implemented.** Discord voice requires Opus, which is a native library,
-plus a second websocket, a UDP flow and an AEAD cipher. `docs/adr/0068` says exactly what is missing
-and what finishing it takes. Joining a call refuses cleanly rather than sitting silently in
-somebody's conversation.
+**The audio transport is implemented**, and this paragraph said the opposite for longer than it was
+true. Voice gateway v4, UDP discovery, RTP framing, `aead_xchacha20_poly1305_rtpsize` and Opus — the
+cipher checked against nine RFC test vectors, and a full packet round trip running real PCM through
+the real encoder and back (`docs/adr/0068`).
+
+What it needs that Python cannot supply is `libopus`, and a whisper model beside the plugin for
+listening. Without either, joining refuses cleanly rather than sitting silently in somebody's
+conversation, which is the failure that matters: Aurora would appear in the channel, be seen by
+everybody in it, and hear nothing — indistinguishable from her ignoring them.
 
 ## Being in a conversation rather than answering queries
 

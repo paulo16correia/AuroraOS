@@ -128,7 +128,7 @@ rather than operating systems, because that is where the risk is.
 | Microphone capture inside the plugin sandbox | **UNVERIFIED** — never attempted | — | **no** |
 | Local audio harness (outside the sandbox) | IMPLEMENTED | preflight only | **no** — no key |
 | Twilio, outbound calls, a real +351 number | **REMOVED** — there is no telephone | — | — |
-| Audio, end to end | **not implemented** — this milestone is protocol correctness | — | — |
+| Audio, end to end, on Aurora's side | **not wired** — `ListenAsync` and `PumpAsync` carry it, with no device at either end | — | — |
 | Inbound PSTN calls | **UNSUPPORTED** — see below | — | — |
 | Teams voice | **not implemented** | — | — |
 | Discord voice on the shared session model | **not migrated** — see below | — | — |

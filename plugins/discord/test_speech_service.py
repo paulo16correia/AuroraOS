@@ -287,5 +287,61 @@ class AVozEUmaSo(unittest.TestCase):
         self.assertNotIn("/v1/text-to-speech/", fonte)
 
 
+class OQueEstaPronto(unittest.TestCase):
+    """`readiness` is how somebody finds out what is missing before it fails mid-conversation.
+
+    Nothing tested it, and it is called from six places. It broke the moment the speaking engine
+    stopped being a dict and became the voice plugin's speaker object: it still indexed it, so
+    asking what voice could do raised TypeError exactly when both halves were present — the one case
+    where the answer is yes.
+    """
+
+    def test_it_names_the_voice_and_the_service_when_both_halves_are_there(self):
+        ready = voice_engines.readiness(voice="vozinha", api_key="k", language="en")
+
+        # Which voice, not merely that there is one: the setting may hold several and which one
+        # answers depends on the language being spoken, so "tts: elevenlabs" says nothing useful.
+        self.assertEqual("vozinha", ready["voice"])
+        self.assertEqual("elevenlabs", ready["tts"])
+
+        # Nothing about speaking is missing. Not `missing == []` and not `can_speak`, because both
+        # also answer for libopus and a whisper model — native pieces that are present on one
+        # machine and absent on the next, which would make this test report the machine rather than
+        # the code.
+        self.assertFalse(any("elevenlabs" in m or "tts_voice" in m for m in ready["missing"]))
+
+    def test_which_half_is_missing_is_named_separately(self):
+        # They are fixed in different places by different people: the voice is a setting somebody
+        # edits, the key is a secret somebody types into a prompt. "Voice unavailable" would send
+        # one of them hunting in the wrong file.
+        sem_chave = voice_engines.readiness(voice="vozinha", api_key=None)
+        sem_voz = voice_engines.readiness(voice=None, api_key="k")
+
+        self.assertFalse(sem_chave["can_speak"])
+        self.assertFalse(sem_voz["can_speak"])
+
+        self.assertTrue(any("elevenlabs_api_key" in m for m in sem_chave["missing"]))
+        self.assertFalse(any("elevenlabs_api_key" in m for m in sem_voz["missing"]))
+
+        self.assertTrue(any("tts_voice" in m for m in sem_voz["missing"]))
+        self.assertFalse(any("tts_voice" in m for m in sem_chave["missing"]))
+
+    def test_it_says_which_half_of_voice_leaves_the_machine(self):
+        # The two are no longer the same answer and would be the properties quietly lost first.
+        com = voice_engines.readiness(voice="vozinha", api_key="k")
+        sem = voice_engines.readiness(voice=None, api_key=None)
+
+        self.assertFalse(com["audio_leaves_this_machine"])
+        self.assertFalse(sem["audio_leaves_this_machine"])
+
+        self.assertTrue(com["text_leaves_this_machine"])
+        self.assertEqual(voice_engines.ELEVENLABS_HOST, com["speech_service"])
+
+        # Nothing configured means nothing is sent anywhere, and it says so rather than naming a
+        # service it cannot reach.
+        self.assertFalse(sem["text_leaves_this_machine"])
+        self.assertIsNone(sem["speech_service"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

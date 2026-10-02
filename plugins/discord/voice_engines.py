@@ -249,7 +249,8 @@ def readiness(voice=None, api_key=None, language=None):
             "the davey library for end-to-end encrypted voice (required by some servers)")
     if not transport:
         missing.append(
-            "the voice audio transport, which is not implemented (see docs/adr/0068)")
+            "voice_transport.py, which this plugin needs to carry audio and which is not "
+            "beside it — an install missing a file rather than a feature nobody wrote")
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
     if not stt:
@@ -279,12 +280,12 @@ def readiness(voice=None, api_key=None, language=None):
         "transport": transport,
         # Which voice, not only that there is one. The setting may hold several and which one
         # answers depends on the language being spoken; "tts: elevenlabs" says nothing useful.
-        "voice": tts["voice_id"] if tts else None,
+        "voice": tts.voice_id if tts else None,
         "language": language,
         "e2ee": e2ee,
         "opus": opus,
         "stt": stt["name"] if stt else None,
-        "tts": tts["name"] if tts else None,
+        "tts": tts.name if tts else None,
         "missing": missing,
 
         # Said explicitly, because these are the properties that would be quietly lost first, and

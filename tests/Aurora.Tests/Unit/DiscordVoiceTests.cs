@@ -85,7 +85,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // plugin and once written out again here — until this plugin was given a copy of the
         // voice plugin's instead. Two of the tests guard that: the copy is compared byte for
         // byte, and this plugin is checked for not having quietly grown a second request.
-        RunPython("test_speech_service", 17);
+        RunPython("test_speech_service", 20);
     }
 
     [Fact]
