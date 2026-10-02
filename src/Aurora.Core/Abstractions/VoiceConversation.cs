@@ -47,6 +47,16 @@ public enum VoiceAnswerRefusal
 {
     None,
 
+    /// <summary>
+    /// Voice is stopped by the operator, or was never enabled on this installation.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="NotConversing"/> because they are different facts about different
+    /// things. A closed window is the plugin saying nobody is talking to Aurora right now; this is
+    /// Aurora's own switch, and it is the one an owner reaches for when they want it to stop.
+    /// </remarks>
+    VoiceStopped,
+
     /// <summary>No conversation window is open, so nothing may be said (docs/adr/0074).</summary>
     NotConversing,
 

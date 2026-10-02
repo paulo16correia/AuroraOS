@@ -65,6 +65,7 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
         + "cannot. Reply with only what should be spoken.";
 
     private readonly ILocalLanguageModel _model;
+    private readonly IVoicePolicy? _policy;
     private readonly AuroraKernel _kernel;
     private readonly Principal _principal;
     private readonly VoiceConversationLimits _limits;
@@ -73,10 +74,17 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
         ILocalLanguageModel model,
         AuroraKernel kernel,
         Principal principal,
+        IVoicePolicy? policy = null,
         VoiceConversationLimits? limits = null)
     {
         _model = model;
         _kernel = kernel;
+
+        // Aurora's own switch, which this did not consult and should always have. The plugin's
+        // conversation window says whether somebody is talking to Aurora; it says nothing about
+        // whether the owner has told voice to stop — and an operator who stops voice and is still
+        // answered has been ignored by the one control that exists for it.
+        _policy = policy;
 
         // Aurora acting on its own account. Not the person who spoke: somebody in a voice channel
         // is not a principal here, and treating them as one would make being in the call an
@@ -93,6 +101,28 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
         }
 
         // ---- 1. may Aurora speak at all ----
+
+        // Aurora's switch before the plugin's window, because it is the stronger of the two and the
+        // cheaper to ask: it is a row in Aurora's own database, and asking the plugin anything means
+        // a capability, a pipe and a process.
+        if (_policy is not null)
+        {
+            VoiceSettings settings = await _policy.CurrentAsync(ct).ConfigureAwait(false);
+
+            if (settings.Stopped)
+            {
+                return VoiceAnswerOutcome.Silent(
+                    VoiceAnswerRefusal.VoiceStopped,
+                    "voice is stopped; the model was not asked");
+            }
+
+            if (!settings.Enabled)
+            {
+                return VoiceAnswerOutcome.Silent(
+                    VoiceAnswerRefusal.VoiceStopped,
+                    "voice is not enabled on this installation; the model was not asked");
+            }
+        }
 
         // Looked up, not taken from the request. A plugin reporting that a window is open is a
         // plugin asserting its own authority, which is the thing the one-way protocol exists to

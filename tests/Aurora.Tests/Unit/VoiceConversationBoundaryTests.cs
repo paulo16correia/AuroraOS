@@ -79,8 +79,13 @@ public sealed class VoiceConversationBoundaryTests : IDisposable
             TestBus.Over(_db.Factory, _clock),
             new NoOperatorPrompt());
 
-    private VoiceConversationBoundary Boundary(VoiceConversationLimits? limits = null) =>
-        new(_model, Kernel(), Aurora, limits);
+    private VoiceConversationBoundary Boundary(
+        VoiceConversationLimits? limits = null, VoiceSettings? voice = null) =>
+        new(_model, Kernel(), Aurora,
+            new VoicePolicyService(
+                voice ?? VoiceSettings.Default with { Enabled = true },
+                new SqliteVoiceSessionStore(_db.Factory, _clock), _audit),
+            limits);
 
     private static VoiceAnswerRequest Heard(params string[] said) =>
         new("plugin/discord", "g1", "c1",
@@ -92,6 +97,40 @@ public sealed class VoiceConversationBoundaryTests : IDisposable
         Boundary(limits).AnswerAsync(request ?? Heard("Aurora, estas ai?"), ct);
 
     // ---- 1. the full deterministic loop ----
+
+    [Fact]
+    public async Task AStoppedVoiceIsNotAnsweredAndTheModelIsNotAsked()
+    {
+        // The hole this closes. `voice stop` reached a voice-plugin session, through VoiceRuntime
+        // and VoiceToolBridge, and did not reach here at all — so an operator could stop voice and
+        // be answered anyway, by the one channel that has ever actually spoken.
+        var policy = new VoicePolicyService(
+            VoiceSettings.Default with { Enabled = true },
+            new SqliteVoiceSessionStore(_db.Factory, _clock), _audit);
+
+        await policy.StopAsync("paulo", "enough", CancellationToken.None);
+
+        var boundary = new VoiceConversationBoundary(_model, Kernel(), Aurora, policy);
+
+        VoiceAnswerOutcome answered = await boundary.AnswerAsync(Heard("olá"), default);
+
+        Assert.Equal(VoiceAnswerRefusal.VoiceStopped, answered.Refusal);
+        Assert.Empty(_spoken);
+        Assert.Empty(_model.Asked);
+    }
+
+    [Fact]
+    public async Task AnInstallationNobodyEnabledVoiceOnIsNotAnswered()
+    {
+        // Said with the same refusal as a stop and a different sentence, because they are fixed in
+        // different places: one is an operator resuming, the other an owner deciding.
+        VoiceAnswerOutcome answered = await Boundary(
+            voice: VoiceSettings.Default).AnswerAsync(Heard("olá"), default);
+
+        Assert.Equal(VoiceAnswerRefusal.VoiceStopped, answered.Refusal);
+        Assert.Contains("not enabled", answered.Detail, StringComparison.Ordinal);
+        Assert.Empty(_model.Asked);
+    }
 
     [Fact]
     public async Task AnAddressedTurnBecomesSomethingSpokenThroughTheKernel()

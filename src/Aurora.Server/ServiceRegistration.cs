@@ -128,7 +128,11 @@ public static class ServiceRegistration
 
             // Aurora on its own account. Somebody in a voice channel is not a principal, and
             // treating them as one would make being in the call an authentication mechanism.
-            new Principal("voice", Environment.UserName)));
+            new Principal("voice", Environment.UserName),
+
+            // The operator's switch. Without it, `voice stop` stopped a voice-plugin session and
+            // left a Discord voice conversation talking.
+            sp.GetRequiredService<IVoicePolicy>()));
 
         services.AddSingleton(sp => new VoiceRuntime(
             sp.GetRequiredService<IVoiceSessionStore>(),
