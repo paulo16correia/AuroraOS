@@ -22,14 +22,13 @@ public sealed class VoiceSessionTests
 
     private static VoiceSession Session(
         string id = "vs-1",
-        string? external = "CA-provider-1",
         int maxCalls = 3,
         VoiceChannel channel = VoiceChannel.Discord) =>
-        new(id, channel, "fake", VoiceCallDirection.Inbound,
-            new VoiceParticipant("+351911111111"),
+        new(id, channel, "fake",
+            new VoiceParticipant("somebody"),
             new VoiceGrant(["memory.recall"], maxCalls, TimeSpan.FromMinutes(10),
                 Now.AddMinutes(30).ToString("O")),
-            VoiceSessionState.Pending, Now.ToString("O"), "corr-1", external);
+            VoiceSessionState.Pending, Now.ToString("O"), "corr-1");
 
     private static SqliteVoiceSessionStore Store(SqliteTestDb db) =>
         new(db.Factory, new TestClock(Now));
@@ -45,83 +44,15 @@ public sealed class VoiceSessionTests
 
         Assert.NotNull(found);
         Assert.Equal(VoiceChannel.Discord, found!.Channel);
-        Assert.Equal("+351911111111", found.Participant.Handle);
+        Assert.Equal("somebody", found.Participant.Handle);
         Assert.Equal(["memory.recall"], found.Grant.AllowedActions);
         Assert.Equal(TimeSpan.FromMinutes(10), found.Grant.MaxDuration);
     }
 
-    [Fact]
-    public async Task AnOutboundIntentIsStoredWithItsSession()
-    {
-        using var db = new SqliteTestDb();
-        SqliteVoiceSessionStore store = Store(db);
-
-        var intent = new OutboundCallIntent(
-            "Remind about tomorrow's meeting", "Confirm they know the time",
-            new VoiceParticipant("+351911111111"),
-            new VoiceGrant([], 0, TimeSpan.FromMinutes(5), Now.AddMinutes(10).ToString("O")),
-            ["do not discuss anything else"], "operator", "ap-1");
-
-        await store.OpenAsync(
-            Session() with { Direction = VoiceCallDirection.Outbound, Intent = intent },
-            CancellationToken.None);
-
-        VoiceSession found = (await store.FindAsync("vs-1", CancellationToken.None))!;
-
-        // The reason a call was made has to survive the call. Afterwards, "why did Aurora ring
-        // this person" is answerable from the record rather than from whoever remembers.
-        Assert.Equal("Remind about tomorrow's meeting", found.Intent!.Purpose);
-        Assert.Equal("ap-1", found.Intent.ApprovalRef);
-    }
-
-    // ---- providers repeat themselves ----
-
-    [Fact]
-    public async Task TheSameProviderEventTwiceResolvesToOneSession()
-    {
-        using var db = new SqliteTestDb();
-        SqliteVoiceSessionStore store = Store(db);
-
-        await store.OpenAsync(Session(), CancellationToken.None);
-
-        VoiceSession? first = await store.FindByExternalAsync(
-            "fake", "CA-provider-1", CancellationToken.None);
-        VoiceSession? second = await store.FindByExternalAsync(
-            "fake", "CA-provider-1", CancellationToken.None);
-
-        // A webhook delivered twice is the ordinary case, not the exception. Both deliveries have
-        // to land on the session the first one created.
-        Assert.Equal(first!.SessionId, second!.SessionId);
-    }
-
-    [Fact]
-    public async Task TwoSessionsCannotShareOneProviderCall()
-    {
-        using var db = new SqliteTestDb();
-        SqliteVoiceSessionStore store = Store(db);
-
-        await store.OpenAsync(Session("vs-1"), CancellationToken.None);
-
-        // Enforced by the database rather than by whoever remembered to check first. A duplicate
-        // event racing itself would otherwise open two sessions for one call, each with its own
-        // budget.
-        await Assert.ThrowsAnyAsync<Exception>(
-            () => store.OpenAsync(Session("vs-2"), CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task TwoSessionsWithoutProviderIdentifiersDoNotCollide()
-    {
-        using var db = new SqliteTestDb();
-        SqliteVoiceSessionStore store = Store(db);
-
-        // A session that has not connected yet has no provider reference. The uniqueness rule is
-        // partial for that reason — several of them can be pending at once.
-        await store.OpenAsync(Session("vs-1", external: null), CancellationToken.None);
-        await store.OpenAsync(Session("vs-2", external: null), CancellationToken.None);
-
-        Assert.Equal(2, (await store.LiveAsync(CancellationToken.None)).Count);
-    }
+    // Three tests stood here about a provider delivering the same call twice, and one about the
+    // intent behind a call Aurora placed being stored with it. They were the telephone: there are
+    // no webhooks to arrive twice, nothing sets a provider reference, and no conversation has a
+    // purpose of its own. The column they turned on is gone too (migration 18).
 
     // ---- budgets ----
 
@@ -216,9 +147,9 @@ public sealed class VoiceSessionTests
         SqliteVoiceSessionStore store = Store(db);
         var audit = new RecordingAuditStore();
 
-        await store.OpenAsync(Session("vs-1", "CA-1"), CancellationToken.None);
+        await store.OpenAsync(Session("vs-1"), CancellationToken.None);
         await store.OpenAsync(
-            Session("vs-2", "DC-1", channel: VoiceChannel.Discord), CancellationToken.None);
+            Session("vs-2", channel: VoiceChannel.Discord), CancellationToken.None);
         await store.AdvanceAsync("vs-2", VoiceSessionState.Active, null, CancellationToken.None);
 
         var policy = new VoicePolicyService(VoiceSettings.Default, store, audit);

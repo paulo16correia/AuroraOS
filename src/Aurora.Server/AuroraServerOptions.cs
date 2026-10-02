@@ -243,13 +243,12 @@ public sealed class AuroraServerOptions
         var voice = VoiceSettings.Default with
         {
             Enabled = config.GetValue<bool?>("Aurora:Voice:Enabled") ?? false,
-            OutboundEnabled = config.GetValue<bool?>("Aurora:Voice:OutboundEnabled") ?? false,
-            AllowedDestinations =
-                config.GetSection("Aurora:Voice:AllowedDestinations").Get<string[]>() ?? [],
+
             MaxConcurrentSessions =
                 config.GetValue<int?>("Aurora:Voice:MaxConcurrentSessions") ?? 2,
-            MaxCallDuration =
-                config.GetValue<TimeSpan?>("Aurora:Voice:MaxCallDuration") ?? TimeSpan.FromMinutes(15),
+            MaxSessionDuration =
+                config.GetValue<TimeSpan?>("Aurora:Voice:MaxSessionDuration")
+                ?? TimeSpan.FromMinutes(15),
         };
 
         var options = new AuroraServerOptions

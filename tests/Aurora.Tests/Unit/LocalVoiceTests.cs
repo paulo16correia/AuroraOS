@@ -287,7 +287,9 @@ public sealed class LocalVoiceTests : IDisposable
         ServicePluginHost Host,
         Observations Reported);
 
-    private Rig Build(bool policyAllows = true, bool enabled = true, params string[] transcripts)
+    private Rig Build(
+        bool policyAllows = true, bool enabled = true, int maxConcurrent = 2,
+        params string[] transcripts)
     {
         var root = PluginRoot(transcripts);
         var reported = new Observations();
@@ -305,7 +307,12 @@ public sealed class LocalVoiceTests : IDisposable
 
         var sessions = new SqliteVoiceSessionStore(_db.Factory, _clock);
         var policy = new VoicePolicyService(
-            VoiceSettings.Default with { Enabled = enabled }, sessions, _audit);
+            VoiceSettings.Default with
+            {
+                Enabled = enabled,
+                MaxConcurrentSessions = maxConcurrent,
+            },
+            sessions, _audit);
 
         var principal = new Principal("voice", "aurora");
 
@@ -774,6 +781,44 @@ public sealed class LocalVoiceTests : IDisposable
         // Said apart from "stopped", because they are fixed differently: one is an operator
         // resuming something, the other is an owner deciding for the first time.
         Assert.NotEqual(VoiceRefusal.VoiceStopped, answered.Refusal);
+    }
+
+    [Fact]
+    public async Task TheConcurrencyLimitIsAcrossEveryChannelAndRefusesTheNextConversation()
+    {
+        // Moved here from VoiceAuthorizationTests when the outbound path went: the rule was never
+        // about telephones, and this is where it is checked now. Across every channel rather than
+        // per channel, because what it is protecting is this machine.
+        Rig rig = Build(maxConcurrent: 1);
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome first = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(), Grant(), Ct);
+        Assert.True(first.Session is not null, $"{first.Refusal}: {first.Detail}");
+
+        VoiceOutcome second = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(), Grant(), Ct);
+
+        Assert.Null(second.Session);
+        Assert.Equal(VoiceRefusal.BudgetSpent, second.Refusal);
+    }
+
+    [Fact]
+    public async Task AGrantAskingForLongerThanTheInstallationAllowsIsRefused()
+    {
+        // The setting has always described itself as the ceiling a grant may ask for, and until now
+        // nothing checked it. Refused rather than quietly shortened: a session that ends before its
+        // grant says it may is one whose authority cannot be read off the record afterwards.
+        Rig rig = Build();
+        await using ServicePluginHost host = rig.Host;
+
+        VoiceOutcome asked = await rig.Runtime.BeginAsync(
+            VoiceChannel.Discord, Caller(),
+            Grant() with { MaxDuration = TimeSpan.FromHours(4) }, Ct);
+
+        Assert.Null(asked.Session);
+        Assert.Equal(VoiceRefusal.NotInGrant, asked.Refusal);
+        Assert.Contains("04:00:00", asked.Detail, StringComparison.Ordinal);
     }
 
     [Fact]

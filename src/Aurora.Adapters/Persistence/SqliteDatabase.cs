@@ -757,27 +757,22 @@ public sealed class SqliteDatabase
         CREATE INDEX IF NOT EXISTS idx_session_live
           ON consent_session(principal_client_id, server_boot_id, policy_version, status);
 
+        -- Three columns shorter than it was. A direction, the provider's own reference for the
+        -- same call, and the intent behind one Aurora placed were all the telephone, and nothing
+        -- wrote any of them after it was removed. See migration 18.
         CREATE TABLE IF NOT EXISTS voice_session (
           session_id TEXT PRIMARY KEY,
           channel TEXT NOT NULL,
           provider TEXT NOT NULL,
-          direction TEXT NOT NULL,
           participant_json TEXT NOT NULL,
           grant_json TEXT NOT NULL,
           state TEXT NOT NULL,
           started_at_utc TEXT NOT NULL,
           correlation_id TEXT NOT NULL,
-          external_ref TEXT NULL,
           ended_at_utc TEXT NULL,
           ended_reason TEXT NULL,
-          tool_calls_used INTEGER NOT NULL DEFAULT 0,
-          intent_json TEXT NULL
+          tool_calls_used INTEGER NOT NULL DEFAULT 0
         );
-
-        -- One call arrives as several provider events. This is what makes the second and third
-        -- resolve to the session the first created rather than opening more.
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_external
-          ON voice_session(provider, external_ref) WHERE external_ref IS NOT NULL;
 
         CREATE INDEX IF NOT EXISTS idx_voice_live ON voice_session(state);
 
@@ -1179,7 +1174,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 17;
+    public const int TargetSchemaVersion = 18;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1615,23 +1610,34 @@ public sealed class SqliteDatabase
               session_id TEXT PRIMARY KEY,
               channel TEXT NOT NULL,
               provider TEXT NOT NULL,
-              direction TEXT NOT NULL,
               participant_json TEXT NOT NULL,
               grant_json TEXT NOT NULL,
               state TEXT NOT NULL,
               started_at_utc TEXT NOT NULL,
               correlation_id TEXT NOT NULL,
-              external_ref TEXT NULL,
               ended_at_utc TEXT NULL,
               ended_reason TEXT NULL,
-              tool_calls_used INTEGER NOT NULL DEFAULT 0,
-              intent_json TEXT NULL
+              tool_calls_used INTEGER NOT NULL DEFAULT 0
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_external
-              ON voice_session(provider, external_ref) WHERE external_ref IS NOT NULL;
-
             CREATE INDEX IF NOT EXISTS idx_voice_live ON voice_session(state);
+            """,
+
+        // v18 — the telephone's last three columns go (direction, external_ref, intent_json).
+        //
+        // Only the index is here. Dropping the columns cannot be, for the reason RequiredColumns
+        // gives in reverse: the DDL above runs first and already creates the table without them, so
+        // on a database where it did not exist this would be dropping columns nothing created, and
+        // SQLite has no DROP COLUMN IF EXISTS. They are in RemovedColumns, checked against the live
+        // schema, which is right either way.
+        //
+        // Version 17 was edited rather than left as written, which is worth saying out loud: its
+        // unique index named external_ref, so once the DDL stopped creating that column, 17 could
+        // no longer run at all. A migration is something that executes, not a record of what was
+        // once decided — that is what the ADRs are. Nothing is lost with it: nothing ever wrote a
+        // value into any of the three.
+        [18] = """
+            DROP INDEX IF EXISTS idx_voice_external;
             """,
     };
 
@@ -1645,6 +1651,29 @@ public sealed class SqliteDatabase
     /// the DDL just created. Checked against the live schema instead, which is correct either way
     /// and idempotent by construction — SQLite has no <c>ADD COLUMN IF NOT EXISTS</c>.
     /// </remarks>
+    /// <summary>
+    /// Columns dropped from tables that already had them, as (table, column).
+    /// </summary>
+    /// <remarks>
+    /// The mirror of <see cref="RequiredColumns"/> and for the same reason. A drop cannot live in
+    /// <see cref="Migrations"/>: the DDL runs first and its <c>CREATE TABLE IF NOT EXISTS</c>
+    /// already produces the target shape, so on a database where that table did not exist the
+    /// migration would be dropping a column nothing created — and SQLite has no
+    /// <c>DROP COLUMN IF EXISTS</c>. Checked against the live schema instead.
+    /// <para>
+    /// A column is only safe to list here when nothing has ever written a value into it. These
+    /// three were the telephone, which was removed before any of them was ever set.
+    /// </para>
+    /// </remarks>
+    private static readonly (string Table, string Column)[] RemovedColumns =
+    [
+        // v18 — who dialled, the provider's own reference for the call, and the intent behind one
+        // Aurora placed. There is no telephone.
+        ("voice_session", "direction"),
+        ("voice_session", "external_ref"),
+        ("voice_session", "intent_json"),
+    ];
+
     private static readonly (string Table, string Column, string Declaration)[] RequiredColumns =
     [
         // v16 — the hosts the owner agreed a plugin may reach (docs/adr/0067). Empty by default,
@@ -1709,6 +1738,7 @@ public sealed class SqliteDatabase
 
         Migrate(connection, transaction);
         EnsureColumns(connection, transaction);
+        DropColumns(connection, transaction);
 
         transaction.Commit();
     }
@@ -1779,6 +1809,29 @@ public sealed class SqliteDatabase
             add.Transaction = transaction;
             add.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration};";
             add.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// Drops any column in <see cref="RemovedColumns"/> that this database still has.
+    /// </summary>
+    /// <remarks>
+    /// After the migrations, because SQLite refuses to drop a column an index depends on and
+    /// dropping that index is what migration 18 does.
+    /// </remarks>
+    private static void DropColumns(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        foreach ((var table, var column) in RemovedColumns)
+        {
+            if (!HasColumn(connection, transaction, table, column))
+            {
+                continue;
+            }
+
+            using var drop = connection.CreateCommand();
+            drop.Transaction = transaction;
+            drop.CommandText = $"ALTER TABLE {table} DROP COLUMN {column};";
+            drop.ExecuteNonQuery();
         }
     }
 

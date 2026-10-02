@@ -31,16 +31,12 @@ public sealed class VoiceIdentityTests
             ActiveToUtc: null,
             Status: ProfileStatus.Active);
 
-    private static VoiceSession Session(
-        VoiceCallDirection direction = VoiceCallDirection.Inbound,
-        string[]? actions = null,
-        OutboundCallIntent? intent = null,
-        bool disclosure = true) =>
-        new("vs-1", VoiceChannel.Discord, "fake", direction,
-            new VoiceParticipant("+351911111111"),
+    private static VoiceSession Session(string[]? actions = null, bool disclosure = true) =>
+        new("vs-1", VoiceChannel.Discord, "fake",
+            new VoiceParticipant("somebody"),
             new VoiceGrant(actions ?? ["memory.recall"], 5, TimeSpan.FromMinutes(10),
                 "2026-09-02T11:00:00Z", disclosure),
-            VoiceSessionState.Active, "2026-09-02T10:00:00Z", "corr-1", Intent: intent);
+            VoiceSessionState.Active, "2026-09-02T10:00:00Z", "corr-1");
 
     [Fact]
     public void TheNameComesFromTheProfile()
@@ -179,30 +175,12 @@ public sealed class VoiceIdentityTests
     }
 
     [Fact]
-    public void AnOutboundCallCarriesItsPurposeAndItsBoundary()
+    public void AConversationIsNeverGivenAPurposeItDoesNotHave()
     {
-        var intent = new OutboundCallIntent(
-            "Remind about tomorrow's meeting",
-            "Confirm they know the time",
-            new VoiceParticipant("+351911111111"),
-            new VoiceGrant([], 0, TimeSpan.FromMinutes(5), "2026-09-02T11:00:00Z"),
-            ["do not discuss anything else about their account"],
-            "operator", "ap-1");
-
-        var text = VoiceIdentity.Compose(
-            Profile(), Session(VoiceCallDirection.Outbound, intent: intent), []);
-
-        Assert.Contains("Remind about tomorrow's meeting", text);
-        Assert.Contains("Confirm they know the time", text);
-        Assert.Contains("do not discuss anything else about their account", text);
-
-        // Scope does not widen because the conversation went somewhere else.
-        Assert.Contains("say you cannot help with it on this call rather than following it", text);
-    }
-
-    [Fact]
-    public void AnInboundCallIsNotGivenAPurposeItDoesNotHave()
-    {
+        // Its pair was AnOutboundCallCarriesItsPurposeAndItsBoundary, and it went with the
+        // telephone: Aurora placing a call was the only conversation that ever had a purpose of its
+        // own, and the instructions carried it so the model would stay inside it. There is one kind
+        // of conversation now and somebody else always starts it.
         var text = VoiceIdentity.Compose(Profile(), Session(), []);
 
         Assert.Contains("which the other person started", text);

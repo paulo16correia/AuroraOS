@@ -43,11 +43,11 @@ public sealed class SqliteVoiceSessionStore : IVoiceSessionStore
 
         command.CommandText = """
             INSERT INTO voice_session
-                (session_id, channel, provider, direction, participant_json, grant_json,
-                 state, started_at_utc, correlation_id, external_ref, ended_at_utc,
-                 ended_reason, tool_calls_used, intent_json)
-            VALUES (@id, @channel, @provider, @direction, @participant, @grant,
-                    @state, @started, @correlation, @external, NULL, NULL, 0, @intent);
+                (session_id, channel, provider, participant_json, grant_json,
+                 state, started_at_utc, correlation_id, ended_at_utc,
+                 ended_reason, tool_calls_used)
+            VALUES (@id, @channel, @provider, @participant, @grant,
+                    @state, @started, @correlation, NULL, NULL, 0);
             """;
 
         Bind(command, session);
@@ -64,23 +64,6 @@ public sealed class SqliteVoiceSessionStore : IVoiceSessionStore
 
         command.CommandText = Select + " WHERE session_id = @id;";
         command.Parameters.AddWithValue("@id", sessionId);
-
-        await using SqliteDataReader reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-
-        return await reader.ReadAsync(ct).ConfigureAwait(false) ? Read(reader) : null;
-    }
-
-    public async Task<VoiceSession?> FindByExternalAsync(
-        string provider, string externalRef, CancellationToken ct)
-    {
-        await using SqliteConnection connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
-        await using SqliteCommand command = connection.CreateCommand();
-
-        // What stops a provider's duplicate webhook becoming a second session: the same call
-        // resolves to the same row, whichever delivery arrives first.
-        command.CommandText = Select + " WHERE provider = @provider AND external_ref = @external;";
-        command.Parameters.AddWithValue("@provider", provider);
-        command.Parameters.AddWithValue("@external", externalRef);
 
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
 
@@ -198,9 +181,9 @@ public sealed class SqliteVoiceSessionStore : IVoiceSessionStore
     }
 
     private const string Select = """
-        SELECT session_id, channel, provider, direction, participant_json, grant_json,
-               state, started_at_utc, correlation_id, external_ref, ended_at_utc,
-               ended_reason, tool_calls_used, intent_json
+        SELECT session_id, channel, provider, participant_json, grant_json,
+               state, started_at_utc, correlation_id, ended_at_utc,
+               ended_reason, tool_calls_used
           FROM voice_session
         """;
 
@@ -209,35 +192,25 @@ public sealed class SqliteVoiceSessionStore : IVoiceSessionStore
         command.Parameters.AddWithValue("@id", session.SessionId);
         command.Parameters.AddWithValue("@channel", session.Channel.ToString());
         command.Parameters.AddWithValue("@provider", session.Provider);
-        command.Parameters.AddWithValue("@direction", session.Direction.ToString());
         command.Parameters.AddWithValue("@participant", JsonSerializer.Serialize(session.Participant));
         command.Parameters.AddWithValue("@grant", JsonSerializer.Serialize(session.Grant));
         command.Parameters.AddWithValue("@state", session.State.ToString());
         command.Parameters.AddWithValue("@started", session.StartedAtUtc);
         command.Parameters.AddWithValue("@correlation", session.CorrelationId);
-        command.Parameters.AddWithValue("@external", (object?)session.ExternalRef ?? DBNull.Value);
-        command.Parameters.AddWithValue(
-            "@intent",
-            session.Intent is null ? DBNull.Value : JsonSerializer.Serialize(session.Intent));
     }
 
     private static VoiceSession Read(SqliteDataReader reader) => new(
         reader.GetString(0),
         Enum.Parse<VoiceChannel>(reader.GetString(1)),
         reader.GetString(2),
-        Enum.Parse<VoiceCallDirection>(reader.GetString(3)),
-        JsonSerializer.Deserialize<VoiceParticipant>(reader.GetString(4))!,
-        JsonSerializer.Deserialize<VoiceGrant>(reader.GetString(5))!,
-        Enum.Parse<VoiceSessionState>(reader.GetString(6)),
+        JsonSerializer.Deserialize<VoiceParticipant>(reader.GetString(3))!,
+        JsonSerializer.Deserialize<VoiceGrant>(reader.GetString(4))!,
+        Enum.Parse<VoiceSessionState>(reader.GetString(5)),
+        reader.GetString(6),
         reader.GetString(7),
-        reader.GetString(8),
+        reader.IsDBNull(8) ? null : reader.GetString(8),
         reader.IsDBNull(9) ? null : reader.GetString(9),
-        reader.IsDBNull(10) ? null : reader.GetString(10),
-        reader.IsDBNull(11) ? null : reader.GetString(11),
-        reader.GetInt32(12),
-        reader.IsDBNull(13)
-            ? null
-            : JsonSerializer.Deserialize<OutboundCallIntent>(reader.GetString(13)));
+        reader.GetInt32(10));
 
     private static string Iso(DateTimeOffset value) =>
         value.ToString("O", CultureInfo.InvariantCulture);

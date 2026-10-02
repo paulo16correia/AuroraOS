@@ -28,8 +28,8 @@ public sealed class VoiceAuthorizationTests
         VoiceSessionState state = VoiceSessionState.Active,
         int used = 0,
         DateTimeOffset? started = null) =>
-        new("vs-1", VoiceChannel.Discord, "fake", VoiceCallDirection.Inbound,
-            new VoiceParticipant("+351911111111"), grant ?? Grant(), state,
+        new("vs-1", VoiceChannel.Discord, "fake",
+            new VoiceParticipant("somebody"), grant ?? Grant(), state,
             (started ?? Now).ToString("O"), "corr-1", ToolCallsUsed: used);
 
     // ---- the ordinary case ----
@@ -140,7 +140,7 @@ public sealed class VoiceAuthorizationTests
         VoiceSession familiar = Session() with
         {
             Participant = new VoiceParticipant(
-                "+351911111111", "Paulo", "identity/owner",
+                "paulo", "Paulo", "identity/owner",
                 ParticipantVerification.ChannelAuthenticated),
         };
 
@@ -168,133 +168,10 @@ public sealed class VoiceAuthorizationTests
         Assert.Equal(["session", "actionid", "nowutc", "voicestopped"], parameters);
     }
 
-    // ---- placing a call at all ----
-
-    private static OutboundCallIntent Intent(
-        string target = "+351911111111", string approval = "ap-1", int minutesValid = 30) =>
-        new("Remind about tomorrow's meeting",
-            "Confirm they know the time",
-            new VoiceParticipant(target),
-            Grant(["memory.recall"], minutesValid: minutesValid),
-            ["do not discuss anything else"],
-            "operator",
-            approval);
-
-    /// <summary>
-    /// Judges an outbound call. <paramref name="intent"/> is passed through exactly as given,
-    /// including null — an earlier version defaulted it, which meant the one test that needed a
-    /// missing intent silently sent a valid one and passed for the wrong reason.
-    /// </summary>
-    private static VoiceDecision Outbound(
-        OutboundCallIntent? intent,
-        bool stopped = false,
-        bool enabled = true,
-        string[]? allowed = null,
-        int live = 0,
-        int max = 2,
-        DateTimeOffset? now = null) =>
-        VoiceAuthorization.ForOutboundCall(
-            intent, now ?? Now, stopped, enabled, allowed ?? ["+351"], live, max);
-
-    [Fact]
-    public void AnAuthorisedOutboundCallIsAllowed()
-    {
-        Assert.True(Outbound(Intent()).Allowed);
-    }
-
-    [Fact]
-    public void ThereIsNoOutboundCallWithoutAnIntent()
-    {
-        // The whole rule in one branch. A mission that produced a goal and a planner that produced
-        // a task both arrive here with nothing to show, and are refused.
-        VoiceDecision decision = Outbound(intent: null);
-
-        Assert.False(decision.Allowed);
-        Assert.Contains("neither a mission nor a plan", decision.Detail);
-    }
-
-    [Fact]
-    public void AnIntentWithNoApprovalIsNotAnAuthorisation()
-    {
-        Assert.False(Outbound(Intent(approval: "")).Allowed);
-    }
-
-    [Fact]
-    public void AnIntentWithNoStatedPurposeIsRefused()
-    {
-        // A purpose nobody wrote is a purpose nobody read, and the person approving has to have
-        // been shown what the call was for.
-        OutboundCallIntent blank = Intent() with { Purpose = "  " };
-
-        Assert.False(Outbound(blank).Allowed);
-    }
-
-    [Fact]
-    public void AnExpiredAuthorisationDoesNotCarryForward()
-    {
-        VoiceDecision decision = Outbound(Intent(minutesValid: 5), now: Now.AddMinutes(10));
-
-        Assert.False(decision.Allowed);
-        Assert.Equal(VoiceRefusal.Expired, decision.Refusal);
-    }
-
-    [Fact]
-    public void OutboundIsOffUntilSomebodyTurnsItOn()
-    {
-        // Having a number is not a decision to ring people with it, and the two are configured
-        // separately for exactly that reason.
-        Assert.False(Outbound(Intent(), enabled: false).Allowed);
-    }
-
-    [Fact]
-    public void AnEmptyDestinationListAllowsNothing()
-    {
-        // Empty meaning "anywhere" would make an unconfigured install able to dial the world.
-        Assert.False(Outbound(Intent(), allowed: []).Allowed);
-    }
-
-    [Fact]
-    public void ADestinationOutsideThePolicyIsRefused()
-    {
-        Assert.False(Outbound(Intent(target: "+15551234567"), allowed: ["+351"]).Allowed);
-    }
-
-    [Fact]
-    public void APortugueseNumberIsAllowedByItsPrefix()
-    {
-        Assert.True(VoiceAuthorization.Permitted("+351911111111", ["+351"]));
-        Assert.True(VoiceAuthorization.Permitted("+351211234567", ["+351911111111", "+351"]));
-    }
-
-    [Fact]
-    public void AWholeNumberInThePolicyMatchesOnlyThatNumber()
-    {
-        Assert.True(VoiceAuthorization.Permitted("+351911111111", ["+351911111111"]));
-        Assert.False(VoiceAuthorization.Permitted("+351911111112", ["+351911111111"]));
-    }
-
-    [Fact]
-    public void ANumberThatMerelyContainsAnAllowedOneIsNotAllowed()
-    {
-        // Prefix matching is anchored. Somewhere there is a number ending in the digits of a
-        // permitted one, and it is not the permitted one.
-        Assert.False(VoiceAuthorization.Permitted("+9991351911111111", ["+351"]));
-    }
-
-    [Fact]
-    public void TheConcurrencyLimitIsAcrossEveryChannelAndRefusesTheNextCall()
-    {
-        VoiceDecision decision = Outbound(Intent(), live: 2, max: 2);
-
-        Assert.False(decision.Allowed);
-        Assert.Equal(VoiceRefusal.BudgetSpent, decision.Refusal);
-    }
-
-    [Fact]
-    public void AStoppedVoiceRefusesToPlaceACallAtAll()
-    {
-        Assert.False(Outbound(Intent(), stopped: true).Allowed);
-    }
+    // Everything about placing a call used to be here: an intent with a purpose and an approval,
+    // an allowlist of destinations, and the two switches that governed them. It went with the
+    // telephone. The one rule in it that was not about telephones — the concurrency limit, which is
+    // across every channel — moved to LocalVoiceTests, where the check it guards now lives.
 
     [Fact]
     public void NothingIsEnabledOnAnInstallationNobodyHasConfigured()
@@ -304,7 +181,9 @@ public sealed class VoiceAuthorizationTests
         // An install that listened and spoke before its owner had decided it should is one that
         // made a decision on their behalf.
         Assert.False(settings.Enabled);
-        Assert.False(settings.OutboundEnabled);
-        Assert.Empty(settings.AllowedDestinations);
+
+        // And a ceiling that is not infinity. An install whose sessions could last as long as a
+        // grant asked for would have a limit only on paper.
+        Assert.Equal(TimeSpan.FromMinutes(15), settings.MaxSessionDuration);
     }
 }

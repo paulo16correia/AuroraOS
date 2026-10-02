@@ -226,4 +226,95 @@ public sealed class SchemaMigrationTests : IDisposable
         Assert.Equal("id", ColumnOf(Factory, "incident", "id"));
         Assert.Equal("id", ColumnOf(Factory, "constitutional_assessment", "id"));
     }
+
+    // ---- v18: the telephone's last three columns ----
+
+    [Fact]
+    public void ADatabaseWrittenWhileThereWasATelephoneLosesItsCallColumns()
+    {
+        // The shape this repository shipped at v17: a direction, the provider's own reference for
+        // the call, and the intent behind one Aurora placed, with a unique index over the reference
+        // so a webhook delivered twice could not open two sessions.
+        using (var connection = Factory.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (17);
+
+                CREATE TABLE voice_session (
+                  session_id TEXT PRIMARY KEY,
+                  channel TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  direction TEXT NOT NULL,
+                  participant_json TEXT NOT NULL,
+                  grant_json TEXT NOT NULL,
+                  state TEXT NOT NULL,
+                  started_at_utc TEXT NOT NULL,
+                  correlation_id TEXT NOT NULL,
+                  external_ref TEXT NULL,
+                  ended_at_utc TEXT NULL,
+                  ended_reason TEXT NULL,
+                  tool_calls_used INTEGER NOT NULL DEFAULT 0,
+                  intent_json TEXT NULL);
+
+                CREATE UNIQUE INDEX idx_voice_external
+                  ON voice_session(provider, external_ref) WHERE external_ref IS NOT NULL;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        new SqliteDatabase(Factory).Initialize();
+
+        Assert.Equal(SqliteDatabase.TargetSchemaVersion, Version(Factory));
+
+        Assert.Null(ColumnOf(Factory, "voice_session", "direction"));
+        Assert.Null(ColumnOf(Factory, "voice_session", "external_ref"));
+        Assert.Null(ColumnOf(Factory, "voice_session", "intent_json"));
+
+        // What a session still is.
+        Assert.Equal("session_id", ColumnOf(Factory, "voice_session", "session_id"));
+        Assert.Equal("grant_json", ColumnOf(Factory, "voice_session", "grant_json"));
+
+        // The index over the dropped column goes with it. SQLite refuses to drop a column an index
+        // depends on, which is why migration 18 drops the index and the column removal runs after
+        // the migrations rather than inside them.
+        Assert.False(HasIndex(Factory, "idx_voice_external"));
+        Assert.True(HasIndex(Factory, "idx_voice_live"));
+    }
+
+    [Fact]
+    public void ADatabaseFromBeforeVoiceExistedPassesThroughSeventeenToEighteen()
+    {
+        // The case that made migration 17 have to be edited rather than left as written. Its unique
+        // index named external_ref; once the DDL stopped creating that column, running 17 against a
+        // database the DDL had just built failed outright with "no such column". A migration is
+        // something that executes.
+        using (var connection = Factory.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (16);
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        new SqliteDatabase(Factory).Initialize();
+
+        Assert.Equal(SqliteDatabase.TargetSchemaVersion, Version(Factory));
+        Assert.Equal("session_id", ColumnOf(Factory, "voice_session", "session_id"));
+        Assert.Null(ColumnOf(Factory, "voice_session", "direction"));
+    }
+
+    private static bool HasIndex(SqliteConnectionFactory factory, string name)
+    {
+        using var connection = factory.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = @n;";
+        command.Parameters.AddWithValue("@n", name);
+
+        return Convert.ToInt64(command.ExecuteScalar()) > 0;
+    }
 }

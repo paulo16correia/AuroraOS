@@ -94,6 +94,18 @@ public sealed class VoiceRuntime
                 VoiceRefusal.NotEnabled, "voice is not enabled on this installation");
         }
 
+        // Enforced here, which is new: the setting has always described itself as the ceiling any
+        // one session's grant may ask for, and nothing had ever checked it. Refused rather than
+        // quietly shortened, because a session that ends before its grant says it may is a session
+        // whose authority cannot be read off the record afterwards.
+        if (grant.MaxDuration > settings.MaxSessionDuration)
+        {
+            return VoiceOutcome.Refused(
+                VoiceRefusal.NotInGrant,
+                $"this grant asks for {grant.MaxDuration} and this installation allows "
+                + $"{settings.MaxSessionDuration}");
+        }
+
         IReadOnlyList<VoiceSession> live = await _sessions.LiveAsync(ct).ConfigureAwait(false);
 
         if (live.Count >= settings.MaxConcurrentSessions)
@@ -110,7 +122,6 @@ public sealed class VoiceRuntime
 
             // Somebody is speaking to Aurora. The other direction was Aurora dialling out, which
             // needed an approved reason and no longer exists.
-            Direction: VoiceCallDirection.Inbound,
             Participant: participant,
             Grant: grant,
             State: VoiceSessionState.Connecting,

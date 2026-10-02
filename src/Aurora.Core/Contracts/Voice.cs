@@ -21,18 +21,6 @@ public enum VoiceChannel
     Teams,
 }
 
-/// <summary>Who dialled.</summary>
-/// <remarks>
-/// The most consequential distinction in this file. An inbound call is somebody choosing to speak
-/// to Aurora; an outbound call is Aurora choosing to speak to somebody, which needs a reason, a
-/// scope, an expiry and a person who authorised it (<see cref="OutboundCallIntent"/>).
-/// </remarks>
-public enum VoiceCallDirection
-{
-    Inbound,
-    Outbound,
-}
-
 /// <summary>Where a voice session is in its life.</summary>
 public enum VoiceSessionState
 {
@@ -138,63 +126,30 @@ public sealed record VoiceGrant(
         AllowedActions.Contains(actionId, StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Why Aurora is calling somebody, decided before it does.
-/// </summary>
-/// <param name="Purpose">Why, in a sentence a person approved.</param>
-/// <param name="Objective">What would count as having succeeded.</param>
-/// <param name="Target">Who is being called.</param>
-/// <param name="Grant">What the call may do, and for how long.</param>
-/// <param name="Constraints">
-/// What it may not do or disclose, in words. Not enforced by string matching — the enforcement is
-/// the grant's action list and the Kernel — but carried so the interaction layer is told, the
-/// audit records it, and a person reviewing the call can see what was promised.
-/// </param>
-/// <param name="AuthorizedBy">The actor who approved this. Never "the planner" and never a mission.</param>
-/// <param name="ApprovalRef">The approval record that authorised it.</param>
-/// <remarks>
-/// An outbound call is Aurora making something happen in somebody else's day, so it needs all of
-/// this before it starts. The rule this exists to enforce: <b>a mission may create a goal and a
-/// planner may propose a task, and neither is an authorisation.</b> Something has to have gone
-/// through the approval path and produced a reference, or there is no intent and no call.
-/// </remarks>
-public sealed record OutboundCallIntent(
-    string Purpose,
-    string Objective,
-    VoiceParticipant Target,
-    VoiceGrant Grant,
-    IReadOnlyList<string> Constraints,
-    string AuthorizedBy,
-    string ApprovalRef);
-
 /// <summary>One voice session, as Aurora holds it.</summary>
 /// <param name="SessionId">Aurora's own identifier. Not the provider's.</param>
 /// <param name="Channel">Which transport.</param>
 /// <param name="Provider">Who is carrying it — "twilio", "discord". For the audit and for support.</param>
-/// <param name="Direction">Who dialled.</param>
-/// <param name="ExternalRef">
-/// The provider's identifier for the same conversation, so a support conversation about one
-/// specific call is possible afterwards.
-/// </param>
 /// <param name="CorrelationId">
 /// What ties every event of this session together in the audit, across processes.
 /// </param>
-/// <param name="Intent">Present for an outbound call. Null for one somebody made to Aurora.</param>
+/// <remarks>
+/// There used to be three more: a direction, the provider's own identifier for the same call, and
+/// the intent behind one Aurora placed. All three were the telephone. Nothing set them once it was
+/// removed, and a field nobody writes is a field somebody eventually reads and believes.
+/// </remarks>
 public sealed record VoiceSession(
     string SessionId,
     VoiceChannel Channel,
     string Provider,
-    VoiceCallDirection Direction,
     VoiceParticipant Participant,
     VoiceGrant Grant,
     VoiceSessionState State,
     string StartedAtUtc,
     string CorrelationId,
-    string? ExternalRef = null,
     string? EndedAtUtc = null,
     string? EndedReason = null,
-    int ToolCallsUsed = 0,
-    OutboundCallIntent? Intent = null)
+    int ToolCallsUsed = 0)
 {
     public bool IsLive => State is VoiceSessionState.Pending
         or VoiceSessionState.Connecting or VoiceSessionState.Active;

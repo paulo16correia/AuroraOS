@@ -61,7 +61,13 @@ to the plugin protocol.
 ```
 Aurora:Voice:Enabled                 false
 Aurora:Voice:MaxConcurrentSessions   2
+Aurora:Voice:MaxSessionDuration      00:15:00
 ```
+
+A grant asking for longer than `MaxSessionDuration` is refused rather than quietly shortened: a
+session that ends before its grant says it may is one whose authority cannot be read off the record
+afterwards. Concurrency is counted across every channel, not per channel, because what it protects
+is this machine.
 
 `Enabled` is false on a fresh install, and a session is refused with `not_enabled` until somebody
 sets it. That is separate from the operator's stop switch: stopped is something that was running
@@ -254,12 +260,5 @@ are questions for a machine with the models on it.
 - **The microphone has never been opened from inside the sandbox**, and nothing on Aurora's side is
   wired to a device: `ListenAsync` carries audio in and `PumpAsync` carries it back out, both tested
   through the real host, with nothing at either end.
-- **`Aurora:Voice:MaxCallDuration` is documented as a ceiling and enforces nothing.** It did not
-  before the telephone was removed either.
-- **Leftovers of the telephone.** `Aurora:Voice:OutboundEnabled` and
-  `Aurora:Voice:AllowedDestinations` are still bound from configuration and read by nothing
-  reachable; `VoiceAuthorization` still has an outbound branch nothing calls; `voice_session` still
-  has its `direction`, `external_ref` and `intent_json` columns. Removing them reaches the database
-  and is a separate job.
 - Discord voice is not yet on the shared session model.
 - Audio quality, latency and PT-PT recognition are entirely unmeasured.

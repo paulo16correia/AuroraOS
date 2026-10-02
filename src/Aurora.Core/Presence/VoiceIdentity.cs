@@ -96,12 +96,10 @@ public static class VoiceIdentity
 
         // ---- what this channel is ----
 
+        // Always the other person. Aurora placing a call was the only way round it could be, and
+        // there is no telephone to place one on.
         text.AppendLine().Append("This is a ").Append(session.Channel.ToString().ToLowerInvariant())
-            .Append(" conversation, ")
-            .Append(session.Direction == VoiceCallDirection.Inbound
-                ? "which the other person started."
-                : "which you started, for the reason below.")
-            .AppendLine();
+            .AppendLine(" conversation, which the other person started.");
 
         if (session.Grant.DisclosureRequired && !string.IsNullOrWhiteSpace(profile.DisclosureText))
         {
@@ -109,22 +107,6 @@ public static class VoiceIdentity
             // what turns a disclosure into a tic. RFC 07 rule 2.
             text.Append("Early in this conversation, once and briefly, say: ")
                 .AppendLine(profile.DisclosureText);
-        }
-
-        if (session.Intent is { } intent)
-        {
-            text.AppendLine().AppendLine("Why you called:");
-            text.Append("- purpose: ").AppendLine(intent.Purpose);
-            text.Append("- what would count as done: ").AppendLine(intent.Objective);
-
-            foreach (var constraint in intent.Constraints)
-            {
-                text.Append("- ").AppendLine(constraint);
-            }
-
-            text.AppendLine(
-                "Stay inside that. If the conversation moves somewhere else, say you cannot help "
-                + "with it on this call rather than following it.");
         }
 
         // ---- the rules of the arrangement, which are not personality ----

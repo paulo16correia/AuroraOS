@@ -17,15 +17,6 @@ public interface IVoiceSessionStore
 
     Task<VoiceSession?> FindAsync(string sessionId, CancellationToken ct);
 
-    /// <summary>
-    /// Finds a session by the provider's own identifier.
-    /// </summary>
-    /// <remarks>
-    /// The reason duplicate provider events do not create duplicate sessions: a provider that
-    /// delivers the same call-started webhook twice resolves to the same session both times.
-    /// </remarks>
-    Task<VoiceSession?> FindByExternalAsync(string provider, string externalRef, CancellationToken ct);
-
     Task<VoiceSession> AdvanceAsync(
         string sessionId, VoiceSessionState state, string? reason, CancellationToken ct);
 
@@ -72,22 +63,17 @@ public interface IVoicePolicy
 /// the same switch as <paramref name="Stopped"/>: that one is an operator stopping something that
 /// was running, this one is an installation nobody has decided about yet.
 /// </param>
-/// <param name="OutboundEnabled">
-/// Whether Aurora may place calls. Separate from having a number, and off by default: a number
-/// existing is not a decision to ring people with it.
-/// </param>
-/// <param name="AllowedDestinations">
-/// Whole E.164 numbers or country prefixes such as <c>+351</c>. Empty allows nothing.
-/// </param>
 /// <param name="MaxConcurrentSessions">Across every channel, not per channel.</param>
-/// <param name="MaxCallDuration">The ceiling any one session's grant may ask for.</param>
+/// <param name="MaxSessionDuration">
+/// The ceiling any one session's grant may ask for. A grant asking for longer is refused rather
+/// than quietly shortened, because a session that ends earlier than its grant says is a session
+/// whose authority nobody can read off the record afterwards.
+/// </param>
 public sealed record VoiceSettings(
     bool Stopped,
     bool Enabled,
-    bool OutboundEnabled,
-    IReadOnlyList<string> AllowedDestinations,
     int MaxConcurrentSessions,
-    TimeSpan MaxCallDuration)
+    TimeSpan MaxSessionDuration)
 {
     /// <summary>What an installation does before anybody configures it: nothing.</summary>
     /// <remarks>
@@ -98,10 +84,8 @@ public sealed record VoiceSettings(
     public static VoiceSettings Default { get; } = new(
         Stopped: false,
         Enabled: false,
-        OutboundEnabled: false,
-        AllowedDestinations: [],
         MaxConcurrentSessions: 2,
-        MaxCallDuration: TimeSpan.FromMinutes(15));
+        MaxSessionDuration: TimeSpan.FromMinutes(15));
 }
 
 /// <summary>
