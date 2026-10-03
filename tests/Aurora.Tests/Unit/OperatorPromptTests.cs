@@ -37,10 +37,54 @@ public sealed class OperatorPromptTests
     }
 
     [Fact]
-    public void APromptIsAvailableOnThisMachine()
+    public void APromptIsAvailableWhereverTheMachineHasOne()
     {
-        // Every platform this runs on has one: osascript, zenity/kdialog, or PowerShell. If this
-        // is ever false, approvals fall back to a console that a headless deployment does not have.
-        Assert.True(new NativeDialog().IsAvailable);
+        // macOS always has osascript and Windows always has PowerShell. A Linux machine has a
+        // prompt only with a desktop — zenity or kdialog — and a headless one has neither, which is
+        // a real deployment rather than a broken one: the passphrase is then supplied with the
+        // call, or the decision made in the panel.
+        var expected = OperatingSystem.IsMacOS() || OperatingSystem.IsWindows()
+            || OnPath("zenity") || OnPath("kdialog");
+
+        Assert.Equal(expected, new NativeDialog().IsAvailable);
     }
+
+    [Theory]
+    [InlineData("/usr/bin/zenity")]
+    [InlineData("/usr/bin/kdialog")]
+    [InlineData("/usr/bin/osascript")]
+    public void ThePassphrasePromptSaysWhatIsBeingDecided(string tool)
+    {
+        // The person reads which request it is, and whether typing the secret approves or rejects
+        // it, on every desktop. zenity's --password takes no text, which is why it is not used.
+        (_, IReadOnlyList<string> args) = new NativeDialog(tool)
+            .Command("Aurora — approval", "Reject request 42? Enter the operator passphrase.", secret: true);
+
+        Assert.Contains("Reject request 42? Enter the operator passphrase.", args);
+    }
+
+    [Fact]
+    public void TheWindowsPromptMasksASecretAndCarriesNoTextOfItsOwn()
+    {
+        const string question = "Approve request 42? Enter the operator passphrase.";
+        var dialog = new NativeDialog("powershell.exe");
+
+        (_, IReadOnlyList<string> secret) = dialog.Command("Aurora — approval", question, secret: true);
+        (_, IReadOnlyList<string> plain) = dialog.Command("Aurora — approval", question, secret: false);
+
+        // A secret is masked as it is typed; an ordinary answer is not.
+        Assert.Contains("UseSystemPasswordChar = $true", secret[^1], StringComparison.Ordinal);
+        Assert.Contains("UseSystemPasswordChar = $false", plain[^1], StringComparison.Ordinal);
+
+        // Forms need a single-threaded apartment, and the question reaches the window through the
+        // environment rather than through the script, where text could end it.
+        Assert.Contains("-STA", secret);
+        Assert.DoesNotContain(question, secret[^1], StringComparison.Ordinal);
+        Assert.Contains("$env:AURORA_Q", secret[^1], StringComparison.Ordinal);
+    }
+
+    private static bool OnPath(string tool) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(directory => File.Exists(Path.Combine(directory, tool)));
 }

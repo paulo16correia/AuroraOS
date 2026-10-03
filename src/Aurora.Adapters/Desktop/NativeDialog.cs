@@ -24,10 +24,16 @@ public sealed class NativeDialog : IOperatorPrompt
     private readonly string? _tool;
 
     public NativeDialog()
-    {
-        _tool = OperatingSystem.IsMacOS() ? Which("osascript")
+        : this(OperatingSystem.IsMacOS() ? Which("osascript")
             : OperatingSystem.IsWindows() ? Which("powershell") ?? Which("pwsh")
-            : Which("zenity") ?? Which("kdialog");
+            : Which("zenity") ?? Which("kdialog"))
+    {
+    }
+
+    /// <summary>A dialog driven through a named tool, so what it is asked to show can be checked.</summary>
+    internal NativeDialog(string? tool)
+    {
+        _tool = tool;
     }
 
     public bool IsAvailable => _tool is not null;
@@ -49,6 +55,7 @@ public sealed class NativeDialog : IOperatorPrompt
             FileName = file,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -145,7 +152,7 @@ public sealed class NativeDialog : IOperatorPrompt
             ["AURORA_Q"] = question,
         };
 
-    private (string File, IReadOnlyList<string> Args) Command(string title, string question, bool secret)
+    internal (string File, IReadOnlyList<string> Args) Command(string title, string question, bool secret)
     {
         var name = Path.GetFileName(_tool!);
 
@@ -165,11 +172,14 @@ public sealed class NativeDialog : IOperatorPrompt
                 ]
             ),
 
+            // --entry with --hide-text rather than --password, which takes no --text: the person
+            // reads which request it is, and whether it approves or rejects it, before typing a
+            // secret.
             "zenity" =>
             (
                 _tool!,
                 secret
-                    ? ["--password", "--title", title, "--timeout", "120"]
+                    ? ["--entry", "--hide-text", "--title", title, "--text", question, "--timeout", "120"]
                     : ["--entry", "--title", title, "--text", question, "--timeout", "120"]
             ),
 
@@ -179,13 +189,61 @@ public sealed class NativeDialog : IOperatorPrompt
             (
                 _tool!,
                 [
-                    "-NoProfile", "-NonInteractive", "-Command",
-                    "Add-Type -AssemblyName Microsoft.VisualBasic;"
-                    + "[Microsoft.VisualBasic.Interaction]::InputBox($env:AURORA_Q,$env:AURORA_T)",
+                    "-NoProfile", "-NonInteractive", "-STA", "-Command",
+                    WindowsPrompt.Replace("$SECRET", secret ? "$true" : "$false", StringComparison.Ordinal),
                 ]
             ),
         };
     }
+
+    /// <summary>
+    /// The Windows prompt: a small form whose field is masked when what is typed is a secret.
+    /// </summary>
+    /// <remarks>
+    /// A form rather than <c>Microsoft.VisualBasic.Interaction.InputBox</c>, which has no masked
+    /// mode. The question and the title are read from the environment rather than written into
+    /// the script, for the reason
+    /// <see cref="Variables"/> gives; the one value substituted is a boolean this class chose.
+    /// Cancel or closing the window exits non-zero, which the caller reads as a refusal. Output is
+    /// UTF-8 without a byte-order mark, so a passphrase outside ASCII arrives as it was typed.
+    /// </remarks>
+    internal const string WindowsPrompt =
+        """
+        $ErrorActionPreference = 'Stop'
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        [System.Windows.Forms.Application]::EnableVisualStyles()
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = $env:AURORA_T
+        $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+        $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+        $form.MinimizeBox = $false
+        $form.MaximizeBox = $false
+        $form.TopMost = $true
+        $form.ClientSize = New-Object System.Drawing.Size(420, 150)
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = $env:AURORA_Q
+        $label.SetBounds(12, 12, 396, 48)
+        $box = New-Object System.Windows.Forms.TextBox
+        $box.UseSystemPasswordChar = $SECRET
+        $box.SetBounds(12, 68, 396, 24)
+        $ok = New-Object System.Windows.Forms.Button
+        $ok.Text = 'OK'
+        $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $ok.SetBounds(252, 108, 75, 28)
+        $cancel = New-Object System.Windows.Forms.Button
+        $cancel.Text = 'Cancel'
+        $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $cancel.SetBounds(333, 108, 75, 28)
+        $form.AcceptButton = $ok
+        $form.CancelButton = $cancel
+        $form.Controls.AddRange(@($label, $box, $ok, $cancel))
+        $form.Add_Shown({ $form.Activate(); [void]$box.Focus() })
+        if ($form.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { exit 1 }
+        [Console]::Out.Write($box.Text)
+        exit 0
+        """;
 
     private (string File, IReadOnlyList<string> Args) Notification(string title, string message)
     {
