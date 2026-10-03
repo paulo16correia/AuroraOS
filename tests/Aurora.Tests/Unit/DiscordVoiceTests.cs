@@ -56,7 +56,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // Hand-written cryptography deserves suspicion, so it is checked against vectors copied
         // from the specification rather than produced by the code. That is the only kind of test
         // that tells a correct implementation from a self-consistent wrong one.
-        RunPython("test_crypto", 9);
+        RunPython("test_crypto", 10);
     }
 
     [Fact]

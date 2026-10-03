@@ -206,12 +206,22 @@ def _xchacha_parts(key, nonce24):
 # ---------------------------------------------------------------------------
 
 
+def _check(key, nonce24):
+    """Refuses a key or nonce of the wrong shape before it reaches native code.
+
+    libsodium reads exactly 32 and 24 bytes from whatever pointer it is handed, so the shape is
+    checked here, where a wrong one is an ordinary error that costs one packet — the same answer
+    the pure-Python path gives — and never a read through a pointer that is not a key.
+    """
+    if not isinstance(key, (bytes, bytearray)) or len(key) != KEY_BYTES:
+        raise ValueError("the key must be 32 bytes")
+    if not isinstance(nonce24, (bytes, bytearray)) or len(nonce24) != NONCE_BYTES:
+        raise ValueError("the nonce must be 24 bytes")
+
+
 def encrypt(key, nonce24, plaintext, aad=b""):
     """Encrypts and authenticates. Returns ciphertext with the tag appended."""
-    if len(key) != KEY_BYTES:
-        raise ValueError("the key must be 32 bytes")
-    if len(nonce24) != NONCE_BYTES:
-        raise ValueError("the nonce must be 24 bytes")
+    _check(key, nonce24)
 
     if _SODIUM is not None:
         out = ctypes.create_string_buffer(len(plaintext) + TAG_BYTES)
@@ -234,6 +244,8 @@ def encrypt(key, nonce24, plaintext, aad=b""):
 
 def decrypt(key, nonce24, ciphertext, aad=b""):
     """Verifies and decrypts. Raises ValueError when the tag does not match."""
+    _check(key, nonce24)
+
     if len(ciphertext) < TAG_BYTES:
         raise ValueError("too short to carry a tag")
 
