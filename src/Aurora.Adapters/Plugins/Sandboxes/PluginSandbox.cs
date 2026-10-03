@@ -41,11 +41,10 @@ public static class PluginSandbox
             // An AppContainer, which is a property of the token the process is created with rather
             // than of its command line — so the seam starts the process there (docs/adr/0072).
             //
-            // It has never run. Written on a Mac, and no line of its interop has met a Windows
-            // kernel, which is why it verifies the child's token before letting it execute an
-            // instruction: if any of it is wrong, the first machine to try it terminates the child
-            // and refuses, rather than reporting a confinement it did not achieve. That is what
-            // makes returning it here honest, and it is not the same as saying it works.
+            // It verifies the child's token before letting it execute an instruction: if anything
+            // about the confinement is wrong, the child is terminated and the plugin refused,
+            // rather than reported as confined. Run on Windows against a hostile plugin since
+            // docs/adr/0078.
             return new Windows.WindowsAppContainerSandbox();
         }
 

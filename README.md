@@ -14,8 +14,8 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-1f6feb.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-1211%20C%23%20%2B%20134%20Python-2ea043.svg)](tests/)
-[![ADRs](https://img.shields.io/badge/ADRs-85-8957e5.svg)](docs/adr/)
+[![Tests](https://img.shields.io/badge/tests-1344%20C%23%20%2B%20357%20Python-2ea043.svg)](tests/)
+[![ADRs](https://img.shields.io/badge/ADRs-87-8957e5.svg)](docs/adr/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7681.svg)](#supported-platforms)
 [![Status](https://img.shields.io/badge/status-controlled%20demo-d29922.svg)](#project-status)
 
@@ -155,7 +155,7 @@ permission you did not grant does not get the capability. Both refusals are reco
 | [`src/Aurora.Adapters`](src/Aurora.Adapters) | SQLite persistence, plugin hosting and sandboxes, personality, presence, vault, diagnostics. |
 | [`src/Aurora.Server`](src/Aurora.Server) | The process you run: MCP surface, console, `doctor`, secret entry. |
 | [`plugins/`](plugins) | Confined subprocesses. Zero third-party dependencies by design — the Discord plugin writes its own WebSocket, its own RTP, and its own AEAD rather than require a `pip install` before it has been granted a network. |
-| [`docs/`](docs) | 200 documents, of which 85 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
+| [`docs/`](docs) | 202 documents, of which 87 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
 
 ---
 
@@ -166,9 +166,10 @@ permission you did not grant does not get the capability. Both refusals are reco
 | | |
 |---|---|
 | ✅ Kernel authority path, end to end, with audit | Implemented and tested |
+| ✅ Approvals decided by a person | The control panel lists each pending request with exactly what it would run; `aurora_approve` decides only with the operator passphrase ([ADR 0088](docs/adr/0088-the-agent-does-not-decide-for-itself.md)) |
 | ✅ Windows AppContainer plugin confinement | **Verified on real hardware**, not assumed ([ADR 0078](docs/adr/)) |
 | ✅ Owner-only secret protection, fail-closed | Refuses to start rather than store a secret it cannot protect |
-| ✅ Discord voice: join, listen, speak, barge-in | Working, including DAVE end-to-end encryption |
+| ✅ Discord voice: join, listen, speak, barge-in | Working against real Discord on macOS, including DAVE end-to-end encryption. Not yet run against the real service on Windows or Linux |
 | ✅ Speech synthesis | ElevenLabs, streamed. The one thing Aurora does that leaves the machine, and it says so |
 | ✅ Language | English by default, the owner's language by preference. Nothing hardcodes a locale |
 | ❌ Installer, packaging, releases | Not started |
@@ -184,11 +185,12 @@ architecture to read, `docs/` is unusually complete.
 | Platform | Runtime | Plugin confinement |
 |---|---|---|
 | **Windows** 10/11 | ✅ | ✅ AppContainer, verified |
-| **Linux** | ✅ | ⚠️ Sandbox not implemented — plugins run unconfined |
-| **macOS** | ✅ | ⚠️ `sandbox-exec` profile exists, unverified |
+| **Linux** | ✅ | ✅ bubblewrap, verified; refused without it |
+| **macOS** | ✅ | ✅ `sandbox-exec`, verified |
 
 Confinement is the reason for the distinction, and it fails closed: where Aurora cannot confine a
-plugin, it says so rather than running it as if it could.
+plugin, it refuses to run it unless the owner explicitly accepts running unconfined. The detail, and
+exactly what has been run where, is in [platform support](docs/reference/platform-support.md).
 
 ---
 

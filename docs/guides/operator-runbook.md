@@ -80,7 +80,7 @@ dotnet run --project src/Aurora.Server -c Release
 ### There is no `aurora` on your PATH
 
 Every operator command in these guides is the same program with a verb — `secret`, `plugin`,
-`doctor`, `ops`, `passphrase` — reached the same way:
+`doctor`, `backup`, `health`, `enroll-passphrase` — reached the same way:
 
 ```bash
 dotnet run --project src/Aurora.Server -- <verb> …

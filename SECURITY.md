@@ -41,9 +41,11 @@ accepted. The short version:
 
 **Known, accepted, already written down** — please do not report these as new:
 
-- **Linux has no sandbox implementation.** Plugins run unconfined there. Aurora reports this rather
-  than pretending otherwise.
-- **macOS confinement is unverified.** A `sandbox-exec` profile exists and nobody has proved it.
+- **The trust boundary is the OS user.** Aurora protects what it holds from anything with less
+  access than Aurora itself. An MCP client that also has a shell as the same OS user can read what
+  that user can read; approvals govern what the agent's *tool* may decide (docs/adr/0088), not what
+  the owner's own account may do. See
+  [the audit and vault threat model](docs/reference/audit-and-vault-threat-model.md).
 - **Hard links inside a plugin's own working directory.** Analysed and accepted: planting one needs
   owner privilege on both ends.
 - **Speech synthesis leaves the machine.** The sentence Aurora is about to say is sent to a hosted
