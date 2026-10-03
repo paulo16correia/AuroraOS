@@ -8,7 +8,7 @@ and how much of it has actually been run.
 | Kernel, Mind, memory, planning, cognition | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | MCP surface and control panel | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Plugin execution | **VERIFIED** | **VERIFIED** | **VERIFIED** |
-| Plugin confinement | **VERIFIED** — `sandbox-exec` | **UNVERIFIED** — bubblewrap | **VERIFIED** — AppContainer |
+| Plugin confinement | **VERIFIED** — `sandbox-exec` | **VERIFIED** — bubblewrap | **VERIFIED** — AppContainer |
 | Time zones — canonical IANA ids | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Backup and restore-testing | **VERIFIED** | **VERIFIED** | **VERIFIED** |
 | Owner-only key files | **VERIFIED** — mode bits | **VERIFIED** | **UNVERIFIED** — ACL |
@@ -38,14 +38,24 @@ under it and check that the kernel stops them: a plugin that opens a socket, one
 owner's home, one that writes outside its own directory. All three are refused, and the third still
 writes inside its directory, so the test cannot pass by the plugin failing to start.
 
-**Linux — UNVERIFIED.** bubblewrap, found at `/usr/bin/bwrap` or `/bin/bwrap` and deliberately not
-through `PATH`. The flags are its documented interface and the policy mirrors the macOS one:
-`--unshare-net`, `--unshare-pid`, `--cap-drop ALL`, `--die-with-parent`, the system read-only, one
-writable bind. **Nothing has run it.** Aurora was built on a Mac. `PluginSandboxTests` asserts the
-plan's shape, which is the most that can be checked from here; whether the kernel honours it is
-open until somebody runs the suite on Linux with bubblewrap installed.
+**Linux — VERIFIED (2026-10-03).** bubblewrap, found at `/usr/bin/bwrap` or `/bin/bwrap` and
+deliberately not through `PATH`, with the policy mirroring the macOS one: `--unshare-net`,
+`--unshare-pid`, `--cap-drop ALL`, `--die-with-parent`, the system read-only, one writable bind.
 
-Without bubblewrap, Linux behaves like Windows below.
+The behaviour tests run real programs under it wherever bubblewrap is installed: a plugin listing
+the owner's home is refused; a write outside its own directory does not reach the disk while a write
+inside it does (bubblewrap gives the plugin a private `/tmp`, so the test judges the disk rather than
+the exit status); and without a network grant a plugin cannot reach a listener on loopback — checked
+against an unconfined run of the same plugin, which can. Run on Ubuntu 24.04 with bubblewrap 0.9.0,
+as root and as an unprivileged user.
+
+`--die-with-parent` follows the thread that starts the child rather than the process, so plugins
+are started from one thread that lives as long as Aurora does. With a network grant the plugin
+shares the host's network, as on macOS: the declared hosts are what was agreed and audited, and
+bubblewrap does not filter by host.
+
+Without bubblewrap, Linux refuses to run plugins unless the owner sets
+`Aurora:Plugins:AllowUnconfined`, and the refusal names what running unconfined would give away.
 
 **Windows — VERIFIED (2026-09-07).** An AppContainer, now run on a Windows machine against a real
 hostile plugin through the real `ServicePluginHost` (docs/adr/0078). Getting there took three

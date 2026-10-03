@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Aurora.Core.Abstractions;
 
@@ -21,7 +22,10 @@ public abstract class WrapperSandbox : IPluginSandbox
 {
     public abstract SandboxPlan Plan(SandboxRequest request);
 
-    public Task<SandboxStart> StartAsync(SandboxLaunch launch, CancellationToken ct)
+    public Task<SandboxStart> StartAsync(SandboxLaunch launch, CancellationToken ct) =>
+        LauncherThread.Run(() => Start(launch));
+
+    private static SandboxStart Start(SandboxLaunch launch)
     {
         var start = new ProcessStartInfo
         {
@@ -64,14 +68,65 @@ public abstract class WrapperSandbox : IPluginSandbox
             var process = new Process { StartInfo = start };
             process.Start();
 
-            return Task.FromResult(new SandboxStart(new WrapperProcess(process)));
+            return new SandboxStart(new WrapperProcess(process));
         }
         catch (Exception cannotStart)
             when (cannotStart is System.ComponentModel.Win32Exception or IOException)
         {
-            return Task.FromResult(
-                new SandboxStart(null, $"could not start: {cannotStart.GetType().Name}"));
+            return new SandboxStart(null, $"could not start: {cannotStart.GetType().Name}");
         }
+    }
+}
+
+/// <summary>
+/// The one thread every wrapped plugin is started from, and which lives as long as Aurora does.
+/// </summary>
+/// <remarks>
+/// bubblewrap's <c>--die-with-parent</c> is <c>PR_SET_PDEATHSIG</c>, and Linux sends that signal
+/// when the <i>thread</i> that created the child exits, not when the process does. The thread
+/// pool retires idle threads, so a plugin started from whichever thread ran the call would be
+/// tied to that thread's lifetime. Starting every plugin here ties it to Aurora's instead: the
+/// plugin dies with Aurora, and with nothing less.
+/// </remarks>
+internal static class LauncherThread
+{
+    private static readonly BlockingCollection<Action> Work = new();
+
+    static LauncherThread()
+    {
+        var thread = new Thread(() =>
+        {
+            foreach (Action item in Work.GetConsumingEnumerable())
+            {
+                item();
+            }
+        })
+        {
+            // Background, so it never holds the process open; it ends only when the process does.
+            IsBackground = true,
+            Name = "Aurora plugin launcher",
+        };
+
+        thread.Start();
+    }
+
+    internal static Task<T> Run<T>(Func<T> start)
+    {
+        var started = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Work.Add(() =>
+        {
+            try
+            {
+                started.SetResult(start());
+            }
+            catch (Exception failure)
+            {
+                started.SetException(failure);
+            }
+        });
+
+        return started.Task;
     }
 }
 

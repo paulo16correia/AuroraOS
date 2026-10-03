@@ -567,6 +567,46 @@ public sealed class PluginTests
         }
     }
 
+    [Fact]
+    public async Task APluginOutlivesTheThreadThatStartedIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // bubblewrap's --die-with-parent fires when the *thread* that forked it exits, and the
+        // thread pool retires idle threads. A plugin dies with Aurora, not with whichever thread
+        // happened to start it.
+        var root = TestTemp.Path("plug");
+        var script = Path.Combine(root, "slow.sh");
+        Directory.CreateDirectory(root);
+
+        await File.WriteAllTextAsync(script, "#!/bin/sh\ncat > /dev/null\nsleep 1\necho '{}'\n", Ct);
+        File.SetUnixFileMode(
+            script,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        try
+        {
+            var host = new SubprocessPluginHost(root);
+            PluginManifest manifest = Manifest() with { Executable = script };
+
+            Task<PluginResult>? running = null;
+            var starter = new Thread(() => running = host.InvokeAsync(manifest, Call(), Ct));
+            starter.Start();
+            starter.Join();
+
+            PluginResult result = await running!;
+
+            Assert.True(result.Ok, $"{result.Refusal}: {result.Detail}");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
     private static void TryDelete(string path)
     {
         try
