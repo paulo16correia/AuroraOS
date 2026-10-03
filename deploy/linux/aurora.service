@@ -1,0 +1,36 @@
+# Aurora under its own account. Installed by deploy/linux/install.sh, which fills in @DOTNET@.
+#
+# The point of the separate account: an agent that runs as you — a coding agent with a shell — can
+# read everything you can. Running Aurora as "aurora" puts its keys, database and passphrase
+# verifier out of that reach; you reach Aurora through MCP, the control panel, and aurora-admin.
+
+[Unit]
+Description=Aurora, a governance layer for AI agents
+After=network.target
+
+[Service]
+Type=simple
+User=aurora
+Group=aurora
+EnvironmentFile=/etc/aurora/aurora.env
+ExecStart=@DOTNET@ /opt/aurora/app/Aurora.Server.dll
+WorkingDirectory=/var/lib/aurora
+UMask=0077
+Restart=on-failure
+RestartSec=5
+
+# Aurora writes only its own state, and reads nothing of anybody's home.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/aurora
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# Deliberately not RestrictNamespaces: bubblewrap confines each plugin in namespaces of its own.
+
+[Install]
+WantedBy=multi-user.target
