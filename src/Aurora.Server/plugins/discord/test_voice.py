@@ -61,6 +61,65 @@ class TurnTaking(unittest.TestCase):
         self.assertEqual(kinds(s.tick(3000)), ["utterance_ended"])
         self.assertEqual(kinds(s.tick(4000)), [])
 
+    def test_somebody_who_does_not_pause_is_still_handed_over(self):
+        """A turn has a ceiling, and it is set by what recognition costs rather than by politeness.
+
+        Recognition costs about what the audio costs: measured on this machine with the bundled
+        whisper.cpp and ggml-small, three seconds of speech takes about three seconds and thirty
+        takes about thirty. Without a ceiling, somebody who talks for a minute without a pause is
+        answered a minute after they stop — and the turns behind theirs wait in the same queue, so
+        the lateness compounds instead of recovering.
+        """
+        s = session()
+        ended = []
+
+        # Twelve seconds of continuous speech, with time passing as it arrives — the audio thread
+        # and the turn watcher run side by side, so a test that feeds everything first and only then
+        # looks at the clock is measuring something that never happens.
+        for offset in range(0, 12000, 20):
+            at = 1000 + offset
+            s.audio(1, at)
+            ended += s.tick(at)
+
+        self.assertEqual(kinds(ended), ["utterance_ended"])
+
+        # Handed over at the ceiling, while they were still talking.
+        self.assertLessEqual(ended[0][1]["duration_ms"], 8100)
+        self.assertGreaterEqual(ended[0][1]["duration_ms"], 7900)
+
+    def test_what_they_say_next_becomes_the_next_turn(self):
+        # Cutting mid-sentence costs a word at the seam. Dropping the rest would cost the sentence,
+        # so the speaker is not retired — only this turn of theirs is.
+        s = session()
+        ended = []
+
+        for offset in range(0, 20000, 20):
+            at = 1000 + offset
+            s.audio(1, at)
+            ended += s.tick(at)
+
+        # Twenty seconds of talking without a pause becomes more than one turn rather than one long
+        # one, and none of them is lost.
+        self.assertEqual(kinds(ended), ["utterance_ended"] * 2)
+
+        for turn in ended:
+            self.assertLessEqual(turn[1]["duration_ms"], 8100)
+
+    def test_a_turn_that_pauses_normally_is_unaffected_by_the_ceiling(self):
+        # The ceiling is for the case that would otherwise never end. An ordinary sentence still
+        # ends on silence, at its own length.
+        s = session()
+
+        for offset in range(0, 2000, 20):
+            at = 1000 + offset
+            s.audio(1, at)
+            s.tick(at)
+
+        ended = s.tick(1000 + 2000 + 1000)
+
+        self.assertEqual(kinds(ended), ["utterance_ended"])
+        self.assertLess(ended[0][1]["duration_ms"], 8000)
+
     def test_a_cough_is_not_a_sentence(self):
         s = session()
         s.audio(1, 1000)

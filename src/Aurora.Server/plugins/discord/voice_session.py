@@ -19,6 +19,15 @@ The rules it exists to keep:
 SILENCE_MS = 900
 
 # Audio shorter than this is a cough, a keyboard, or somebody bumping a desk.
+# How long a single turn may run before it is handed over anyway, even mid-sentence.
+#
+# Eight seconds, chosen against what recognition costs rather than against how long people talk:
+# measured on this machine with the bundled whisper.cpp and ggml-small, three seconds of audio takes
+# about three seconds and thirty takes about thirty. Under ten seconds the transcript comes back
+# while the room still remembers the question; past that it does not, and the queue behind it grows
+# faster than it drains.
+MAX_UTTERANCE_MS = 8000
+
 MIN_UTTERANCE_MS = 300
 
 IDLE = "idle"
@@ -30,13 +39,14 @@ class VoiceSession:
     """One presence in one voice channel."""
 
     def __init__(self, guild_id, channel_id, own_user_id, silence_ms=SILENCE_MS,
-                 min_utterance_ms=MIN_UTTERANCE_MS):
+                 min_utterance_ms=MIN_UTTERANCE_MS, max_utterance_ms=MAX_UTTERANCE_MS):
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.own_user_id = own_user_id
 
         self._silence_ms = silence_ms
         self._min_utterance_ms = min_utterance_ms
+        self._max_utterance_ms = max_utterance_ms
 
         self.state = IDLE
 
@@ -135,10 +145,24 @@ class VoiceSession:
         actions = []
 
         for user_id, turn in list(self._talking.items()):
-            if at_ms - turn["last"] < self._silence_ms:
+            quiet = at_ms - turn["last"] >= self._silence_ms
+            long_enough = turn["last"] - turn["started"] >= self._max_utterance_ms
+
+            if not quiet and not long_enough:
                 continue
 
             del self._talking[user_id]
+
+            if not quiet:
+                # Cut while they are still talking, because recognition costs about what the audio
+                # costs: measured here, thirty seconds of speech takes thirty to forty seconds to
+                # transcribe, and the turns behind it wait. Somebody who talks for a minute without
+                # pausing would be answered a minute after they stopped, which is not a conversation
+                # — it is a transcript arriving late.
+                #
+                # The rest of what they say becomes the next turn. Cutting mid-sentence costs a word
+                # at the seam; waiting costs the exchange.
+                self._reported.discard((user_id, turn["started"]))
 
             length = turn["last"] - turn["started"]
 

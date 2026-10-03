@@ -96,7 +96,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // The state machine is Python, so its tests are Python. Run from here so the suite is one
         // place to look: a rule about not talking over people is not less important for being
         // written in another language.
-        RunPython("test_voice", 13);
+        RunPython("test_voice", 16);
     }
 
     [Fact]

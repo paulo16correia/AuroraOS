@@ -577,7 +577,12 @@ def voice_join(state, args, nonce=None):
     # off mid-thought. The owner picks, because which is right depends on how they talk.
     session = VoiceSession(
         args["guild_id"], args["channel_id"], identity,
-        silence_ms=int(_setting("silence_ms", voice_session.SILENCE_MS)))
+        silence_ms=int(_setting("silence_ms", voice_session.SILENCE_MS)),
+
+        # Tunable because the right value depends on the machine: it is set against what recognition
+        # costs here, and a faster one could afford to listen for longer before handing over.
+        max_utterance_ms=int(
+            _setting("max_utterance_ms", voice_session.MAX_UTTERANCE_MS)))
     state["voice"] = session
     state["voice_muted"] = False
     state["voice_listening"] = False
