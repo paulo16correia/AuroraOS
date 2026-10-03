@@ -4,6 +4,7 @@ using Aurora.Adapters.Reasoning;
 
 using Aurora.Adapters.Files;
 using Aurora.Core.Abstractions;
+using Aurora.Core.Contracts;
 
 namespace Aurora.Server;
 
@@ -144,6 +145,36 @@ public sealed class AuroraServerOptions
         Environment.GetEnvironmentVariable(RequireExplicitPathsVariable) == "1";
 
     /// <summary>Refuses a path that was never configured, where falling back would be wrong.</summary>
+    /// <summary>
+    /// The Python Aurora installs beside its data, if it is there.
+    /// </summary>
+    /// <remarks>
+    /// Looked for rather than assumed: a deployment that did not install one, or an owner who
+    /// removed it, should fall through to <c>PATH</c> rather than be told about a file that is not
+    /// there. The layouts differ because the Windows embeddable distribution puts the executable at
+    /// the top and a POSIX build puts it under <c>bin</c>.
+    /// </remarks>
+    private static string? ShippedPython(string dataDirectory)
+    {
+        var runtime = Path.Combine(dataDirectory, "runtime", "python");
+
+        string[] layouts = OperatingSystem.IsWindows()
+            ? ["python.exe", "python3.exe"]
+            : [Path.Combine("bin", "python3"), "python3", Path.Combine("bin", "python")];
+
+        foreach (var relative in layouts)
+        {
+            var candidate = Path.Combine(runtime, relative);
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
     private static void RefuseImplicitPath(string setting)
     {
         if (RequiresExplicitPaths)
@@ -219,15 +250,37 @@ public sealed class AuroraServerOptions
         var allowUnconfinedPlugins =
             config.GetValue<bool?>("Aurora:Plugins:AllowUnconfined") ?? false;
 
-        // Interpreter paths the owner named, e.g. Aurora:Plugins:Interpreters:python3. Absent by
-        // default; when set, they let a script plugin be confined against a per-user interpreter
-        // whose directory an AppContainer can be granted (see PluginInterpreters, doctor).
+        // Interpreter paths the owner named, e.g. Aurora:Plugins:Interpreters:python3. When set, they
+        // let a script plugin be confined against a per-user interpreter whose directory an
+        // AppContainer can be granted (see PluginInterpreters, doctor).
         var interpreters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (IConfigurationSection entry in config.GetSection("Aurora:Plugins:Interpreters").GetChildren())
         {
             if (!string.IsNullOrWhiteSpace(entry.Value))
             {
                 interpreters[entry.Key] = entry.Value;
+            }
+        }
+
+        // Aurora's own Python, when the owner has not named one. It installs an interpreter beside
+        // its data for exactly this reason: an AppContainer reaches one only if Aurora can put the
+        // container's SID on its directory's ACL, which it can do to a per-user directory and often
+        // cannot to C:\Program Files or C:\Python313.
+        //
+        // Preferring it is the fix for the commonest way a plugin refuses to start on Windows.
+        // Resolving python3 from PATH finds whichever install is first, that is usually the
+        // system-wide one, the launch is refused fail-closed, three refusals quarantine the plugin —
+        // and the interpreter that would have worked was sitting beside the database the whole time.
+        //
+        // Not a fallback and not part of the search: if it is there, it is the answer. A name in
+        // configuration still wins, because an owner choosing is the whole point of that setting.
+        if (!interpreters.ContainsKey(PluginRuntimes.Python))
+        {
+            var shipped = ShippedPython(Path.GetDirectoryName(Path.GetFullPath(dbPath))!);
+
+            if (shipped is not null)
+            {
+                interpreters[PluginRuntimes.Python] = shipped;
             }
         }
 
