@@ -58,6 +58,14 @@ public static class ApiIdempotency
                         correlationId, ApiErrorCode.Conflict,
                         "A request with this Idempotency-Key is already running.", retryable: true),
                     statusCode: StatusCodes.Status409Conflict);
+
+            case IdempotencyDisposition.Unknown:
+                return Results.Json(
+                    ApiEnvelopes.Fail(
+                        correlationId, ApiErrorCode.Conflict,
+                        "An earlier request with this Idempotency-Key failed part-way, and whether it "
+                        + "took effect is not known. Check, then send it again under a new key."),
+                    statusCode: StatusCodes.Status409Conflict);
         }
 
         if (!await store.MarkExecutingAsync(principal, idempotencyKey, ct).ConfigureAwait(false))
@@ -74,8 +82,21 @@ public static class ApiIdempotency
         }
         catch
         {
-            // Release rather than settle: a failed attempt should not replay its failure forever.
-            await store.AbandonAsync(principal, idempotencyKey, CancellationToken.None).ConfigureAwait(false);
+            // Settled as UNKNOWN, because the reservation is EXECUTING and the command may have
+            // done part of its work before it threw — the state a restart would reconcile it to,
+            // reached now rather than at the next start. A retry is told so, not "already running".
+            try
+            {
+                await store.CompleteAsync(
+                    principal, idempotencyKey, IdempotencyState.Unknown, "{}", CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort: the failure being rethrown is the one the caller must see, and an
+                // unsettled EXECUTING row is still reconciled to UNKNOWN at the next start.
+            }
+
             throw;
         }
 

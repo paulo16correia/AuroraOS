@@ -265,7 +265,8 @@ public sealed class AuroraKernel
 
             return Unauthorized(isRetryable
                 ? await AbandonedAsync(
-                    principal, actionId, resolution.InputHash, key, reserved, deniedFacts, deniedResponse).ConfigureAwait(false)
+                    principal, actionId, resolution.InputHash, key, reserved,
+                    "requires_approval", deniedFacts, deniedResponse).ConfigureAwait(false)
                 : await TerminalAsync(
                     principal, actionId, resolution.InputHash, "consent_denied", key, reserved, IdempotencyState.Failed,
                     deniedFacts, deniedResponse).ConfigureAwait(false));
@@ -289,7 +290,33 @@ public sealed class AuroraKernel
             string.Join(',', authorization.PolicyIds));
 
         // 8. Claim the reservation for execution. If we no longer own it, fail closed.
-        if (reserved && !await _idempotency.MarkExecutingAsync(principal, key!, ct).ConfigureAwait(false))
+        bool claimed;
+        try
+        {
+            claimed = !reserved
+                || await _idempotency.MarkExecutingAsync(principal, key!, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Nothing has run, and the reservation is still ACCEPTED — a state reconciliation does
+            // not touch — so it is given back here. If the claim did land, the release finds
+            // nothing to release, and EXECUTING is reconciled at the next start as it would be
+            // after a crash.
+            try
+            {
+                await ReleaseAsync(
+                    authorization, "the reservation could not be claimed", CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort: the failure being rethrown below is the one the caller must see.
+            }
+
+            throw;
+        }
+
+        if (!claimed)
         {
             return new ExecuteResponse(ExecuteStatus.InProgress, resolved,
                 Error: new ExecuteError(ErrorCodes.ExecutionInProgress,
@@ -350,9 +377,11 @@ public sealed class AuroraKernel
         ActionResolution resolution = authorization.Resolution;
         ResolvedAction resolved = resolution.Resolved;
 
+        // Recorded as what it was: a permitted action that was then not run, which the audit must
+        // not confuse with one still waiting on a person.
         return await AbandonedAsync(
             resolution.Principal, resolved.ActionId, resolution.InputHash,
-            resolution.IdempotencyKey, authorization.Reserved,
+            resolution.IdempotencyKey, authorization.Reserved, ErrorCodes.NotChosen,
             new AuditFacts(
                 resolution.Risk, resolved.Via, authorization.Consent.Decision,
                 string.Join(',', authorization.PolicyIds), Reason: reason),
@@ -453,10 +482,10 @@ public sealed class AuroraKernel
     /// </summary>
     private async Task<ExecuteResponse> AbandonedAsync(
         Principal principal, string actionId, string inputHash, string? key, bool reserved,
-        AuditFacts facts, ExecuteResponse response)
+        string outcome, AuditFacts facts, ExecuteResponse response)
     {
         var auditRef = await _audit.AppendAsync(
-            Entry(principal, actionId, inputHash, "requires_approval", facts), CancellationToken.None)
+            Entry(principal, actionId, inputHash, outcome, facts), CancellationToken.None)
             .ConfigureAwait(false);
         var stamped = response with { AuditRef = [auditRef] };
 
