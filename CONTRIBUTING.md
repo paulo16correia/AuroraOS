@@ -13,6 +13,12 @@ rule is wrong, not to quietly remove its evidence.
 are written in the past tense because they record something that happened. A pull request that
 changes a boundary without one will be asked for one.
 
+**Fewer documents, kept true.** Before writing a new one, change the one that already covers it: the
+runbook for how to operate Aurora, platform support for what runs where, an ADR's status line for a
+decision a later one changed. A new ADR is for a decision that moves a boundary, not for every
+change. `DocumentationTests` fails the build when a document names a setting, a command, a link or an
+ADR that does not exist.
+
 ---
 
 ## Getting set up

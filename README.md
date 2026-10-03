@@ -156,7 +156,7 @@ permission you did not grant does not get the capability. Both refusals are reco
 | [`src/Aurora.Adapters`](src/Aurora.Adapters) | SQLite persistence, plugin hosting and sandboxes, personality, presence, vault, diagnostics. |
 | [`src/Aurora.Server`](src/Aurora.Server) | The process you run: MCP surface, console, `doctor`, secret entry. |
 | [`plugins/`](plugins) | Confined subprocesses. Zero third-party dependencies by design — the Discord plugin writes its own WebSocket, its own RTP, and its own AEAD rather than require a `pip install` before it has been granted a network. |
-| [`docs/`](docs) | 202 documents, of which 87 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
+| [`docs/`](docs) | 203 documents, of which 87 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
 
 ---
 
