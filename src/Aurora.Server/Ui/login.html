@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aurora — sign in</title>
+  <link rel="stylesheet" href="/ui/app.css">
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <header class="bar">
+    <h1>Aurora</h1>
+  </header>
+
+  <main id="panel" class="signin">
+    <h2>Sign in to the control panel</h2>
+    <p class="lede">
+      Enter the operator passphrase. It is the same secret that approves a request, and the agent
+      never holds it. Five wrong attempts lock both out for a while.
+    </p>
+
+    <form id="signin" class="card">
+      <label class="passphrase" for="passphrase">Operator passphrase
+        <input type="password" id="passphrase" autocomplete="current-password" required>
+      </label>
+      <div class="actions">
+        <button type="submit" class="primary">Sign in</button>
+      </div>
+      <p id="signin-note" class="note" role="status" aria-live="polite"></p>
+    </form>
+
+    <p class="empty">
+      No passphrase enrolled? Run <code>enroll-passphrase</code> on the machine Aurora runs on, or
+      start Aurora with <code>ui</code> and open the link it prints.
+    </p>
+  </main>
+
+  <script src="/ui/login.js"></script>
+</body>
+</html>

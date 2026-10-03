@@ -35,6 +35,12 @@ async function api(path, options = {}) {
     credentials: 'same-origin',
   });
 
+  if (response.status === 401) {
+    // The session ended — signed out elsewhere, expired, or Aurora restarted. Signing in again is
+    // the only way forward, so the panel goes there rather than showing a page it cannot fill.
+    window.location.assign('/ui/login');
+  }
+
   if (response.status === 401 || response.status === 403) {
     const body = await response.json().catch(() => null);
     const error = new Error(body?.errors?.[0]?.message || 'Not permitted.');
