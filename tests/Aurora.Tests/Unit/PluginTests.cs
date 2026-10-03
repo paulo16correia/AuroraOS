@@ -475,7 +475,7 @@ public sealed class PluginTests
     [Fact]
     public async Task ThePluginRunsInItsOwnProcessAndInheritsNothingOfAuroraS()
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !CanConfine)
         {
             // Needs a POSIX shell to write a plugin in three lines. The host is the same code on
             // every platform; this exercises it where the setup is honest.
@@ -526,7 +526,7 @@ public sealed class PluginTests
     [Fact]
     public async Task APluginThatHangsIsKilledRatherThanWaitedOn()
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !CanConfine)
         {
             return;
         }
@@ -566,6 +566,59 @@ public sealed class PluginTests
             TryDelete(root);
         }
     }
+
+    [Fact]
+    public async Task APluginOutlivesTheThreadThatStartedIt()
+    {
+        if (OperatingSystem.IsWindows() || !CanConfine)
+        {
+            return;
+        }
+
+        // bubblewrap's --die-with-parent fires when the *thread* that forked it exits, and the
+        // thread pool retires idle threads. A plugin dies with Aurora, not with whichever thread
+        // happened to start it.
+        var root = TestTemp.Path("plug");
+        var script = Path.Combine(root, "slow.sh");
+        Directory.CreateDirectory(root);
+
+        await File.WriteAllTextAsync(script, "#!/bin/sh\ncat > /dev/null\nsleep 1\necho '{}'\n", Ct);
+        File.SetUnixFileMode(
+            script,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+        try
+        {
+            var host = new SubprocessPluginHost(root);
+            PluginManifest manifest = Manifest() with { Executable = script };
+
+            Task<PluginResult>? running = null;
+            var starter = new Thread(() => running = host.InvokeAsync(manifest, Call(), Ct));
+            starter.Start();
+            starter.Join();
+
+            PluginResult result = await running!;
+
+            Assert.True(result.Ok, $"{result.Refusal}: {result.Detail}");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    /// <summary>
+    /// Whether this machine can confine a plugin at all.
+    /// </summary>
+    /// <remarks>
+    /// Where it cannot — Linux without bubblewrap — the host refuses every plugin by design, so a
+    /// test about what a running plugin does has nothing to run. That refusal is covered on its own
+    /// by PluginSandboxTests; <c>doctor</c> tells the owner which case a machine is in.
+    /// </remarks>
+    private static bool CanConfine =>
+        Aurora.Adapters.Plugins.Sandboxes.PluginSandbox.ForThisMachine()
+            .Plan(new SandboxRequest("plugin/probe", "/bin/true", Path.GetTempPath()))
+            .Level != SandboxLevel.Process;
 
     private static void TryDelete(string path)
     {

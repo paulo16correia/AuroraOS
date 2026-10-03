@@ -169,9 +169,7 @@ public sealed class CoreEndToEndTests : IClassFixture<AuroraAppFactory>
         JsonElement denied = await CallAsync(client, "aurora_execute", first);
         var approvalId = denied.GetProperty("consent").GetProperty("approval_id").GetString();
 
-        await CallAsync(
-            client, "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" });
+        await _factory.DecideAsOperatorAsync(approvalId, "approved");
 
         Assert.Equal("completed", (await CallAsync(client, "aurora_execute", first))
             .GetProperty("status").GetString());
@@ -285,13 +283,8 @@ public sealed class CoreEndToEndTests : IClassFixture<AuroraAppFactory>
         // Approve it, so what follows is the capability failing rather than policy refusing.
         JsonElement denied = await CallAsync(client, "aurora_execute", read);
 
-        await CallAsync(
-            client, "aurora_approve",
-            new Dictionary<string, object?>
-            {
-                ["approval_id"] = denied.GetProperty("consent").GetProperty("approval_id").GetString(),
-                ["decision"] = "approved",
-            });
+        await _factory.DecideAsOperatorAsync(
+            denied.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
 
         JsonElement failed = await CallAsync(client, "aurora_execute", read);
 

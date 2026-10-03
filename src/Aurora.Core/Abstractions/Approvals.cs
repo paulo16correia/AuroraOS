@@ -16,6 +16,17 @@ public interface IApprovalStore
     /// </summary>
     Task<ApprovalEvaluation> EvaluateAsync(Principal principal, string actionId, string scopeHash, CancellationToken ct);
 
+    /// <summary>
+    /// As <see cref="EvaluateAsync(Principal, string, string, CancellationToken)"/>, keeping the
+    /// input the action would run with on a pending record, so the person deciding can read it.
+    /// </summary>
+    Task<ApprovalEvaluation> EvaluateAsync(
+        Principal principal, string actionId, string scopeHash, string? requestJson, CancellationToken ct) =>
+        EvaluateAsync(principal, actionId, scopeHash, ct);
+
+    /// <summary>Approvals awaiting a person and not yet expired, oldest first.</summary>
+    Task<IReadOnlyList<PendingApproval>> ListPendingAsync(CancellationToken ct);
+
     /// <summary>Applies a human decision to a live PENDING approval owned by <paramref name="principal"/>.</summary>
     Task<ApprovalDecideResult> DecideAsync(Principal principal, string approvalId, bool approve, CancellationToken ct);
 

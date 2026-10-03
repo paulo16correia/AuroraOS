@@ -13,10 +13,11 @@ namespace Aurora.Adapters.Plugins.Sandboxes;
 /// <see cref="PluginSandbox.ForThisMachine"/> returns <see cref="UnconfinedSandbox"/> naming it,
 /// and the owner can install it or accept running unconfined. Aurora does not pretend either way.
 /// <para>
-/// <b>This has not been run.</b> The machine Aurora was built on is a Mac; the flags below are
-/// bubblewrap's documented interface and the profile mirrors <see cref="MacOsSandbox"/> exactly,
-/// but the first person to run a plugin on Linux is running this code for the first time. That is
-/// stated here rather than left for them to find out.
+/// The behaviour tests run under it wherever bubblewrap is installed: a plugin cannot read the
+/// owner's home, its writes outside its own directory do not land, and without a network grant it
+/// cannot reach a listener on loopback. <c>--die-with-parent</c> follows the thread that starts the
+/// child, which is why plugins are started from <see cref="LauncherThread"/>
+/// (docs/reference/platform-support.md).
 /// </para>
 /// </remarks>
 public sealed class LinuxSandbox : WrapperSandbox

@@ -147,6 +147,18 @@ class Behaviour(unittest.TestCase):
         with self.assertRaises(ValueError):
             crypto.decrypt(key, bytes(range(1, 25)), sealed, b"rtp")
 
+    def test_a_missing_key_is_refused_rather_than_handed_to_native_code(self):
+        # libsodium reads through whatever pointer it is given. Whichever path is in use, a missing
+        # or short key must be an ordinary refusal, never handed to native code.
+        sealed = crypto.encrypt(crypto.random_key(), bytes(range(24)), b"audio", b"rtp")
+
+        for key in (None, b"", bytes(31)):
+            with self.assertRaises(ValueError):
+                crypto.decrypt(key, bytes(range(24)), sealed, b"rtp")
+
+        with self.assertRaises(ValueError):
+            crypto.decrypt(crypto.random_key(), None, sealed, b"rtp")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

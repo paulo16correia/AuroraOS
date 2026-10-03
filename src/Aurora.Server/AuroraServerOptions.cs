@@ -15,6 +15,13 @@ public sealed class AuroraServerOptions
 {
     public required string BearerToken { get; init; }
 
+    /// <summary>
+    /// Whether <see cref="BearerToken"/> was generated for this run rather than configured, so
+    /// the server prints it once when it starts serving — and a console verb, which never serves,
+    /// does not print a credential into output somebody may paste.
+    /// </summary>
+    public bool BearerTokenGenerated { get; init; }
+
     public int Port { get; init; } = 5099;
 
     public required string DbPath { get; init; }
@@ -255,6 +262,7 @@ public sealed class AuroraServerOptions
         {
             Voice = voice,
             BearerToken = token,
+            BearerTokenGenerated = generated,
             Port = port,
             DbPath = dbPath,
             SandboxRoot = sandboxRoot,
@@ -272,11 +280,6 @@ public sealed class AuroraServerOptions
             AuditKeyPath = auditKeyPath,
             AuditAnchorPath = auditAnchorPath,
         };
-        if (generated)
-        {
-            Console.WriteLine($"[Aurora] No bearer token configured; generated one for this run: {token}");
-        }
-
         return options;
     }
 }

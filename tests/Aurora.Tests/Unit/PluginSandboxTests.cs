@@ -28,12 +28,15 @@ public sealed class PluginSandboxTests
     /// True where a plugin can be written in three lines of shell and the OS can confine it.
     /// </summary>
     /// <remarks>
-    /// macOS only, deliberately. Linux confinement needs bubblewrap, which is not installed
-    /// everywhere; asserting that the kernel blocked a connection when the sandbox silently was
-    /// not applied is exactly the false pass this file exists to avoid. See ADR 0052 for what has
-    /// and has not been run.
+    /// macOS with <c>sandbox-exec</c>, and Linux where bubblewrap is installed — found the same way
+    /// the sandbox finds it, so these never assert a denial on a machine that would have refused
+    /// to run the plugin at all. A Linux machine without bubblewrap skips them rather than passing
+    /// them: asserting that the kernel blocked a connection when the sandbox silently was not
+    /// applied is exactly the false pass this file exists to avoid.
     /// </remarks>
-    private static bool Confinable => OperatingSystem.IsMacOS() && File.Exists("/usr/bin/sandbox-exec");
+    private static bool Confinable =>
+        (OperatingSystem.IsMacOS() && File.Exists("/usr/bin/sandbox-exec"))
+        || (OperatingSystem.IsLinux() && LinuxSandbox.Find() is not null);
 
     private static PluginManifest Manifest(string executable) => new(
         "plugin/probe", "1.0.0", "acme", "", MinPlatformVersion: 1,
@@ -90,7 +93,9 @@ public sealed class PluginSandboxTests
     [Fact]
     public async Task APluginCannotOpenANetworkConnection()
     {
-        if (!Confinable)
+        // Without nc the probe below cannot connect whatever the sandbox does, and would report a
+        // denial it did not observe.
+        if (!Confinable || !File.Exists("/usr/bin/nc"))
         {
             return;
         }
@@ -109,6 +114,47 @@ public sealed class PluginSandboxTests
 
             Assert.True(result.Ok, result.Detail);
             Assert.Equal("""{"net":"denied"}""", result.OutputJson);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public async Task APluginCannotReachAuroraOnLoopback()
+    {
+        // Linux only: this is the network namespace bubblewrap gives a plugin without the grant.
+        // Aurora's control plane is on loopback, so loopback is the address that matters most —
+        // and, unlike the internet, it is reachable from any machine the suite runs on, so the
+        // unconfined run below proves the probe can see a connection when there is one.
+        if (!OperatingSystem.IsLinux() || LinuxSandbox.Find() is null || !File.Exists("/usr/bin/nc"))
+        {
+            return;
+        }
+
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+
+        (string root, string script) = await PluginAsync(
+            $"if /usr/bin/nc -z -w 2 127.0.0.1 {port} 2>/dev/null; then printf '{{\"loopback\":\"reached\"}}'; "
+            + "else printf '{\"loopback\":\"refused\"}'; fi");
+
+        try
+        {
+            PluginResult control = await new SubprocessPluginHost(
+                    root, new UnconfinedSandbox("control"), allowUnconfined: true)
+                .InvokeAsync(Manifest(script), Call(), Ct);
+
+            Assert.True(control.Ok, control.Detail);
+            Assert.Equal("""{"loopback":"reached"}""", control.OutputJson);
+
+            PluginResult confined = await new SubprocessPluginHost(root)
+                .InvokeAsync(Manifest(script), Call(), Ct);
+
+            Assert.True(confined.Ok, confined.Detail);
+            Assert.Equal("""{"loopback":"refused"}""", confined.OutputJson);
         }
         finally
         {
@@ -155,9 +201,11 @@ public sealed class PluginSandboxTests
 
         var elsewhere = TestTemp.Path("elsewhere") + ".txt";
 
+        // Judged by what reached the disk rather than by what the plugin was told. bubblewrap gives
+        // the plugin a private /tmp, so a write there succeeds and lands nowhere anybody else can
+        // see — which is confinement, and an exit status would call it an escape.
         (string root, string script) = await PluginAsync(
-            $"echo out > '{elsewhere}' 2>/dev/null && printf '{{\"out\":\"wrote\"}}' || "
-            + "(echo in > ./inside.txt && printf '{\"out\":\"denied\"}')");
+            $"echo out > '{elsewhere}' 2>/dev/null; echo in > ./inside.txt; printf '{{}}'");
 
         try
         {
@@ -165,7 +213,6 @@ public sealed class PluginSandboxTests
             PluginResult result = await host.InvokeAsync(Manifest(script), Call(), Ct);
 
             Assert.True(result.Ok, result.Detail);
-            Assert.Equal("""{"out":"denied"}""", result.OutputJson);
             Assert.False(File.Exists(elsewhere));
 
             // And the one place it may write is its own working directory, not the plugin root
@@ -338,8 +385,8 @@ public sealed class PluginSandboxTests
         }
         else if (OperatingSystem.IsLinux())
         {
-            // UNVERIFIED unless bubblewrap is present. The flags are its documented interface and
-            // the policy mirrors the macOS one, but nothing here has run them (docs/adr/0052).
+            // Confined wherever bubblewrap is present, and then the tests above run real programs
+            // under it; refused rather than run where it is not (docs/adr/0052).
             Assert.Equal(
                 File.Exists("/usr/bin/bwrap") || File.Exists("/bin/bwrap")
                     ? SandboxLevel.Confined
@@ -383,9 +430,9 @@ public sealed class PluginSandboxTests
     [Fact]
     public void TheLinuxPlanIsWhatBubblewrapDocumentsEvenWhereItCannotRun()
     {
-        // Deterministic without bubblewrap installed: the plan is a value, and asserting its shape
-        // is the most that can be checked from a Mac. Whether the kernel honours it is UNVERIFIED
-        // and is marked so in docs/adr/0052 and the platform table.
+        // Deterministic without bubblewrap installed: the plan is a value, and its shape can be
+        // checked anywhere. Whether the kernel honours it is what the behaviour tests above check,
+        // on a Linux machine that has bubblewrap.
         SandboxPlan plan = new LinuxSandbox("/usr/bin/bwrap")
             .Plan(new SandboxRequest("plugin/probe", "/opt/plug/run.py", "/tmp/wd"));
 

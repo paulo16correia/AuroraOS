@@ -184,6 +184,12 @@ public sealed class FakeApprovalStore(int pending = 0) : IApprovalStore
         return Task.FromResult(new ApprovalEvaluation(ApprovalOutcome.Pending, id));
     }
 
+    public Task<IReadOnlyList<PendingApproval>> ListPendingAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<PendingApproval>>(
+            [.. _byId.Values
+                .Where(r => r.Status == ApprovalStatus.Pending)
+                .Select(r => new PendingApproval(r.ApprovalId, r.ActionId, r.CreatedAtUtc, r.ExpiresAtUtc, null))]);
+
     public Task<ApprovalDecideResult> DecideAsync(Principal principal, string approvalId, bool approve, CancellationToken ct)
     {
         if (!_byId.TryGetValue(approvalId, out var record) || record.PrincipalClientId != principal.ClientId)

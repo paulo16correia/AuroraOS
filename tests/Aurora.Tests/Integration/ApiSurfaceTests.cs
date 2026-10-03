@@ -329,6 +329,57 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     }
 
     [Fact]
+    public async Task ThePersonSeesWhatEachPendingRequestWouldDoAndDecidesItInThePanel()
+    {
+        var note = $"panel {Guid.NewGuid():N}";
+        ExecuteResponse denied;
+
+        using (IServiceScope scope = _factory.Services.CreateScope())
+        {
+            var kernel = scope.ServiceProvider.GetRequiredService<Aurora.Core.Kernel.AuroraKernel>();
+            var principal = scope.ServiceProvider.GetRequiredService<IPrincipalAccessor>().Current;
+
+            denied = await kernel.ExecuteAsync(
+                new ExecuteRequest(
+                    ActionId: "memory.remember",
+                    Input: JsonSerializer.SerializeToElement(new { note })),
+                principal, Ct());
+        }
+
+        var approvalId = denied.Consent!.ApprovalId!;
+
+        // The list is the other half of deciding, and is a person's to read.
+        using (HttpClient agent = Client())
+        {
+            Assert.Equal(
+                HttpStatusCode.Forbidden, (await agent.GetAsync("/v1/approvals", Ct())).StatusCode);
+        }
+
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
+
+        JsonElement listed = (await BodyAsync(await http.GetAsync("/v1/approvals", Ct()))).GetProperty("data");
+        JsonElement card = listed.GetProperty("pending").EnumerateArray()
+            .Single(p => p.GetProperty("approval_id").GetString() == approvalId);
+
+        // What would run, to what, with exactly which input — not an id to approve blind.
+        Assert.Equal("memory.remember", card.GetProperty("action_id").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(card.GetProperty("description").GetString()));
+        Assert.Contains(note, card.GetProperty("request").GetString(), StringComparison.Ordinal);
+        Assert.False(listed.GetProperty("passphrase_required").GetBoolean());
+
+        HttpResponseMessage decided = await http.SendAsync(
+            Request(HttpMethod.Post, $"/v1/approvals/{approvalId}/decide", new { decision = "approved" }, Key()),
+            Ct());
+        Assert.Equal(
+            "decided", (await BodyAsync(decided)).GetProperty("data").GetProperty("status").GetString());
+
+        JsonElement after = (await BodyAsync(await http.GetAsync("/v1/approvals", Ct()))).GetProperty("data");
+        Assert.DoesNotContain(
+            after.GetProperty("pending").EnumerateArray(),
+            p => p.GetProperty("approval_id").GetString() == approvalId);
+    }
+
+    [Fact]
     public async Task TheAgentSTokenCannotCorrectOrForgetAMemory()
     {
         MemoryRecord memory = await RememberAsync("the owner prefers tea.");
@@ -675,10 +726,15 @@ public sealed class ApiSurfaceTests : IClassFixture<AuroraAppFactory>
     [Fact]
     public async Task TheAgentReachingForAPersonSDecisionRaisesAnEscalation()
     {
-        var incidents = _factory.Services.GetRequiredService<IIncidentService>();
+        // Its own instance. Escalations are raised once per window, and on the shared fixture
+        // another test may already have opened this one.
+        await using var own = new AuroraAppFactory();
+
+        var incidents = own.Services.GetRequiredService<IIncidentService>();
         var before = (await incidents.OpenIncidentsAsync(Ct())).Count;
 
-        using HttpClient http = Client();
+        using HttpClient http = own.CreateClient();
+        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {own.BearerToken}");
 
         // The agent holds a valid credential and used it on an endpoint that is not its to call.
         // That is not a mistake the way a missing token is: it had to choose this over the tool.

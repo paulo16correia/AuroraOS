@@ -34,6 +34,22 @@ public sealed record ApprovalRecord(
     string ExpiresAtUtc,
     string? DecidedAtUtc);
 
+/// <summary>
+/// An approval still waiting on a person, as the control panel shows it.
+/// </summary>
+/// <remarks>
+/// <paramref name="RequestJson"/> is the input the action would run with. A person cannot agree
+/// to something they cannot see, so it is kept with the approval — and only while the approval is
+/// pending: deciding it, or letting it expire, clears it. Null for an approval recorded before the
+/// input was kept.
+/// </remarks>
+public sealed record PendingApproval(
+    string ApprovalId,
+    string ActionId,
+    string CreatedAtUtc,
+    string ExpiresAtUtc,
+    string? RequestJson);
+
 /// <summary>Outcome of evaluating (principal, action_id, scope_hash) against the approval ledger.</summary>
 public enum ApprovalOutcome
 {

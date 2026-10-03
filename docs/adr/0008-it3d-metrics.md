@@ -2,6 +2,8 @@
 
 **Status:** Implemented · **Date:** 2026-08-23
 **Depends on:** `docs/adr/0005-it3a-audit-hardening.md`, `docs/adr/0007-it3c-reconciliation.md`
+**Partly superseded by `docs/adr/0088`:** `/metrics` needs an operator session rather than the
+bearer token, which is the agent's credential.
 
 ## What is measured
 

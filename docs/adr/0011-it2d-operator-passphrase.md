@@ -2,6 +2,8 @@
 
 **Status:** Implemented · **Date:** 2026-08-23
 **Depends on:** `docs/adr/0002-it2a-persistent-approval.md`, `docs/adr/0010-it2c-consent-sessions.md`
+**Partly superseded by `docs/adr/0088`:** with no passphrase enrolled, `aurora_approve` does not
+decide; the operator panel does.
 
 ## The weakness
 

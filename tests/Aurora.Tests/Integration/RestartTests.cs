@@ -71,13 +71,8 @@ public sealed class RestartTests
 
             JsonElement denied = await CallAsync(client, "aurora_execute", remember);
 
-            await CallAsync(
-                client, "aurora_approve",
-                new Dictionary<string, object?>
-                {
-                    ["approval_id"] = denied.GetProperty("consent").GetProperty("approval_id").GetString(),
-                    ["decision"] = "approved",
-                });
+            await first.DecideAsOperatorAsync(
+                denied.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
 
             JsonElement done = await CallAsync(client, "aurora_execute", remember);
             Assert.Equal("completed", done.GetProperty("status").GetString());

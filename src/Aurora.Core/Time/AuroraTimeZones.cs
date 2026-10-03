@@ -40,6 +40,33 @@ public static class AuroraTimeZones
     private static readonly Lazy<Mapping> Table = new(Mapping.Parse, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
+    /// CLDR's default for a Windows zone where tzdata has since renamed it, old name first.
+    /// </summary>
+    /// <remarks>
+    /// CLDR keeps the oldest spelling of an id as its stable key, so seven Windows zones map onto
+    /// a name tzdata now keeps only as a compatibility link — and distributions have started
+    /// shipping those links separately (Ubuntu 24.04's <c>tzdata-legacy</c>), so on a stock
+    /// machine the name may not resolve at all. The current name is what Aurora writes, so a
+    /// schedule made on Windows in Kolkata reads as <c>Asia/Kolkata</c> everywhere; either name is
+    /// accepted when read, whichever one this machine happens to have.
+    /// </remarks>
+    private static readonly FrozenDictionary<string, string> Renamed =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["America/Buenos_Aires"] = "America/Argentina/Buenos_Aires",
+            ["America/Godthab"] = "America/Nuuk",
+            ["America/Indianapolis"] = "America/Indiana/Indianapolis",
+            ["Asia/Calcutta"] = "Asia/Kolkata",
+            ["Asia/Katmandu"] = "Asia/Kathmandu",
+            ["Asia/Rangoon"] = "Asia/Yangon",
+            ["Europe/Kiev"] = "Europe/Kyiv",
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    /// <summary>The same rename read the other way round, for a machine whose tzdata predates it.</summary>
+    private static readonly FrozenDictionary<string, string> Previously =
+        Renamed.ToFrozenDictionary(pair => pair.Value, pair => pair.Key, StringComparer.Ordinal);
+
+    /// <summary>
     /// This machine's own zone, under Aurora's canonical name.
     /// </summary>
     /// <remarks>
@@ -80,7 +107,7 @@ public static class AuroraTimeZones
 
         if (Table.Value.WindowsToIana.TryGetValue(id, out var iana))
         {
-            return iana;
+            return Renamed.GetValueOrDefault(iana, iana);
         }
 
         // The platform may know a conversion this table does not — a newer zone under an ICU
@@ -109,7 +136,7 @@ public static class AuroraTimeZones
 
         // The platform first: IANA on Unix, Windows ids on Windows, and either on a runtime with
         // ICU. Everything below is for the one case this does not cover.
-        if (Lookup(id) is { } known)
+        if (LookupEitherName(id) is { } known)
         {
             zone = known;
             return true;
@@ -124,7 +151,7 @@ public static class AuroraTimeZones
             return false;
         }
 
-        zone = Lookup(other);
+        zone = LookupEitherName(other);
         return zone is not null;
     }
 
@@ -151,6 +178,16 @@ public static class AuroraTimeZones
         TimeZoneInfo.TryConvertWindowsIdToIanaId(windowsId, out var iana)
             ? iana
             : Table.Value.WindowsToIana.GetValueOrDefault(windowsId);
+
+    /// <summary>
+    /// The zone under this name, or under its other tzdata name: a current name on a machine whose
+    /// tzdata is older than the rename, or an old one on a machine that no longer ships the links.
+    /// </summary>
+    private static TimeZoneInfo? LookupEitherName(string id) =>
+        Lookup(id)
+        ?? ((Renamed.GetValueOrDefault(id) ?? Previously.GetValueOrDefault(id)) is { } renamed
+            ? Lookup(renamed)
+            : null);
 
     private static TimeZoneInfo? Lookup(string id)
     {

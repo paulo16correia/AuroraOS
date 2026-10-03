@@ -22,14 +22,7 @@ mid-conversation would be worse than failing: Aurora has nothing to say without 
 anyway, so a refusal that explains itself is the honest behaviour when speech cannot be made.
 """
 
-import array
-import io
 import os
-import secrets
-import shutil
-import subprocess
-import tempfile
-import wave
 
 from vendor.aurora_voice import speech as _speech
 

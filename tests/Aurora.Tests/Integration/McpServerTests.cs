@@ -342,12 +342,9 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
         Assert.False(string.IsNullOrEmpty(approvalId));
 
-        var approve = JsonDocument.Parse(ToJson(await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
-            cancellationToken: Timeout())));
-        Assert.Equal("decided", approve.RootElement.GetProperty("status").GetString());
-        Assert.Equal("APPROVED", approve.RootElement.GetProperty("approval_state").GetString());
+        JsonElement approve = await _factory.DecideAsOperatorAsync(approvalId, "approved");
+        Assert.Equal("decided", approve.GetProperty("status").GetString());
+        Assert.Equal("APPROVED", approve.GetProperty("approval_state").GetString());
 
         var completed = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
@@ -378,10 +375,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
         var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
 
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "rejected" },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(approvalId, "rejected");
 
         var retried = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
@@ -392,13 +386,48 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
     [Fact]
     public async Task Approve_UnknownApprovalId_ReturnsNotFound()
     {
+        JsonElement result = await _factory.DecideAsOperatorAsync("does-not-exist", "approved");
+
+        Assert.Equal("not_found", result.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task Approve_WithNoPassphraseEnrolled_TheAgentCannotDecideItsOwnRequest()
+    {
+        // The default installation: no passphrase, so the agent's tool cannot tell a person from
+        // the agent, and does not decide (docs/adr/0088).
         await using var client = await ConnectAsync();
-        var result = JsonDocument.Parse(ToJson(await client.CallToolAsync(
+        var args = new Dictionary<string, object?>
+        {
+            ["action_id"] = "memory.remember",
+            ["input"] = new Dictionary<string, object?> { ["note"] = $"self-approved {Guid.NewGuid():N}" },
+        };
+
+        var denied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
+
+        var attempt = JsonDocument.Parse(ToJson(await client.CallToolAsync(
             "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = "does-not-exist", ["decision"] = "approved" },
+            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
             cancellationToken: Timeout())));
 
-        Assert.Equal("not_found", result.RootElement.GetProperty("status").GetString());
+        Assert.Equal("invalid", attempt.RootElement.GetProperty("status").GetString());
+        Assert.Equal(
+            "passphrase_not_enrolled",
+            attempt.RootElement.GetProperty("error").GetProperty("code").GetString());
+
+        var stillDenied = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("denied", stillDenied.RootElement.GetProperty("status").GetString());
+
+        // A person in the panel decides the same request, and then it runs.
+        JsonElement decided = await _factory.DecideAsOperatorAsync(approvalId, "approved");
+        Assert.Equal("decided", decided.GetProperty("status").GetString());
+
+        var completed = JsonDocument.Parse(
+            ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
+        Assert.Equal("completed", completed.RootElement.GetProperty("status").GetString());
     }
 
     [Fact]
@@ -421,11 +450,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         // Nothing may exist on disk until the approval is actually decided.
         Assert.False(File.Exists(Path.Combine(_factory.SandboxRoot, "it2", Path.GetFileName(relative))));
 
-        var approve = JsonDocument.Parse(ToJson(await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
-            cancellationToken: Timeout())));
-        Assert.Equal("decided", approve.RootElement.GetProperty("status").GetString());
+        JsonElement approve = await _factory.DecideAsOperatorAsync(approvalId, "approved");
+        Assert.Equal("decided", approve.GetProperty("status").GetString());
 
         var completed = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
@@ -456,10 +482,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
         var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
 
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(approvalId, "approved");
 
         // Approval authorises the action, never the escape: the sandbox is a separate boundary.
         var failed = JsonDocument.Parse(
@@ -545,8 +568,13 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             },
             cancellationToken: Timeout());
 
-        var http = _factory.CreateClient();
-        http.DefaultRequestHeaders.Add("Authorization", $"Bearer {_factory.BearerToken}");
+        // The agent's token is not enough. These numbers say how often the agent is refused, and
+        // the token is what the agent holds (docs/adr/0008).
+        var agent = _factory.CreateClient();
+        agent.DefaultRequestHeaders.Add("Authorization", $"Bearer {_factory.BearerToken}");
+        Assert.Equal(HttpStatusCode.Forbidden, (await agent.GetAsync("/metrics", Timeout())).StatusCode);
+
+        using HttpClient http = await _factory.CreateOperatorClientAsync();
 
         var response = await http.GetAsync("/metrics", Timeout());
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -583,10 +611,7 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
         Assert.Equal("approval_required", denied.RootElement.GetProperty("error").GetProperty("code").GetString());
         var approvalId = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString();
 
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?> { ["approval_id"] = approvalId, ["decision"] = "approved" },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(approvalId, "approved");
 
         var granted = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", Read(first), cancellationToken: Timeout())));
@@ -619,14 +644,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
 
         var denied = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", readArgs, cancellationToken: Timeout())));
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?>
-            {
-                ["approval_id"] = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(),
-                ["decision"] = "approved",
-            },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(
+            denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
         await client.CallToolAsync("aurora_execute", readArgs, cancellationToken: Timeout());
 
         // A session is live. A write must still be decided on its own.
@@ -669,14 +688,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
 
         var denied = JsonDocument.Parse(
             ToJson(await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout())));
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?>
-            {
-                ["approval_id"] = denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(),
-                ["decision"] = "approved",
-            },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(
+            denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
         await client.CallToolAsync("aurora_execute", args, cancellationToken: Timeout());
 
         var http = _factory.CreateClient();
@@ -788,15 +801,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
             "approval_required",
             denied.RootElement.GetProperty("error").GetProperty("code").GetString());
 
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?>
-            {
-                ["approval_id"] = denied.RootElement.GetProperty("consent")
-                    .GetProperty("approval_id").GetString(),
-                ["decision"] = "approved",
-            },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(
+            denied.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
 
         var planned = JsonDocument.Parse(ToJson(
             await client.CallToolAsync("aurora_execute", Args(dryRun: true), cancellationToken: Timeout())));
@@ -816,15 +822,8 @@ public sealed class McpServerTests : IClassFixture<AuroraAppFactory>
 
         Assert.Equal("denied", second.RootElement.GetProperty("status").GetString());
 
-        await client.CallToolAsync(
-            "aurora_approve",
-            new Dictionary<string, object?>
-            {
-                ["approval_id"] = second.RootElement.GetProperty("consent")
-                    .GetProperty("approval_id").GetString(),
-                ["decision"] = "approved",
-            },
-            cancellationToken: Timeout());
+        await _factory.DecideAsOperatorAsync(
+            second.RootElement.GetProperty("consent").GetProperty("approval_id").GetString(), "approved");
 
         var done = JsonDocument.Parse(ToJson(
             await client.CallToolAsync("aurora_execute", Args(dryRun: false), cancellationToken: Timeout())));

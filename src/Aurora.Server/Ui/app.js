@@ -116,6 +116,21 @@ function fill(id, nodes) {
   host.replaceChildren(...nodes);
 }
 
+/**
+ * A moment as the person reading it would say it, with the exact stored value kept beside it for
+ * anyone who needs to match it against a log.
+ */
+function when(iso) {
+  if (!iso) {
+    return 'not recorded';
+  }
+
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? escapeHtml(iso)
+    : `<time datetime="${escapeHtml(iso)}" title="${escapeHtml(iso)}">${escapeHtml(date.toLocaleString())}</time>`;
+}
+
 function definitions(pairs) {
   const rows = pairs
     .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -266,24 +281,53 @@ function renderMemories(result) {
  * Rule 2: an approval card shows what would happen, to what, what it would disclose and how long
  * it stands — and offers a plain refusal. No ambiguous buttons: the labels say what they do.
  */
-function renderApprovals(status) {
-  const pending = (status.signals || []).filter((s) => s.kind === 'ALERT');
+function renderApprovals(approvals, status) {
+  const pending = approvals.pending || [];
+  const alerts = (status.signals || []).filter((s) => s.kind === 'ALERT');
   const nodes = [];
-
-  nodes.push(card(`
-    <h4>How approvals reach you</h4>
-    <p>Aurora asks whenever an action reaches outside itself. A request appears here, and
-       approving it covers <strong>that request only</strong> — the same action with different
-       input asks again.</p>
-    <p class="empty">Pending requests are listed below when there are any.</p>`));
 
   if (pending.length === 0) {
     nodes.push(empty('Nothing is waiting for your decision.'));
   }
 
-  pending.forEach((signal) => nodes.push(card(`
-    <h4>${escapeHtml(signal.kind)}</h4>
-    <p>${badge('proposed', 'waiting for you')}</p>
+  pending.forEach((approval) => {
+    const effects = approval.effects || [];
+    let request = approval.request;
+
+    try {
+      request = request ? JSON.stringify(JSON.parse(request), null, 2) : null;
+    } catch {
+      // Shown as it was stored. Reformatting is a courtesy, not something to fail over.
+    }
+
+    nodes.push(card(`
+      <h4><code>${escapeHtml(approval.action_id)}</code></h4>
+      <p>${badge('proposed', 'waiting for you')} ${escapeHtml(approval.description || '')}</p>
+      ${definitions([
+        ['Risk', escapeHtml(approval.risk || 'not known')],
+        ['Reaches', effects.length
+          ? escapeHtml(effects.join(', '))
+          : 'nothing outside Aurora — reads only'],
+        ['With', request
+          ? `<pre class="request">${escapeHtml(request)}</pre>`
+          : 'not recorded for this request'],
+        ['Asked', when(approval.created_at_utc)],
+        ['Valid until', when(approval.expires_at_utc)],
+      ])}
+      ${approvals.passphrase_required ? `
+        <label class="passphrase">Operator passphrase
+          <input type="password" autocomplete="off" data-passphrase-for="${escapeHtml(approval.approval_id)}">
+        </label>` : ''}
+      <div class="actions">
+        <button type="button" class="primary" data-approve="${escapeHtml(approval.approval_id)}">Approve this request</button>
+        <button type="button" class="reject" data-reject="${escapeHtml(approval.approval_id)}">Reject it</button>
+      </div>`));
+  });
+
+  // Alerts are not requests, and nothing here decides them; they are shown so nothing Aurora
+  // raised is out of sight on the page where a person goes to decide things.
+  alerts.forEach((signal) => nodes.push(card(`
+    <h4>Alert</h4>
     ${definitions([
       ['Raised from', escapeHtml(signal.source_event_ref)],
       ['Concerns', escapeHtml((signal.target_refs || []).join('; '))],
@@ -338,7 +382,7 @@ function renderAudit(records) {
   const nodes = records.map((record) => card(`
     <h4><code>${escapeHtml(record.action_id)}</code> — ${escapeHtml(record.outcome)}</h4>
     ${definitions([
-      ['When', escapeHtml(record.created_at_utc)],
+      ['When', when(record.created_at_utc)],
       ['Asked by', escapeHtml(record.principal_client_id)],
       ['Decided', escapeHtml(record.decision || 'not recorded')],
       ['Under policy', escapeHtml(record.policy_ids || 'none')],
@@ -354,10 +398,11 @@ function renderAudit(records) {
 async function load() {
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const [status, catalog, audit] = await Promise.all([
+    const [status, catalog, audit, approvals] = await Promise.all([
       api(`/v1/status?timezone=${encodeURIComponent(timezone)}`),
       api('/v1/catalog').catch(() => ({ actions: [] })),
       api('/v1/audit?limit=25'),
+      api('/v1/approvals'),
     ]);
 
     state.loadedAt = Date.now();
@@ -367,7 +412,7 @@ async function load() {
 
     renderWork(status);
     renderGoals(status);
-    renderApprovals(status);
+    renderApprovals(approvals, status);
     renderCapabilities(catalog);
     renderHealth(status);
     renderAudit(audit);
@@ -405,6 +450,48 @@ function refuseIfStale() {
 document.addEventListener('click', async (event) => {
   const correct = event.target.closest('[data-correct]');
   const forget = event.target.closest('[data-forget]');
+  const decide = event.target.closest('[data-approve], [data-reject]');
+
+  if (decide) {
+    if (refuseIfStale()) {
+      return;
+    }
+
+    const approving = decide.hasAttribute('data-approve');
+    const id = approving ? decide.dataset.approve : decide.dataset.reject;
+    const field = [...document.querySelectorAll('[data-passphrase-for]')]
+      .find((input) => input.dataset.passphraseFor === id);
+
+    decide.disabled = true;
+
+    try {
+      const result = await api(`/v1/approvals/${encodeURIComponent(id)}/decide`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': newKey() },
+        body: JSON.stringify({
+          decision: approving ? 'approved' : 'rejected',
+          passphrase: field ? field.value : null,
+        }),
+      });
+
+      // Said where the person is looking, and to the announcer for anyone not looking.
+      const message = result.status === 'decided'
+        ? (approving
+          ? 'Approved. The request runs when it is made again — once, with exactly this input.'
+          : 'Rejected. The same request with the same input will be refused.')
+        : `Not decided: ${result.error?.message || result.status}`;
+
+      $('approvals-note').textContent = message;
+      announce(message);
+      await load();
+    } catch (error) {
+      $('approvals-note').textContent = `Not decided: ${error.message}`;
+      announce(`Not decided: ${error.message}`);
+      decide.disabled = false;
+    }
+
+    return;
+  }
 
   if (correct) {
     if (refuseIfStale()) {

@@ -288,7 +288,8 @@ public sealed class KernelTests
         var approvalId = denied.Consent!.ApprovalId!;
 
         var decide = await kernel.ApproveAsync(
-            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
+            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, byOperator: true,
+            CancellationToken.None);
         Assert.Equal(ApproveStatus.Decided, decide.Status);
         Assert.Equal(ApprovalStatus.Approved, decide.ApprovalState);
 
@@ -301,7 +302,8 @@ public sealed class KernelTests
     {
         var kernel = Build(EchoCapability());
         var response = await kernel.ApproveAsync(
-            new ApproveRequest("nope", ApprovalDecision.Approved), Caller, CancellationToken.None);
+            new ApproveRequest("nope", ApprovalDecision.Approved), Caller, byOperator: true,
+            CancellationToken.None);
 
         Assert.Equal(ApproveStatus.NotFound, response.Status);
         Assert.Equal(ErrorCodes.ApprovalNotFound, response.Error?.Code);
@@ -537,13 +539,36 @@ public sealed class KernelTests
     }
 
     [Fact]
-    public async Task Approve_WithoutEnrollment_StaysUnguarded()
+    public async Task Approve_WithoutEnrollment_TheAgentCannotDecide()
     {
-        // Deployments that have not enrolled a passphrase keep the previous behaviour.
+        // With no passphrase, nothing on the tool's surface tells a person from the agent, so it
+        // decides neither an approval nor a rejection (docs/adr/0088).
+        var (kernel, approvalId, approvals) = await PendingApprovalAsync(new FakePassphrase(enrolled: false));
+
+        foreach (var decision in new[] { ApprovalDecision.Approved, ApprovalDecision.Rejected })
+        {
+            var response = await kernel.ApproveAsync(
+                new ApproveRequest(approvalId, decision), Caller, CancellationToken.None);
+
+            Assert.Equal(ApproveStatus.Invalid, response.Status);
+            Assert.Equal(ErrorCodes.PassphraseNotEnrolled, response.Error!.Code);
+        }
+
+        var still = await approvals.EvaluateAsync(Caller, "vault.write", "scope-x", CancellationToken.None);
+        Assert.NotEqual(ApprovalOutcome.Consumed, still.Outcome);
+    }
+
+    [Fact]
+    public async Task Approve_WithoutEnrollment_ThePanelStillDecides()
+    {
+        // The operator session is a credential the agent does not hold, which is the proof the
+        // passphrase would otherwise have been. Fail-closed for the agent, not bricked for the
+        // person.
         var (kernel, approvalId, _) = await PendingApprovalAsync(new FakePassphrase(enrolled: false));
 
         var response = await kernel.ApproveAsync(
-            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, CancellationToken.None);
+            new ApproveRequest(approvalId, ApprovalDecision.Approved), Caller, byOperator: true,
+            CancellationToken.None);
 
         Assert.Equal(ApproveStatus.Decided, response.Status);
     }

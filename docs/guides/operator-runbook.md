@@ -20,8 +20,8 @@ Status vocabulary used throughout (the same words `docs/reference/platform-suppo
 
 **Operating system.** Windows 10/11 or Windows Server with the AppContainer APIs present (every
 supported desktop/server build has them). Aurora also runs on macOS and Linux; plugin confinement
-is VERIFIED on macOS (`sandbox-exec`) and on Windows (AppContainer), and UNVERIFIED on Linux
-(needs bubblewrap).
+is VERIFIED on macOS (`sandbox-exec`), on Windows (AppContainer) and on Linux, where it needs
+bubblewrap (`sudo apt install bubblewrap`) and plugins are refused without it.
 
 **.NET.** The .NET 10 SDK to build, or the .NET 10 runtime to run a published build. Confirm:
 
@@ -80,7 +80,7 @@ dotnet run --project src/Aurora.Server -c Release
 ### There is no `aurora` on your PATH
 
 Every operator command in these guides is the same program with a verb — `secret`, `plugin`,
-`doctor`, `ops`, `passphrase` — reached the same way:
+`doctor`, `backup`, `health`, `enroll-passphrase` — reached the same way:
 
 ```bash
 dotnet run --project src/Aurora.Server -- <verb> …
@@ -273,6 +273,27 @@ The operator control panel is separate from the agent: start the server with the
 open the single-use link it prints (valid ten minutes). The agent's bearer token cannot reach the
 panel's decisions.
 
+### Who decides an approval
+
+A person, on one of two surfaces:
+
+- **The control panel.** The *Approvals & tools* tab lists each pending request — the action, what
+  it reaches and the exact input it would run with — with **Approve this request** and **Reject
+  it**. Its session is a credential the agent never holds, so it decides with or without a
+  passphrase, and asks for the passphrase when one is enrolled.
+- **`aurora_approve`, with the operator passphrase.** Enrol one on the server's console:
+
+  ```bash
+  dotnet run --project src/Aurora.Server -- enroll-passphrase
+  ```
+
+  Where the machine has a desktop prompt, Aurora asks for it there rather than taking it from the
+  tool call.
+
+With no passphrase enrolled, `aurora_approve` answers `passphrase_not_enrolled` and the decision is
+made in the panel: the tool is the agent's, and only a secret the agent does not hold tells a person
+apart from it (docs/adr/0088).
+
 ---
 
 ## 8. `doctor`
@@ -302,7 +323,7 @@ Common FAILs and their fix:
 
 | Line | Cause | Fix |
 | --- | --- | --- |
-| `… interpreter … cannot grant its directory` | system-wide Python a non-admin cannot re-ACL | use a per-user Python, or have an admin grant the directory |
+| `… interpreter … cannot grant its directory` | system-wide Python a non-admin cannot re-ACL | set `Aurora:Plugins:Interpreters:python3` to a per-user Python (§3), or have an admin grant the directory |
 | `… secret '…' missing` | a required secret is not provisioned | `secret set plugin/<id>/<name> <value>` |
 | `… key: present but NOT owner-only` | data directory on a volume that will not restrict | move the data directory to a per-user location |
 | `… program is not where the manifest says` | plugin files moved after install | reinstall the plugin from its folder |
@@ -357,13 +378,14 @@ these against their stand-ins, or on macOS where the real Discord path is verifi
 ## 11. Troubleshooting
 
 - **`SERVICE_UNAVAILABLE: '<dir>' could not be granted to the container`** — the interpreter (or
-  program) directory cannot be re-permissioned by the running account. Use a per-user interpreter,
-  or have an administrator grant the directory to application packages. This is fail-closed, correct
-  behaviour, not a crash.
+  program) directory cannot be re-permissioned by the running account. Name a per-user interpreter
+  in `Aurora:Plugins:Interpreters:python3` (§3), or have an administrator grant the directory to
+  application packages. This is fail-closed, correct behaviour, not a crash.
 - **A required secret is missing** — the plugin starts "degraded" or refuses; `doctor` names
   it. Provision it with `secret set plugin/<id>/<name> <value>` and restart.
 - **Plugin fails to start on Windows with a `Win32Exception`** — the interpreter could not be
-  resolved. Ensure `python3` is on `PATH` (per-user install), then re-run `doctor`.
+  resolved. Ensure `python3` is on `PATH` (per-user install), or name it in
+  `Aurora:Plugins:Interpreters:python3` (§3), then re-run `doctor`.
 - **Missing native dependency** (`libopus`, a speech engine) — the feature reports itself
   unavailable via its `*.status` capability; install the dependency. Optional features never fail
   the whole plugin.

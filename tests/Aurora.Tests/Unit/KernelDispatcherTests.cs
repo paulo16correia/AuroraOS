@@ -53,7 +53,9 @@ public sealed class KernelDispatcherTests
             _ => JsonSerializer.SerializeToElement(new Dictionary<string, string> { ["sent"] = "yes" }));
 
     private static (KernelDispatcher Dispatcher, SqliteCognitiveCycle Cycle, FakeCapability Capability)
-        Build(SqliteTestDb db, FakeCapability capability, ReasonerProposal? proposal = null)
+        Build(
+            SqliteTestDb db, FakeCapability capability, ReasonerProposal? proposal = null,
+            Func<IObservationService, IObservationService>? observations = null)
     {
         var clock = new TestClock(Now);
         var anchorPath = TestTemp.Path("anchor");
@@ -83,7 +85,8 @@ public sealed class KernelDispatcherTests
             new SqliteMemoryService(db.Factory, new LexicalMemoryRanker(), TestBus.Over(db.Factory, clock), clock),
             new SqliteWorldModel(db.Factory, clock, WorldModelOptions.Default),
             new SqliteDecisionEngine(db.Factory, new ArticleConstitution(), clock),
-            new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock),
+            (observations ?? (real => real))(
+                new SqliteObservationService(db.Factory, new RecordingIncidentService(), clock)),
             Deliberation(db, cycle, clock),
             Beliefs(db, clock),
             Self(db, clock, capability),
@@ -515,6 +518,62 @@ public sealed class KernelDispatcherTests
         Decision? decision = await decisions.GetAsync(decisionStage.DecisionRef!, Ct);
 
         Assert.Equal(DecisionState.Superseded, decision!.Status);
+    }
+
+    [Fact]
+    public async Task AFailureBetweenPermissionAndEffectGivesTheKeyBack()
+    {
+        using var db = new SqliteTestDb();
+        var proposing = new FailingToPropose();
+        var (dispatcher, _, capability) = Build(db, Echo(), observations: proposing.Over);
+
+        var request = new ExecuteRequest(
+            ActionId: "echo.say", Input: Message("once"), IdempotencyKey: "key-1");
+
+        // The Kernel has reserved the key and permitted the call; the store the cycle writes the
+        // action to then fails before anything runs.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            dispatcher.DispatchAsync(request, Caller, null, Ct));
+
+        Assert.Equal(0, capability.ExecuteCount);
+
+        // The reservation was ACCEPTED, which reconciliation does not touch, so the dispatcher
+        // gives it back and a retry with the same key runs.
+        proposing.Failing = false;
+
+        ExecuteResponse retried = await dispatcher.DispatchAsync(request, Caller, null, Ct);
+
+        Assert.Equal(ExecuteStatus.Completed, retried.Status);
+        Assert.Equal(1, capability.ExecuteCount);
+    }
+
+    /// <summary>Observations whose first step fails while <see cref="Failing"/> is set.</summary>
+    private class FailingToPropose : System.Reflection.DispatchProxy
+    {
+        private IObservationService _real = null!;
+
+        public bool Failing { get; set; } = true;
+
+        private FailingToPropose? _owner;
+
+        public IObservationService Over(IObservationService real)
+        {
+            IObservationService proxy = Create<IObservationService, FailingToPropose>();
+            var inner = (FailingToPropose)(object)proxy;
+            inner._real = real;
+            inner._owner = this;
+            return proxy;
+        }
+
+        protected override object? Invoke(System.Reflection.MethodInfo? method, object?[]? args)
+        {
+            if (method!.Name == nameof(IObservationService.ProposeActionAsync) && _owner!.Failing)
+            {
+                throw new InvalidOperationException("the action store is unavailable");
+            }
+
+            return method.Invoke(_real, args);
+        }
     }
 
     [Fact]

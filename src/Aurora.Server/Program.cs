@@ -22,6 +22,14 @@ if (PassphraseConsole.TryHandle(args, options)
     return;
 }
 
+// Printed here, after the console verbs, because only a server that is about to listen has a use for
+// it: the agent's client needs it to connect.
+if (options.BearerTokenGenerated)
+{
+    Console.WriteLine(
+        $"[Aurora] No bearer token configured; generated one for this run: {options.BearerToken}");
+}
+
 // Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
@@ -111,9 +119,6 @@ app.MapAuroraApi();
 // The control panel (RFC 11): the command post for memory, approvals, auditing and health.
 app.MapAuroraUi();
 
-// Operational health, behind the same loopback + bearer guard as the MCP surface. Deliberately
-// NOT an MCP tool: these numbers are for the operator, and exposing them to the agent would
-// hand an untrusted reasoner a view of how often its requests are being refused.
 // Liveness, and nothing else: the process is up and answering. Reachable from loopback without a
 // credential, and therefore carrying nothing worth reading.
 app.MapGet("/health/live", () => Results.Text("ok", "text/plain"));
@@ -135,10 +140,19 @@ app.MapGet("/health", async (IHealthService health, CancellationToken ct) =>
             : StatusCodes.Status200OK);
 });
 
+// Operational metrics. Deliberately NOT an MCP tool: these numbers are for the operator, and
+// exposing them to the agent would hand an untrusted reasoner a view of how often its requests
+// are being refused. Which means an operator session, not the bearer token — the token is the
+// agent's, and behind it alone the reasoner could read them with one HTTP call.
 app.MapGet("/metrics", async (
-        IAuroraMetrics metrics, IApprovalStore approvals, IConsentSessionStore sessions, CancellationToken ct) =>
-    Results.Json(metrics.Snapshot(
-        await approvals.CountPendingAsync(ct), await sessions.CountActiveAsync(ct))));
+        HttpContext context, IAuroraMetrics metrics, IApprovalStore approvals,
+        IConsentSessionStore sessions, CancellationToken ct) =>
+    RequestActor.IsOperator(context)
+        ? Results.Json(metrics.Snapshot(
+            await approvals.CountPendingAsync(ct), await sessions.CountActiveAsync(ct)))
+        : Results.Json(
+            new { error = "operator_required", error_description = "Run 'ui' on the Aurora console." },
+            statusCode: StatusCodes.Status403Forbidden));
 
 // Kill switch (docs/adr/0010). Revokes every consent session at once, including any left by an
 // earlier run, so an operator pressing it does not have to reason about restarts. Operator

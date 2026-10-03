@@ -37,7 +37,9 @@ public static class PassphraseConsole
         if (command == "revoke-passphrase")
         {
             authenticator.Revoke();
-            Console.WriteLine("[Aurora] Operator passphrase revoked. Approvals are no longer guarded by one.");
+            Console.WriteLine(
+                "[Aurora] Operator passphrase revoked. aurora_approve now refuses to decide; "
+                + "approvals are decided in the control panel ('ui') until one is enrolled again.");
             return true;
         }
 

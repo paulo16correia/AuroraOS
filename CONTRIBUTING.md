@@ -9,7 +9,7 @@ a change pass is deleting the rule. If a test is in your way, the honest move is
 rule is wrong, not to quietly remove its evidence.
 
 **An architectural decision needs an ADR before it needs code.** There are
-[85 of them](docs/adr/). They are short, they say what was decided and what was given up, and they
+[87 of them](docs/adr/). They are short, they say what was decided and what was given up, and they
 are written in the past tense because they record something that happened. A pull request that
 changes a boundary without one will be asked for one.
 

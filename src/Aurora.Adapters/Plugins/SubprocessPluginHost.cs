@@ -201,7 +201,7 @@ public sealed class SubprocessPluginHost : IPluginHost
 
             return new PluginResult(
                 false, null, "timed_out",
-                $"took longer than {capability?.Timeout.TotalSeconds ?? 30:F0}s",
+                $"took longer than {Describe(capability?.Timeout ?? TimeSpan.FromSeconds(30))}",
                 stopwatch.ElapsedMilliseconds);
         }
         catch (Exception failure) when (failure is System.ComponentModel.Win32Exception or IOException)
@@ -210,6 +210,12 @@ public sealed class SubprocessPluginHost : IPluginHost
                 false, null, "could_not_start", failure.GetType().Name, stopwatch.ElapsedMilliseconds);
         }
     }
+
+    /// <summary>A limit as somebody would say it. "0s" for a 400 ms timeout is not a limit.</summary>
+    private static string Describe(TimeSpan limit) =>
+        limit < TimeSpan.FromSeconds(1)
+            ? $"{limit.TotalMilliseconds:F0}ms"
+            : $"{limit.TotalSeconds:0.#}s";
 
     private static void Kill(ISandboxedProcess process)
     {

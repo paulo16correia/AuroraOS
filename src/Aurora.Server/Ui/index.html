@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aurora — control panel</title>
   <link rel="stylesheet" href="/ui/app.css">
+  <!-- No icon to fetch, so the browser does not ask for one and log a 404 for it. -->
+  <link rel="icon" href="data:,">
 </head>
 <body>
   <a class="skip" href="#panel">Skip to panel</a>
@@ -71,6 +73,7 @@
         Aurora asked before doing these. Each card shows exactly what would happen, to what, and
         what it would disclose. Approving covers that request and nothing else.
       </p>
+      <p id="approvals-note" class="note" role="status" aria-live="polite"></p>
       <div id="approvals-body" class="cards"></div>
 
       <h3>Capabilities offered</h3>

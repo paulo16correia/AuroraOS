@@ -333,46 +333,52 @@ public sealed class KernelDispatcher
 
         ActionAuthorization authorized = authorization.Authorization!;
 
-        // Committing a TOOL_CALL is refused without an allowing policy result and, where the
-        // decision says approval is required, a satisfied one. So the optimistic evaluation the
-        // option carried cannot become a commitment on its own.
-        Decision committed = await _decisions.CommitAsync(
-            decision.Id,
-            [new PolicyResult(CapabilityPolicy, Allowed: true, ApprovalSatisfied: true)], ct)
-            .ConfigureAwait(false);
-
-        await _cycle.AdvanceAsync(
-            cycle.Id, CycleStage.Policy, [decision.Id],
-            authorized.PolicyIds.Append(authorized.Consent.Decision).ToList(), decision.Id, ct)
-            .ConfigureAwait(false);
-
-        // --- Capabilities -----------------------------------------------------------------
-        await _cycle.AdvanceAsync(
-            cycle.Id, CycleStage.Capabilities, [decision.Id],
-            [resolved.Resolved.ActionId], decision.Id, ct).ConfigureAwait(false);
-
-        // --- Executor ---------------------------------------------------------------------
-        AuroraAction action = await _observations.ProposeActionAsync(
-            committed.Id, resolved.Resolved.ActionId, $"capability/{resolved.Resolved.ActionId}",
-            resolved.InputHash, reversible: !resolved.HasExternalEffect, ct).ConfigureAwait(false);
-
-        await _observations.AuthorizeActionAsync(action.Id, ct).ConfigureAwait(false);
-        await _observations.DispatchActionAsync(action.Id, toolCallId: null, ct).ConfigureAwait(false);
-
-        ExecuteResponse response;
+        // From here until the commit, the authorization holds a reservation that only this method
+        // knows about. Anything that fails in between — a store, or the caller hanging up — gives
+        // it back, because reconciliation only ever looks at EXECUTING and an ACCEPTED reservation
+        // left behind would keep answering "in progress".
+        Decision committed;
+        AuroraAction action;
         try
         {
-            response = await _kernel.CommitAsync(authorized, ct).ConfigureAwait(false);
+            // Committing a TOOL_CALL is refused without an allowing policy result and, where the
+            // decision says approval is required, a satisfied one. So the optimistic evaluation
+            // the option carried cannot become a commitment on its own.
+            committed = await _decisions.CommitAsync(
+                decision.Id,
+                [new PolicyResult(CapabilityPolicy, Allowed: true, ApprovalSatisfied: true)], ct)
+                .ConfigureAwait(false);
+
+            await _cycle.AdvanceAsync(
+                cycle.Id, CycleStage.Policy, [decision.Id],
+                authorized.PolicyIds.Append(authorized.Consent.Decision).ToList(), decision.Id, ct)
+                .ConfigureAwait(false);
+
+            // --- Capabilities -------------------------------------------------------------
+            await _cycle.AdvanceAsync(
+                cycle.Id, CycleStage.Capabilities, [decision.Id],
+                [resolved.Resolved.ActionId], decision.Id, ct).ConfigureAwait(false);
+
+            // --- Executor -----------------------------------------------------------------
+            action = await _observations.ProposeActionAsync(
+                committed.Id, resolved.Resolved.ActionId, $"capability/{resolved.Resolved.ActionId}",
+                resolved.InputHash, reversible: !resolved.HasExternalEffect, ct).ConfigureAwait(false);
+
+            await _observations.AuthorizeActionAsync(action.Id, ct).ConfigureAwait(false);
+            await _observations.DispatchActionAsync(action.Id, toolCallId: null, ct).ConfigureAwait(false);
         }
         catch
         {
-            // The reservation is ours and the effect did not settle. Release it rather than leave
-            // the key wedged until reconciliation.
             await _kernel.ReleaseAsync(
                 authorized, "the cycle failed after authorization", CancellationToken.None)
                 .ConfigureAwait(false);
             throw;
         }
+
+        // Not wrapped in a release. The commit settles its own reservation whatever happens to
+        // the effect — completed, failed, or indeterminate — and a release written after it
+        // would put a second audit record beside the first saying nothing had run.
+        ExecuteResponse response = await _kernel.CommitAsync(authorized, ct).ConfigureAwait(false);
 
         await _cycle.AdvanceAsync(
             cycle.Id, CycleStage.Executor, [committed.Id], [action.Id], committed.Id, ct)

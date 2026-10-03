@@ -10,7 +10,6 @@ and by Aurora's kernel before anything reaches this file.
 """
 
 import json
-import os
 import socket
 import struct
 import threading
@@ -983,6 +982,11 @@ class VoiceTransport:
         them does not depend on where they came from.
         """
         if len(packet) < RTP_HEADER_BYTES + 4:
+            return None
+
+        if self._key is None:
+            # No session key yet, or none any more. Nothing can be decrypted, and nothing was
+            # forged either, so it is not counted as unauthenticated.
             return None
 
         layout = rtp_layout(packet)

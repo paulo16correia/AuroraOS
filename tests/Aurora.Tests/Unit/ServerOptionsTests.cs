@@ -39,6 +39,30 @@ public sealed class ServerOptionsTests
     }
 
     [Fact]
+    public void AGeneratedTokenIsNotPrintedByReadingTheConfiguration()
+    {
+        // Every console verb reads the configuration, and none of them serves. doctor's output is
+        // what people are asked to paste into a report, so a credential must not appear in it; the
+        // server prints the generated token itself, once, when it is about to listen.
+        TextWriter original = Console.Out;
+        using var captured = new StringWriter();
+        Console.SetOut(captured);
+
+        AuroraServerOptions options;
+        try
+        {
+            options = From(("Aurora:BearerToken", ""));
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        Assert.True(options.BearerTokenGenerated);
+        Assert.DoesNotContain(options.BearerToken, captured.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TheSandboxCapabilitiesAreOfferedByDefault()
     {
         // Unfrozen by the owner's decision. Being in the catalog is not permission to use them:

@@ -56,6 +56,7 @@ public static class ApiEndpoints
         app.MapPost("/v1/events", PublishEventAsync);
         app.MapPost("/v1/goals", CreateGoalAsync);
         app.MapGet("/v1/goals/{id}", ReadGoalAsync);
+        app.MapGet("/v1/approvals", ReadApprovalsAsync);
         app.MapPost("/v1/approvals/{id}/decide", DecideApprovalAsync);
         app.MapGet("/v1/memories", SearchMemoriesAsync);
         app.MapPatch("/v1/memories/{id}", CorrectMemoryAsync);
@@ -177,8 +178,56 @@ public static class ApiEndpoints
         return ApiIdempotency.RunAsync(
             idempotency, principals.Current, KeyOf(request), new { id, body.Decision }, correlationId,
             token => kernel.ApproveAsync(
-                new ApproveRequest(id, body.Decision, body.Passphrase), principals.Current, token),
+                new ApproveRequest(id, body.Decision, body.Passphrase), principals.Current,
+                byOperator: true, token),
             ct);
+    }
+
+    /// <summary>
+    /// What is waiting on a person, with what each request would do and the input it would run
+    /// with.
+    /// </summary>
+    /// <remarks>
+    /// Operator-only, like deciding: the list is the other half of the same act. It says whether
+    /// the passphrase is required as well, so the panel asks for it when it is and does not
+    /// pretend it matters when it is not.
+    /// </remarks>
+    private static async Task<IResult> ReadApprovalsAsync(
+        HttpContext context, IApprovalStore approvals, AuroraKernel kernel,
+        IPassphraseAuthenticator passphrase, CancellationToken ct)
+    {
+        var correlationId = ApiEnvelopes.CorrelationOf(context.Request);
+
+        if (RequireOperator(context, correlationId) is { } refused)
+        {
+            return refused;
+        }
+
+        IReadOnlyList<PendingApproval> pending = await approvals.ListPendingAsync(ct);
+        var catalog = kernel.Catalog(null).Actions.ToDictionary(a => a.ActionId, StringComparer.Ordinal);
+
+        return Results.Json(ApiEnvelopes.Ok(
+            new
+            {
+                passphrase_required = passphrase.IsEnrolled,
+                pending = pending.Select(p =>
+                {
+                    CapabilityDescriptor? capability = catalog.GetValueOrDefault(p.ActionId);
+
+                    return new
+                    {
+                        p.ApprovalId,
+                        p.ActionId,
+                        Description = capability?.Description,
+                        Risk = capability?.Risk,
+                        Effects = capability?.Effects ?? [],
+                        p.CreatedAtUtc,
+                        p.ExpiresAtUtc,
+                        Request = p.RequestJson,
+                    };
+                }).ToList(),
+            },
+            correlationId));
     }
 
     // ---- memories: search, correct, forget ----
