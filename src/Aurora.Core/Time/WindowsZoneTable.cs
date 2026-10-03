@@ -19,7 +19,8 @@ namespace Aurora.Core.Time;
 /// <para>
 /// <b>Format.</b> One Windows zone per entry: <c>Windows Id=primary-iana other-iana …</c>. The
 /// first IANA id is CLDR's territory <c>001</c> default and is the one a Windows id canonicalises
-/// to; the rest are every other IANA id — including tzdata's compatibility links — that CLDR maps
+/// to — under its current tzdata name where tzdata has since renamed it, which
+/// <c>AuroraTimeZones.Renamed</c> lists; the rest are every other IANA id — including tzdata's compatibility links — that CLDR maps
 /// onto the same Windows zone. A line beginning with whitespace continues the one above it, which
 /// is only so the wide entries stay readable.
 /// </para>

@@ -188,4 +188,26 @@ public sealed class TimeZoneTests
             Assert.True(AuroraTimeZones.IsKnown(canonical), $"{canonical} did not resolve");
         }
     }
+
+    [Theory]
+    [InlineData("India Standard Time", "Asia/Kolkata", "Asia/Calcutta")]
+    [InlineData("Nepal Standard Time", "Asia/Kathmandu", "Asia/Katmandu")]
+    [InlineData("Myanmar Standard Time", "Asia/Yangon", "Asia/Rangoon")]
+    [InlineData("FLE Standard Time", "Europe/Kyiv", "Europe/Kiev")]
+    [InlineData("Greenland Standard Time", "America/Nuuk", "America/Godthab")]
+    [InlineData("Argentina Standard Time", "America/Argentina/Buenos_Aires", "America/Buenos_Aires")]
+    [InlineData("US Eastern Standard Time", "America/Indiana/Indianapolis", "America/Indianapolis")]
+    public void AWindowsZoneTzdataRenamedIsWrittenUnderItsCurrentName(
+        string windows, string current, string old)
+    {
+        // CLDR keys these seven by their oldest name, which a stock Ubuntu 24.04 does not ship.
+        // Aurora writes the current one, so a zone chosen on Windows reads the same on Linux.
+        Assert.Equal(current, AuroraTimeZones.Canonical(windows));
+        Assert.True(AuroraTimeZones.IsKnown(windows), $"{windows} did not resolve");
+        Assert.True(AuroraTimeZones.IsKnown(current), $"{current} did not resolve");
+
+        // And one written down before the rename still opens, wherever it is read.
+        Assert.True(AuroraTimeZones.IsKnown(old), $"{old} did not resolve");
+        Assert.Equal(old, AuroraTimeZones.Canonical(old));
+    }
 }
