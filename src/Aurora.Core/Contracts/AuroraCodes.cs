@@ -28,6 +28,12 @@ public static class ErrorCodes
     public const string PassphraseLockedOut = "passphrase_locked_out";
 
     /// <summary>
+    /// Nothing tells the person deciding apart from the agent, so the agent's surface does not
+    /// decide (docs/adr/0088).
+    /// </summary>
+    public const string PassphraseNotEnrolled = "passphrase_not_enrolled";
+
+    /// <summary>
     /// The action was permitted, and Aurora decided against it anyway (RFC 022).
     /// </summary>
     /// <remarks>

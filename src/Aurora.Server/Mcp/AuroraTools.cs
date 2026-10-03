@@ -133,8 +133,9 @@ public sealed class AuroraTools
     [McpServerTool(Name = "aurora_approve")]
     [Description("Decide a pending Aurora approval. 'approval_id' comes from a prior aurora_execute "
         + "response whose status was 'denied' with error code 'approval_required'. 'decision' is "
-        + "'approved' or 'rejected'. When this installation has an operator passphrase enrolled, "
-        + "'passphrase' is required and must be supplied by the human operator, not guessed.")]
+        + "'approved' or 'rejected'. Requires the operator passphrase, which must be supplied by "
+        + "the human operator, not guessed; with none enrolled this tool cannot decide, and the "
+        + "person decides in Aurora's control panel instead.")]
     public static async Task<JsonElement> Approve(
         AuroraKernel kernel,
         IPrincipalAccessor principals,

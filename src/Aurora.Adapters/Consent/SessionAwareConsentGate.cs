@@ -71,8 +71,11 @@ public sealed class SessionAwareConsentGate : IConsentGate
             }
         }
 
-        ApprovalEvaluation evaluation =
-            await _approvals.EvaluateAsync(principal, capability.ActionId, scopeHash, ct).ConfigureAwait(false);
+        // The input travels with the request for approval: what a person is shown is what would
+        // run, and the scope hash already binds the approval to exactly that input.
+        ApprovalEvaluation evaluation = await _approvals
+            .EvaluateAsync(principal, capability.ActionId, scopeHash, input.GetRawText(), ct)
+            .ConfigureAwait(false);
 
         switch (evaluation.Outcome)
         {

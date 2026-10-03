@@ -96,6 +96,30 @@ public sealed class AuroraAppFactory : WebApplicationFactory<Program>
         return http;
     }
 
+    /// <summary>
+    /// Decides an approval the way a person does: in the panel, holding an operator session.
+    /// </summary>
+    /// <remarks>
+    /// Not through <c>aurora_approve</c>. That tool is the agent's, and with no passphrase enrolled
+    /// it does not decide (docs/adr/0088); a test standing in for a person goes where a person
+    /// goes. Returns the decision itself, the <c>data</c> of the envelope.
+    /// </remarks>
+    public async Task<System.Text.Json.JsonElement> DecideAsOperatorAsync(string? approvalId, string decision)
+    {
+        using HttpClient http = await CreateOperatorClientAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/v1/approvals/{approvalId}/decide")
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new { decision }),
+        };
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("N"));
+
+        HttpResponseMessage response = await http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return body.RootElement.GetProperty("data").Clone();
+    }
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);

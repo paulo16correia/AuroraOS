@@ -52,7 +52,8 @@ public sealed class SqliteDatabase
           status TEXT NOT NULL,
           created_at_utc TEXT NOT NULL,
           expires_at_utc TEXT NOT NULL,
-          decided_at_utc TEXT NULL
+          decided_at_utc TEXT NULL,
+          request_json TEXT NULL
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_one_live_pending
@@ -1174,7 +1175,7 @@ public sealed class SqliteDatabase
         """;
 
     /// <summary>Schema this build expects. Bump it and add a migration in the same commit.</summary>
-    public const int TargetSchemaVersion = 18;
+    public const int TargetSchemaVersion = 19;
 
     /// <summary>
     /// Migrations from the version keyed here minus one, up to it. Applied in order, only to a
@@ -1689,6 +1690,10 @@ public sealed class SqliteDatabase
         // (docs/adr/0070). Empty for every session made before the question existed, which is
         // exactly what they covered.
         ("consent_session", "covered_actions", "TEXT NOT NULL DEFAULT ''"),
+
+        // v19 — the input a pending approval would run with, so the panel can show the person what
+        // they are deciding. Null on every approval made before; cleared once one is decided.
+        ("approval", "request_json", "TEXT NULL"),
 
         // v5 — a goal records the mission it serves, or when it must be looked at again (RFC 052).
         ("goal", "mission_ref", "TEXT NULL"),

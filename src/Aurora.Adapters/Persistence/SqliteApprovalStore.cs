@@ -27,8 +27,12 @@ public sealed class SqliteApprovalStore : IApprovalStore
         _clock = clock;
     }
 
+    public Task<ApprovalEvaluation> EvaluateAsync(
+        Principal principal, string actionId, string scopeHash, CancellationToken ct) =>
+        EvaluateAsync(principal, actionId, scopeHash, requestJson: null, ct);
+
     public async Task<ApprovalEvaluation> EvaluateAsync(
-        Principal principal, string actionId, string scopeHash, CancellationToken ct)
+        Principal principal, string actionId, string scopeHash, string? requestJson, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -116,7 +120,7 @@ public sealed class SqliteApprovalStore : IApprovalStore
             {
                 retire.Transaction = transaction;
                 retire.CommandText =
-                    "UPDATE approval SET status = @expired " +
+                    "UPDATE approval SET status = @expired, request_json = NULL " +
                     " WHERE principal_client_id = @c AND action_id = @a AND scope_hash = @s " +
                     "   AND status = @pending AND expires_at_utc <= @now;";
 
@@ -139,9 +143,9 @@ public sealed class SqliteApprovalStore : IApprovalStore
                 insert.CommandText = """
                     INSERT INTO approval
                         (approval_id, principal_client_id, principal_os_user, action_id, scope_hash,
-                         status, created_at_utc, expires_at_utc, decided_at_utc)
+                         status, created_at_utc, expires_at_utc, decided_at_utc, request_json)
                     VALUES
-                        (@id, @c, @wu, @a, @s, @status, @now, @exp, NULL);
+                        (@id, @c, @wu, @a, @s, @status, @now, @exp, NULL, @r);
                     """;
                 insert.Parameters.AddWithValue("@id", newId);
                 insert.Parameters.AddWithValue("@c", principal.ClientId);
@@ -151,6 +155,7 @@ public sealed class SqliteApprovalStore : IApprovalStore
                 insert.Parameters.AddWithValue("@status", ApprovalStatus.Pending);
                 insert.Parameters.AddWithValue("@now", now.ToString("O", CultureInfo.InvariantCulture));
                 insert.Parameters.AddWithValue("@exp", now.Add(Ttl).ToString("O", CultureInfo.InvariantCulture));
+                insert.Parameters.AddWithValue("@r", (object?)requestJson ?? DBNull.Value);
                 await insert.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
 
                 await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -180,6 +185,34 @@ public sealed class SqliteApprovalStore : IApprovalStore
         return Convert.ToInt32(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
     }
 
+    public async Task<IReadOnlyList<PendingApproval>> ListPendingAsync(CancellationToken ct)
+    {
+        await using var connection = await _factory.OpenAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+
+        // The same rule as the count: an expired row is pending in the table and waiting on nobody.
+        command.CommandText = """
+            SELECT approval_id, action_id, created_at_utc, expires_at_utc, request_json
+              FROM approval
+             WHERE status = @pending AND expires_at_utc > @now
+             ORDER BY created_at_utc ASC
+             LIMIT 100;
+            """;
+        command.Parameters.AddWithValue("@pending", ApprovalStatus.Pending);
+        command.Parameters.AddWithValue("@now", _clock.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+
+        var pending = new List<PendingApproval>();
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            pending.Add(new PendingApproval(
+                reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        }
+
+        return pending;
+    }
+
     public async Task<ApprovalDecideResult> DecideAsync(
         Principal principal, string approvalId, bool approve, CancellationToken ct)
     {
@@ -194,9 +227,10 @@ public sealed class SqliteApprovalStore : IApprovalStore
         {
             update.Transaction = transaction;
             // Compare-and-set: only a live (unexpired) PENDING row owned by this principal decides.
+            // The input it carried was kept for the person to read, and is not kept past that.
             update.CommandText = """
                 UPDATE approval
-                SET status = @newStatus, decided_at_utc = @now
+                SET status = @newStatus, decided_at_utc = @now, request_json = NULL
                 WHERE approval_id = @id AND principal_client_id = @c
                       AND status = @pending AND expires_at_utc > @now;
                 """;

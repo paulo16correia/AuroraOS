@@ -128,3 +128,13 @@ form[role="search"] button {
 
 .stale { color: var(--warn); font-weight: 600; }
 .problem { color: var(--warn); }
+
+/* What came of the last decision, where the person made it rather than only in the announcer. */
+.note:empty { display: none; }
+.note { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--accent); }
+.card label.passphrase { display: block; font-size: 13px; color: var(--muted); margin-top: 10px; }
+.card label.passphrase input {
+  display: block; margin-top: 4px; font: inherit; padding: 6px 8px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 240px;
+}
+.card pre.request { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }

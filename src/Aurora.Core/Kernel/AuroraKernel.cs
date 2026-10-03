@@ -506,10 +506,21 @@ public sealed class AuroraKernel
     }
 
     /// <summary>
+    /// Decides a pending approval from the agent's surface, <c>aurora_approve</c>.
+    /// </summary>
+    public Task<ApproveResponse> ApproveAsync(ApproveRequest request, Principal principal, CancellationToken ct) =>
+        ApproveAsync(request, principal, byOperator: false, ct);
+
+    /// <summary>
     /// Decides a pending approval on behalf of the caller. Distinct from <see cref="ExecuteAsync"/>:
     /// it never touches a capability, policy or the executor — only the approval ledger and audit.
     /// </summary>
-    public async Task<ApproveResponse> ApproveAsync(ApproveRequest request, Principal principal, CancellationToken ct)
+    /// <param name="byOperator">
+    /// The request arrived with an operator session — a credential minted on the server's console
+    /// that the agent does not hold. False for the MCP tool, which the agent calls.
+    /// </param>
+    public async Task<ApproveResponse> ApproveAsync(
+        ApproveRequest request, Principal principal, bool byOperator, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.ApprovalId))
         {
@@ -536,6 +547,20 @@ public sealed class AuroraKernel
         // agent does not hold, an untrusted reasoner could approve its own request and the whole
         // gate would be decoration (docs/adr/0011). Checked before the decision is applied, and
         // required for a rejection too — otherwise the agent could bury a request a human wanted.
+        if (!_passphrase.IsEnrolled && !byOperator)
+        {
+            // No passphrase means nothing on this surface tells a person from the agent, so this
+            // surface does not decide (docs/adr/0088). The panel still does: its session is the
+            // proof the passphrase would otherwise be.
+            return new ApproveResponse(ApproveStatus.Invalid, request.ApprovalId,
+                Error: new ExecuteError(
+                    ErrorCodes.PassphraseNotEnrolled,
+                    "No operator passphrase is enrolled, so a decision made through this tool cannot "
+                    + "be told apart from the agent deciding for itself. Decide it in the control "
+                    + "panel (run 'ui' on the Aurora console), or enrol a passphrase there with "
+                    + "'enroll-passphrase'."));
+        }
+
         if (_passphrase.IsEnrolled)
         {
             // When this machine can draw its own window, the passphrase is asked for there rather

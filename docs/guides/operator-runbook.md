@@ -273,6 +273,27 @@ The operator control panel is separate from the agent: start the server with the
 open the single-use link it prints (valid ten minutes). The agent's bearer token cannot reach the
 panel's decisions.
 
+### Who decides an approval
+
+A person, on one of two surfaces:
+
+- **The control panel.** The *Approvals & tools* tab lists each pending request — the action, what
+  it reaches and the exact input it would run with — with **Approve this request** and **Reject
+  it**. Its session is a credential the agent never holds, so it decides with or without a
+  passphrase, and asks for the passphrase when one is enrolled.
+- **`aurora_approve`, with the operator passphrase.** Enrol one on the server's console:
+
+  ```bash
+  dotnet run --project src/Aurora.Server -- enroll-passphrase
+  ```
+
+  Where the machine has a desktop prompt, Aurora asks for it there rather than taking it from the
+  tool call.
+
+With no passphrase enrolled, `aurora_approve` answers `passphrase_not_enrolled` and the decision is
+made in the panel: the tool is the agent's, and only a secret the agent does not hold tells a person
+apart from it (docs/adr/0088).
+
 ---
 
 ## 8. `doctor`

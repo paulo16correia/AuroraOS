@@ -162,4 +162,44 @@ public sealed class ApprovalStoreTests
         var after = await store.EvaluateAsync(Caller, "vault.write", "scope-1", CancellationToken.None);
         Assert.NotEqual(ApprovalOutcome.Consumed, after.Outcome);
     }
+
+    [Fact]
+    public async Task APendingApprovalCarriesWhatItWouldRunWithUntilItIsDecided()
+    {
+        using var db = new SqliteTestDb();
+        var store = NewStore(db);
+
+        var pending = await store.EvaluateAsync(
+            Caller, "memory.remember", "scope-1", """{"note":"buy milk"}""", CancellationToken.None);
+
+        // A person cannot agree to something they cannot see, so the panel is given the input.
+        PendingApproval listed = Assert.Single(await store.ListPendingAsync(CancellationToken.None));
+        Assert.Equal(pending.ApprovalId, listed.ApprovalId);
+        Assert.Equal("memory.remember", listed.ActionId);
+        Assert.Equal("""{"note":"buy milk"}""", listed.RequestJson);
+
+        await store.DecideAsync(Caller, pending.ApprovalId, approve: true, CancellationToken.None);
+
+        // Decided, it is no longer waiting on anybody, and the input it carried is not kept.
+        Assert.Empty(await store.ListPendingAsync(CancellationToken.None));
+
+        await using var connection = await db.Factory.OpenAsync(CancellationToken.None);
+        await using var read = connection.CreateCommand();
+        read.CommandText = "SELECT request_json FROM approval WHERE approval_id = @id;";
+        read.Parameters.AddWithValue("@id", pending.ApprovalId);
+        Assert.Equal(DBNull.Value, await read.ExecuteScalarAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AnExpiredApprovalIsNotListedAsWaiting()
+    {
+        using var db = new SqliteTestDb();
+        var clock = new TestClock(DateTimeOffset.UnixEpoch);
+        var store = new SqliteApprovalStore(db.Factory, clock);
+
+        await store.EvaluateAsync(Caller, "vault.write", "scope-1", "{}", CancellationToken.None);
+        clock.UtcNow = DateTimeOffset.UnixEpoch.AddDays(2);
+
+        Assert.Empty(await store.ListPendingAsync(CancellationToken.None));
+    }
 }
