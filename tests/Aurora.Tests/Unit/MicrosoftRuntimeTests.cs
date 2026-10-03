@@ -48,15 +48,9 @@ public sealed class MicrosoftRuntimeTests : IDisposable
 
     private static DirectoryInfo Repository()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "plugins")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory!;
+        // One place, and a marker that does not move: the plugins used to be at the root, so a
+        // folder called `plugins` was the root by coincidence until the day they moved.
+        return TestRepository.Root();
     }
 
     /// <summary>Copies the real plugin somewhere disposable and points it at the stand-in.</summary>
@@ -66,7 +60,7 @@ public sealed class MicrosoftRuntimeTests : IDisposable
         var directory = Path.Combine(root, "plugin-microsoft");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        var source = Path.Combine(Repository().FullName, "plugins", "microsoft");
+        var source = TestRepository.Plugin("microsoft");
 
         foreach (var file in Directory.EnumerateFiles(source, "*.py"))
         {
@@ -98,7 +92,7 @@ public sealed class MicrosoftRuntimeTests : IDisposable
     private PluginManifest Manifest()
     {
         var json = File.ReadAllText(
-            Path.Combine(Repository().FullName, "plugins", "microsoft", "plugin.json"));
+            Path.Combine(TestRepository.Plugin("microsoft"), "plugin.json"));
 
         PluginManifestRead read = PluginManifestReader.Read(json, []);
         Assert.True(read.Ok, string.Join("; ", read.Problems));

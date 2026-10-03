@@ -57,7 +57,7 @@ Note the **Directory (tenant) ID** and **Application (client) ID** from the over
 ### 2. Sign in once, yourself
 
 ```bash
-python3 plugins/microsoft/device_login.py <tenant-id> <client-id>
+python3 src/Aurora.Server/plugins/microsoft/device_login.py <tenant-id> <client-id>
 ```
 
 It prints a code, you enter it in your browser, Microsoft signs you in. **Aurora never sees your
@@ -83,7 +83,7 @@ what you can revoke.
 ### 4. Install the plugin
 
 ```bash
-dotnet run --project src/Aurora.Server -- plugin install plugins/microsoft
+dotnet run --project src/Aurora.Server -- plugin install src/Aurora.Server/plugins/microsoft
 ```
 
 It will ask three separate questions: the permissions, the network, and — for plugins that want it

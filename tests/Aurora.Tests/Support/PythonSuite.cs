@@ -32,15 +32,9 @@ public static class PythonSuite
     /// <summary>The repository root, found by walking up to the folder holding the plugins.</summary>
     public static DirectoryInfo Repository()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "plugins")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory!;
+        // One place, and a marker that does not move: the plugins used to be at the root, so a
+        // folder called `plugins` was the root by coincidence until the day they moved.
+        return TestRepository.Root();
     }
 
     /// <param name="workingDirectory">The plugin folder holding the module.</param>

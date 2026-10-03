@@ -18,18 +18,7 @@ namespace Aurora.Tests.Unit;
 /// </remarks>
 public sealed class VoicePluginTests
 {
-    private static string PluginSource()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "plugins")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return Path.Combine(directory!.FullName, "plugins", "voice");
-    }
+    private static string PluginSource() => TestRepository.Plugin("voice");
 
     private static void RunPython(string module, int expected) =>
         _ = PythonSuite.Run(PluginSource(), module, expected);

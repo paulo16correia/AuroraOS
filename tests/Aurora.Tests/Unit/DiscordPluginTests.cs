@@ -32,20 +32,11 @@ public sealed class DiscordPluginTests : IDisposable
 
     private string PluginRoot()
     {
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (repository is not null && !Directory.Exists(Path.Combine(repository.FullName, "plugins")))
-        {
-            repository = repository.Parent;
-        }
-
-        Assert.NotNull(repository);
-
         var root = TestTemp.Folder("discord");
         var directory = Path.Combine(root, "plugin-discord");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        var source = Path.Combine(repository!.FullName, "plugins", "discord");
+        var source = TestRepository.Plugin("discord");
 
         // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
         // folder is not the plugin, and the symptom is a process that will not start.
@@ -75,15 +66,8 @@ public sealed class DiscordPluginTests : IDisposable
     /// <summary>The real manifest, with the host swapped for the stand-in's.</summary>
     private PluginManifest Manifest(params string[] endpoints)
     {
-        var repository = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (repository is not null && !Directory.Exists(Path.Combine(repository.FullName, "plugins")))
-        {
-            repository = repository.Parent;
-        }
-
         var json = File.ReadAllText(
-            Path.Combine(repository!.FullName, "plugins", "discord", "plugin.json"));
+            Path.Combine(TestRepository.Plugin("discord"), "plugin.json"));
 
         PluginManifestRead read = PluginManifestReader.Read(json, []);
         Assert.True(read.Ok, string.Join("; ", read.Problems));

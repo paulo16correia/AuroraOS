@@ -76,15 +76,9 @@ public sealed class LocalVoiceTests : IDisposable
 
     private static DirectoryInfo Repository()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "plugins")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory!;
+        // One place, and a marker that does not move: the plugins used to be at the root, so a
+        // folder called `plugins` was the root by coincidence until the day they moved.
+        return TestRepository.Root();
     }
 
     // ---- what the model would have said ----
@@ -120,7 +114,7 @@ public sealed class LocalVoiceTests : IDisposable
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
         foreach (var file in Directory.EnumerateFiles(
-            Path.Combine(Repository().FullName, "plugins", "voice"), "*.py"))
+            TestRepository.Plugin("voice"), "*.py"))
         {
             File.Copy(file, Path.Combine(directory, Path.GetFileName(file)), overwrite: true);
         }
@@ -162,7 +156,7 @@ public sealed class LocalVoiceTests : IDisposable
     private PluginManifest Manifest()
     {
         var json = File.ReadAllText(
-            Path.Combine(Repository().FullName, "plugins", "voice", "plugin.json"));
+            Path.Combine(TestRepository.Plugin("voice"), "plugin.json"));
 
         PluginManifestRead read = PluginManifestReader.Read(json, []);
         Assert.True(read.Ok, string.Join("; ", read.Problems));

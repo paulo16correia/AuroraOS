@@ -230,10 +230,10 @@ Shipped plugins and their required secrets (names only):
 
 ```bash
 # Validate a plugin folder (checks manifest, interpreter, capabilities):
-dotnet run --project src/Aurora.Server -- plugin validate plugins/discord
+dotnet run --project src/Aurora.Server -- plugin validate src/Aurora.Server/plugins/discord
 
 # Install it (records it and seals its manifest):
-dotnet run --project src/Aurora.Server -- plugin install plugins/discord
+dotnet run --project src/Aurora.Server -- plugin install src/Aurora.Server/plugins/discord
 
 # List installed plugins:
 dotnet run --project src/Aurora.Server -- plugin list

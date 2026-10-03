@@ -113,7 +113,7 @@ dotnet run --project src/Aurora.Server -- secret set plugin/discord bot_token
 Then install a plugin, which is an explicit grant of its manifest's permissions and network hosts:
 
 ```bash
-dotnet run --project src/Aurora.Server -- plugin install plugins/discord
+dotnet run --project src/Aurora.Server -- plugin install src/Aurora.Server/plugins/discord
 ```
 
 A plugin declaring a host it was not granted does not get to reach it. A plugin declaring a

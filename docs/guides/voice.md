@@ -17,7 +17,7 @@ governs every other channel. The voice layer arranges them and contributes nothi
 is.
 
 There is also one voice *implementation*. A plugin that needs to speak or listen does not write its
-own: `plugins/voice/speech.py` is the client, and a plugin that needs it carries a copy, checked
+own: `src/Aurora.Server/plugins/voice/speech.py` is the client, and a plugin that needs it carries a copy, checked
 byte for byte against the original by its own tests. Discord does exactly that.
 
 ## What leaves this machine, and what does not
@@ -93,7 +93,7 @@ than by a sentence that never gets spoken.
 ### 3. Choose a voice
 
 Whoever installs Aurora chooses it; there is no default, because a default would be somebody else's
-choice of what Aurora sounds like. Put a voice id in `plugins/voice/config.json`:
+choice of what Aurora sounds like. Put a voice id in `src/Aurora.Server/plugins/voice/config.json`:
 
 ```json
 {
@@ -130,7 +130,7 @@ ollama pull llama3.1:8b
 and put a whisper model where the plugin can read it:
 
 ```
-plugins/voice/models/ggml-large-v3-turbo.bin
+src/Aurora.Server/plugins/voice/models/ggml-large-v3-turbo.bin
 ```
 
 Its own directory, and nowhere else. The sandbox lets a plugin read what ships beside it and nothing
@@ -256,7 +256,7 @@ are questions for a machine with the models on it.
 - **Nothing has met the real speech service.** No key exists here, so every claim about how
   ElevenLabs behaves rests on its documentation and on a fake server on loopback.
 - **No whisper model is installed beside this plugin.** Discord ships one and hears today; voice
-  will hear once a `ggml-*.bin` is put in `plugins/voice/models/`.
+  will hear once a `ggml-*.bin` is put in `src/Aurora.Server/plugins/voice/models/`.
 - **The microphone has never been opened from inside the sandbox**, and nothing on Aurora's side is
   wired to a device: `ListenAsync` carries audio in and `PumpAsync` carries it back out, both tested
   through the real host, with nothing at either end.

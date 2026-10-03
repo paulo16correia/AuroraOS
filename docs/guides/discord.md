@@ -25,8 +25,8 @@ You need a Discord application with a bot, from the Discord developer portal. Au
 anything that bot can do, so give it the narrowest permissions that let it do what you want.
 
 ```bash
-dotnet run --project src/Aurora.Server -- plugin validate plugins/discord
-dotnet run --project src/Aurora.Server -- plugin install plugins/discord
+dotnet run --project src/Aurora.Server -- plugin validate src/Aurora.Server/plugins/discord
+dotnet run --project src/Aurora.Server -- plugin install src/Aurora.Server/plugins/discord
 ```
 
 Installing asks you two things separately, and both are decisions:
@@ -198,7 +198,7 @@ not Discord. See `docs/reference/platform-support.md`.
 
 ## Writing another Discord capability
 
-Add it to `plugins/discord/plugin.json` with its schema, effects, risk and approval, then add a
+Add it to `src/Aurora.Server/plugins/discord/plugin.json` with its schema, effects, risk and approval, then add a
 handler in `discord_service.py` and register it in `READS` or `WRITES`. A test asserts the two
 agree, so a capability declared and not implemented fails the build rather than failing on first
 use.

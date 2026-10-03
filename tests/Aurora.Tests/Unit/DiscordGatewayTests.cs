@@ -63,15 +63,9 @@ public sealed class DiscordGatewayTests : IDisposable
 
     private static DirectoryInfo Repository()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "plugins")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory!;
+        // One place, and a marker that does not move: the plugins used to be at the root, so a
+        // folder called `plugins` was the root by coincidence until the day they moved.
+        return TestRepository.Root();
     }
 
     private string _executable = string.Empty;
@@ -82,7 +76,7 @@ public sealed class DiscordGatewayTests : IDisposable
         var directory = Path.Combine(root, "plugin-discord");
         Directory.CreateDirectory(Path.Combine(directory, "work"));
 
-        var source = Path.Combine(Repository().FullName, "plugins", "discord");
+        var source = TestRepository.Plugin("discord");
 
         // Subfolders included: the plugin imports from vendor/, so a copy of only the top of the
         // folder is not the plugin, and the symptom is a process that will not start.
@@ -107,7 +101,7 @@ public sealed class DiscordGatewayTests : IDisposable
     private PluginManifest Manifest()
     {
         var json = File.ReadAllText(
-            Path.Combine(Repository().FullName, "plugins", "discord", "plugin.json"));
+            Path.Combine(TestRepository.Plugin("discord"), "plugin.json"));
 
         PluginManifestRead read = PluginManifestReader.Read(json, []);
         Assert.True(read.Ok, string.Join("; ", read.Problems));

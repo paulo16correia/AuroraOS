@@ -21,17 +21,24 @@ desktop.ini
 dist/
 node_modules/
 obj/
-plugins/*/config.json
-plugins/discord/bin/
-plugins/discord/models/
+# The plugins, which live under the server project. Anchored at that path rather than written
+# loosely, because a rule that happens to match is a rule that stops matching: before this was
+# moved, the models were excluded only by a `ggml-*.bin` glob and the engine binaries only by the
+# `bin/` rule meant for .NET output. Both would have kept working here by luck, and the compiled
+# library and the three config.json would not have — a `git add -A` would have put a 1.9 MB .pyd and
+# the owner's settings into history.
+src/Aurora.Server/plugins/*/config.json
+src/Aurora.Server/plugins/*/bin/
+src/Aurora.Server/plugins/*/models/
+
 # Everything vendored except Aurora's own. The compiled library does not belong in history; the
-# speech client is a copy of plugins/voice/speech.py, and a checkout without it is a Discord plugin
-# that will not start. Written as vendor/* rather than vendor/ because git does not look inside a
-# directory it has already excluded, so nothing below it could be let back in.
-plugins/discord/vendor/*
-!plugins/discord/vendor/__init__.py
-!plugins/discord/vendor/aurora_voice/
-plugins/discord/vendor/aurora_voice/__pycache__/
+# speech client is a copy of the voice plugin's speech.py, and a checkout without it is a Discord
+# plugin that will not start. Written as vendor/* rather than vendor/ because git does not look
+# inside a directory it has already excluded, so nothing below it could be let back in.
+src/Aurora.Server/plugins/discord/vendor/*
+!src/Aurora.Server/plugins/discord/vendor/__init__.py
+!src/Aurora.Server/plugins/discord/vendor/aurora_voice/
+src/Aurora.Server/plugins/discord/vendor/aurora_voice/__pycache__/
 
 # Runtime state and operator secrets. The real deployment lives outside this tree
 # (%LOCALAPPDATA%\Aurora on Windows, ~/.local/share/aurora elsewhere), so these are
@@ -51,8 +58,8 @@ bearer.txt
 secrets.json
 sandbox/
 
-# Third-party speech engines and voice models are downloaded, not authored here.
-# (plugins/discord/{bin,models,vendor} are already excluded above.)
+# Third-party speech engines and voice models are downloaded, not authored here. Kept as a second
+# net under any path, since the rules above only cover where the plugins live today.
 *.onnx
 *.onnx.json
 ggml-*.bin
