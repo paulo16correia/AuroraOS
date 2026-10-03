@@ -22,6 +22,14 @@ if (PassphraseConsole.TryHandle(args, options)
     return;
 }
 
+// Printed here, after the console verbs, because only a server that is about to listen has a use for
+// it: the agent's client needs it to connect.
+if (options.BearerTokenGenerated)
+{
+    Console.WriteLine(
+        $"[Aurora] No bearer token configured; generated one for this run: {options.BearerToken}");
+}
+
 // Loopback-only Kestrel binding for real runs (bypassed by TestServer under WebApplicationFactory).
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
