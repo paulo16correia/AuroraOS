@@ -20,8 +20,8 @@ Status vocabulary used throughout (the same words `docs/reference/platform-suppo
 
 **Operating system.** Windows 10/11 or Windows Server with the AppContainer APIs present (every
 supported desktop/server build has them). Aurora also runs on macOS and Linux; plugin confinement
-is VERIFIED on macOS (`sandbox-exec`) and on Windows (AppContainer), and UNVERIFIED on Linux
-(needs bubblewrap).
+is VERIFIED on macOS (`sandbox-exec`), on Windows (AppContainer) and on Linux, where it needs
+bubblewrap (`sudo apt install bubblewrap`) and plugins are refused without it.
 
 **.NET.** The .NET 10 SDK to build, or the .NET 10 runtime to run a published build. Confirm:
 

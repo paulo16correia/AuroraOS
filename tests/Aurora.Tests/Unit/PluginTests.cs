@@ -475,7 +475,7 @@ public sealed class PluginTests
     [Fact]
     public async Task ThePluginRunsInItsOwnProcessAndInheritsNothingOfAuroraS()
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !CanConfine)
         {
             // Needs a POSIX shell to write a plugin in three lines. The host is the same code on
             // every platform; this exercises it where the setup is honest.
@@ -526,7 +526,7 @@ public sealed class PluginTests
     [Fact]
     public async Task APluginThatHangsIsKilledRatherThanWaitedOn()
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !CanConfine)
         {
             return;
         }
@@ -570,7 +570,7 @@ public sealed class PluginTests
     [Fact]
     public async Task APluginOutlivesTheThreadThatStartedIt()
     {
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindows() || !CanConfine)
         {
             return;
         }
@@ -606,6 +606,19 @@ public sealed class PluginTests
             TryDelete(root);
         }
     }
+
+    /// <summary>
+    /// Whether this machine can confine a plugin at all.
+    /// </summary>
+    /// <remarks>
+    /// Where it cannot — Linux without bubblewrap — the host refuses every plugin by design, so a
+    /// test about what a running plugin does has nothing to run. That refusal is covered on its own
+    /// by PluginSandboxTests; <c>doctor</c> tells the owner which case a machine is in.
+    /// </remarks>
+    private static bool CanConfine =>
+        Aurora.Adapters.Plugins.Sandboxes.PluginSandbox.ForThisMachine()
+            .Plan(new SandboxRequest("plugin/probe", "/bin/true", Path.GetTempPath()))
+            .Level != SandboxLevel.Process;
 
     private static void TryDelete(string path)
     {

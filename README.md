@@ -14,7 +14,7 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-1f6feb.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-1344%20C%23%20%2B%20357%20Python-2ea043.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-1345%20C%23%20%2B%20357%20Python-2ea043.svg)](tests/)
 [![ADRs](https://img.shields.io/badge/ADRs-87-8957e5.svg)](docs/adr/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7681.svg)](#supported-platforms)
 [![Status](https://img.shields.io/badge/status-controlled%20demo-d29922.svg)](#project-status)
@@ -71,7 +71,8 @@ the edges:
 > follows builds it from source. See [Project status](#project-status) before you plan around it.
 
 **Requirements:** [.NET 10 SDK](https://dotnet.microsoft.com/download), and Python 3.13 if you want
-the plugins.
+the plugins. On Linux, plugins run confined by [bubblewrap](https://github.com/containers/bubblewrap)
+(`sudo apt install bubblewrap`), and are refused without it.
 
 ```bash
 git clone https://github.com/paulo16correia/AuroraOS.git
