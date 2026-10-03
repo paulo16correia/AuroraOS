@@ -19,9 +19,10 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7681.svg)](#supported-platforms)
 [![Status](https://img.shields.io/badge/status-controlled%20demo-d29922.svg)](#project-status)
 
-**A cognitive operating system for a persistent digital entity — running on your own machine.**
+**A governance layer for AI agents, on your own machine.** Nothing an agent does happens without a
+permission, a person's approval where it matters, and a record of what happened.
 
-[Architecture](docs/README.md) · [Kernel](docs/045-aurora-kernel.md) · [Constitution](docs/035-aurora-constitution.md) · [Plugin SDK](docs/060-plugin-sdk.md) · [ADRs](docs/adr/) · [Contributing](CONTRIBUTING.md)
+[Architecture](docs/README.md) · [Kernel](docs/045-aurora-kernel.md) · [Constitution](docs/035-aurora-constitution.md) · [Plugin SDK](docs/060-plugin-sdk.md) · [ADRs](docs/adr/README.md) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -29,18 +30,27 @@
 
 ## What this is
 
-Aurora OS is a runtime for an assistant that **persists**: it keeps an identity, a memory with
-provenance, a world model, goals, and the ability to act through tools — and it keeps them across
-model changes, vendor changes and restarts.
+Aurora sits between an AI agent — Claude, Codex, a local model — and everything that agent can
+affect. The agent connects over MCP and asks; Aurora decides what may happen and keeps the record.
 
-The language model is a **replaceable part**, not the system. Swap Claude for a local Llama and
-Aurora's identity, memory, policies, permissions and audit log are unchanged, because none of them
-live in the model. The same goes for language: it belongs to the owner's profile and to the
-conversation, never to Aurora.
+- **Permissions.** Every capability declares its risk and its effects, and policy decides per call.
+  Through Aurora, an agent reaches nothing that is not in its catalogue.
+- **Approvals by a person.** An action that needs one waits, scoped to that exact input, until
+  somebody decides it in the control panel or with the operator passphrase — two things the agent
+  does not hold.
+- **An audit trail you can check.** Every decision and effect goes into an HMAC-chained record, so an
+  entry altered or removed afterwards is detected.
+- **Memory with provenance.** What Aurora knows carries where it came from and how sure it is, and
+  you can correct or remove it.
+- **Confined plugins.** Integrations — Discord, voice, Microsoft 365 — run as separate processes in
+  an AppContainer on Windows, `sandbox-exec` on macOS and bubblewrap on Linux, with no network at
+  all unless the owner grants it.
 
-What makes it an operating system rather than a chat wrapper is that **nothing acts without passing
-the Kernel**. Every action an assistant wants to take — read a file, send a message, join a call —
-travels one path:
+Because none of this lives in the model, the model is a **replaceable part**. Swap Claude for a
+local Llama and the permissions, approvals, memory and audit log are unchanged — which is also what
+lets Aurora keep an identity, goals and what it has learned across model and vendor changes.
+
+Every action travels one path through the Kernel:
 
 ```text
 resolve → schema validate → policy → consent / approval → idempotency → execute → audit
@@ -60,8 +70,8 @@ the edges:
 - **It does not let a plugin ask it for anything.** The plugin protocol is one-way on purpose: a
   process holding a connection to the outside world can *report* what happened and can never
   *request* that Aurora do something ([LAW-002](docs/laws/LAW-002-mind-tool-isolation.md)).
-- **It does not give a plugin the machine.** Plugins run confined — on Windows in a real
-  AppContainer, verified rather than assumed ([ADR 0078](docs/adr/)).
+- **It does not give a plugin the machine.** Plugins run confined, verified on every platform rather
+  than assumed ([platform support](docs/reference/platform-support.md)).
 
 ---
 
@@ -144,7 +154,7 @@ permission you did not grant does not get the capability. Both refusals are reco
                             ┌───────────────▼───────────────┐
                             │   Confined plugin processes   │
                             │   AppContainer · no GPU ·     │
-                            │   only granted network hosts  │
+                            │   no network unless granted   │
                             ├───────────────────────────────┤
                             │  discord · voice · microsoft  │
                             └───────────────────────────────┘
