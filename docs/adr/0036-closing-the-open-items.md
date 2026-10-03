@@ -1,6 +1,9 @@
 # Design 0036 — Closing the open items
 
 **Status:** Implemented, with two items honestly not done · **Date:** 2026-08-25
+**Extended 2026-10-03:** retention also removes what an expiring cycle worked in — attention sets,
+working memory, deliberations and their thoughts — which nothing can read once the cycle is gone.
+Decisions, actions and observations stay.
 **Closes:** condition 5 of `docs/reviews/architecture-review-v1.0.md`; the residual risk in
 `docs/adr/0003`; the growth recorded in `docs/adr/0031` and `docs/adr/0033`; LAW-007 producer wiring
 

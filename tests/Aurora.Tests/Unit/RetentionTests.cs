@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Aurora.Adapters.Cognition;
 using Aurora.Adapters.Curiosity;
 using Aurora.Adapters.Events;
@@ -13,7 +14,9 @@ using Aurora.Adapters.Signals;
 using Aurora.Adapters.Situation;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Aurora.Core.Kernel;
 using Aurora.Tests.Support;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -48,6 +51,68 @@ public sealed class RetentionTests
         Assert.Equal(1, removed.Cycles);
         Assert.True(removed.CycleStages >= 1);
         Assert.Null(await cycles.GetAsync(cycle.Id, Ct));
+    }
+
+    [Fact]
+    public async Task AnExpiredCycleTakesItsScratchWithItAndLeavesWhatWasDone()
+    {
+        // A real call through the real dispatcher, so every table a cycle writes to is written.
+        await using var server = new AuroraAppFactory();
+        string cycleId;
+
+        using (IServiceScope scope = server.Services.CreateScope())
+        {
+            var dispatcher = scope.ServiceProvider.GetRequiredService<KernelDispatcher>();
+
+            ExecuteResponse done = await dispatcher.DispatchAsync(
+                new ExecuteRequest(
+                    ActionId: "echo.say",
+                    Input: JsonSerializer.SerializeToElement(new { message = "kept?" })),
+                new Principal("local-mcp-client", "owner"), null, Ct);
+
+            Assert.Equal(ExecuteStatus.Completed, done.Status);
+            cycleId = done.CycleRef!;
+        }
+
+        var factory = new SqliteConnectionFactory(server.DbPath);
+
+        async Task<long> CountAsync(string sql)
+        {
+            await using var connection = await factory.OpenAsync(Ct);
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("@c", cycleId);
+            return (long)(await command.ExecuteScalarAsync(Ct))!;
+        }
+
+        const string Deliberations = "SELECT COUNT(*) FROM deliberation WHERE cycle_id = @c;";
+        const string Thoughts = "SELECT COUNT(*) FROM thought WHERE cycle_id = @c;";
+        const string Frames = "SELECT COUNT(*) FROM working_memory WHERE cycle_id = @c;";
+        const string Attention = "SELECT COUNT(*) FROM attention_set WHERE cycle_id = @c;";
+        const string Decisions = "SELECT COUNT(*) FROM decision WHERE cycle_id = @c;";
+
+        // Everything this test is about exists before the pass, or the pass proves nothing.
+        foreach (var sql in new[] { Deliberations, Thoughts, Frames, Attention, Decisions })
+        {
+            Assert.True(await CountAsync(sql) > 0, sql);
+        }
+
+        var later = new TestClock(DateTimeOffset.UtcNow.AddDays(91));
+        RetentionReport removed = await new SqliteRetentionService(factory, later)
+            .ApplyAsync(RetentionPolicy.Default, Ct);
+
+        Assert.True(removed.CycleScratch > 0);
+
+        // How it thought is gone with the cycle; nothing could read it any more.
+        foreach (var sql in new[] { Deliberations, Thoughts, Frames, Attention })
+        {
+            Assert.Equal(0, await CountAsync(sql));
+        }
+
+        // What it decided stays, as does the audit record of the effect.
+        Assert.True(await CountAsync(Decisions) > 0);
+        Assert.True(await CountAsync(
+            "SELECT COUNT(*) FROM audit_record WHERE action_id = 'echo.say' AND @c IS NOT NULL;") > 0);
     }
 
     [Fact]
