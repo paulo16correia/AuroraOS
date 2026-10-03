@@ -10,7 +10,6 @@ and by Aurora's kernel before anything reaches this file.
 """
 
 import json
-import os
 import socket
 import struct
 import threading

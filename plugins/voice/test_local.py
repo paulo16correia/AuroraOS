@@ -437,7 +437,6 @@ class TheModelHasNoAuthority(VoiceTest):
     def test_no_part_of_the_voice_stack_can_reach_a_shell(self):
         """The engines are programs, and running one is not the same as having a shell."""
         import glob
-        import os
 
         for path in glob.glob(os.path.join(os.path.dirname(speech.__file__), "*.py")):
             if os.path.basename(path).startswith("test_"):
