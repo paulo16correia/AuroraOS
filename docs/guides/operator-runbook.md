@@ -139,9 +139,15 @@ arguments. All keys are optional; sensible per-user defaults apply.
 | `Aurora:DbPath` | Database file | `%LocalAppData%\Aurora\aurora.db` |
 | `Aurora:SandboxRoot` | File-capability sandbox root | `%LocalAppData%\Aurora\sandbox` |
 | `Aurora:PluginRoot` | Per-plugin working directories | `<db dir>\plugins` |
-| `Aurora:AuditKeyPath` / `AuditAnchorPath` | Audit key and anchor | beside the database |
-| `Aurora:VaultKeyPath` / `GenomeKeyPath` / `SnapshotKeyPath` / `DeliberationKeyPath` / `PluginKeyPath` | Key files | beside the database |
+| `Aurora:AuditKeyPath` | Audit HMAC key | beside the database |
+| `Aurora:AuditAnchorPath` | External audit-chain anchor | beside the database |
+| `Aurora:VaultKeyPath` | Secret encryption key | beside the database |
+| `Aurora:GenomeKeyPath` | Genome signing key | beside the database |
+| `Aurora:SnapshotKeyPath` | Snapshot encryption key | beside the database |
+| `Aurora:DeliberationKeyPath` | Deliberation key | beside the database |
+| `Aurora:PluginKeyPath` | Plugin manifest seal key | beside the database |
 | `Aurora:PassphrasePath` | Operator passphrase verifier | beside the database |
+| `Aurora:SandboxFilesEnabled` | Offer the sandbox file capabilities (each call still needs approval) | `true` |
 | `Aurora:Plugins:AllowUnconfined` | Run plugins even where the OS cannot confine them | `false` |
 | `Aurora:Plugins:Interpreters:python3` | The interpreter to confine script plugins against | from `PATH` |
 | `Aurora:HeartbeatSeconds` | Upkeep interval (0 disables) | `300` |

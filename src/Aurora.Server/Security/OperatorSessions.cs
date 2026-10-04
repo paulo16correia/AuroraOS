@@ -62,6 +62,15 @@ public sealed class OperatorSessions
             return null;
         }
 
+        return Open();
+    }
+
+    /// <summary>
+    /// Opens a session for a person who has already proved who they are — by redeeming a printed
+    /// link, or with the operator passphrase.
+    /// </summary>
+    public string Open()
+    {
         var session = NewToken();
         _sessions[session] = _clock.UtcNow + SessionLifetime;
         return session;

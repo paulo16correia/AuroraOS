@@ -8,9 +8,11 @@ namespace Aurora.Core.Abstractions;
 /// record of what Aurora did and what it was told, and nothing here may touch them: a system that
 /// tidies away its own history on a schedule is one whose history cannot be relied on.
 /// <para>
-/// What it does cover is the by-products — closed cycles and their stage records, settled schedule
-/// runs, resolved signals, expired questions. Those grow without bound and stop being useful long
-/// before they stop being stored.
+/// What it does cover is the by-products — closed cycles with their stage records and the scratch
+/// they worked in (attention, working memory, deliberation and the thought that summarised it),
+/// settled schedule runs, resolved signals, expired questions. Those grow without bound and stop
+/// being useful long before they stop being stored. The decision a cycle made, the action and what
+/// was observed of it stay: they are the record of what Aurora did, not of how it thought.
 /// </para>
 /// </remarks>
 public sealed record RetentionPolicy(
@@ -39,9 +41,10 @@ public sealed record RetentionPolicy(
 
 /// <summary>What one retention pass removed, by kind.</summary>
 public sealed record RetentionReport(
-    int Cycles, int CycleStages, int ScheduleRuns, int Signals, int CuriosityProposals)
+    int Cycles, int CycleStages, int ScheduleRuns, int Signals, int CuriosityProposals,
+    int CycleScratch = 0)
 {
-    public int Total => Cycles + CycleStages + ScheduleRuns + Signals + CuriosityProposals;
+    public int Total => Cycles + CycleStages + ScheduleRuns + Signals + CuriosityProposals + CycleScratch;
 }
 
 /// <summary>

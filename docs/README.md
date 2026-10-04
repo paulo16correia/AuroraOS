@@ -1,5 +1,11 @@
 # Aurora OS — Architecture Specification
 
+> **Start here.** To run Aurora, read the [operator runbook](guides/operator-runbook.md). For what
+> has been run on which platform, [platform support](reference/platform-support.md). For the threat
+> model and how to report a vulnerability, [SECURITY.md](../SECURITY.md). For why things are the way
+> they are, the [decision records](adr/README.md). Those four describe the current system and are
+> kept true by `DocumentationTests`; the RFCs below are the design they came from.
+
 This directory is the normative source for building Aurora OS. The RFCs use the words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT** and **MAY** in the mandatory, prohibited, recommended, advised against and optional sense.
 
 ## MCP-first architecture

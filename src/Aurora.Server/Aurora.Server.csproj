@@ -24,6 +24,8 @@
     <EmbeddedResource Include="Ui/index.html" />
     <EmbeddedResource Include="Ui/app.css" />
     <EmbeddedResource Include="Ui/app.js" />
+    <EmbeddedResource Include="Ui/login.html" />
+    <EmbeddedResource Include="Ui/login.js" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Aurora.Core/Aurora.Core.csproj" />

@@ -3,7 +3,7 @@ namespace Aurora.Core.Abstractions;
 /// <summary>Result of checking an operator passphrase.</summary>
 public enum PassphraseOutcome
 {
-    /// <summary>No passphrase has been enrolled, so this deployment does not require one.</summary>
+    /// <summary>No passphrase has been enrolled.</summary>
     NotEnrolled,
 
     /// <summary>The passphrase matched.</summary>
@@ -29,7 +29,10 @@ public sealed record PassphraseCheck(PassphraseOutcome Outcome, DateTimeOffset? 
 /// </remarks>
 public interface IPassphraseAuthenticator
 {
-    /// <summary>Whether a passphrase has been enrolled. When false, approvals proceed unguarded.</summary>
+    /// <summary>
+    /// Whether a passphrase has been enrolled. When false, <c>aurora_approve</c> does not decide and
+    /// the panel cannot be opened with one; the panel's console link still works (docs/adr/0088).
+    /// </summary>
     bool IsEnrolled { get; }
 
     /// <summary>
@@ -41,6 +44,6 @@ public interface IPassphraseAuthenticator
     /// <summary>Checks a candidate, counting failures and applying lockout.</summary>
     PassphraseCheck Verify(string? passphrase);
 
-    /// <summary>Removes the enrollment. Approvals then proceed unguarded again.</summary>
+    /// <summary>Removes the enrollment. Approvals are then decided only in the panel.</summary>
     void Revoke();
 }

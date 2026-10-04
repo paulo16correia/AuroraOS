@@ -28,7 +28,7 @@ public sealed class BearerAuthMiddleware
     }
 
     /// <summary>
-    /// The only two paths that run without a credential, and why each one has to.
+    /// The only paths that run without a credential, and why each one has to.
     /// </summary>
     /// <remarks>
     /// Named here rather than mapped earlier, because every endpoint executes after the whole
@@ -40,10 +40,21 @@ public sealed class BearerAuthMiddleware
     /// <item><c>/health/live</c> — a container runtime polls it and holds no token, and giving one
     /// to a health probe would be handing out a credential to save a word. It answers "ok" and
     /// nothing else, which is why it can be open at all.</item>
+    /// <item><c>/ui/login</c> and <c>/ui/session/passphrase</c> — signing in with the operator
+    /// passphrase, for an Aurora running as a service with no console to print a link on. The page
+    /// and its assets carry nothing; the endpoint opens a session only for the passphrase, under the
+    /// same lockout <c>aurora_approve</c> uses.</item>
     /// </list>
-    /// The loopback guard still applies to both, so neither is reachable from another machine.
+    /// The loopback guard still applies to all of them, so none is reachable from another machine.
     /// </remarks>
-    private static readonly string[] Unauthenticated = ["/ui/session", "/health/live"];
+    private static readonly string[] Unauthenticated =
+    [
+        "/ui/session", "/health/live",
+
+        // Signing in with the operator passphrase: the page, its script and its stylesheet carry
+        // nothing, and the endpoint refuses anything but the passphrase, under its lockout.
+        "/ui/login", "/ui/login.js", "/ui/app.css", "/ui/session/passphrase",
+    ];
 
     public async Task InvokeAsync(
         HttpContext context, OperatorSessions sessions, ISecurityWatch watch)
@@ -75,6 +86,16 @@ public sealed class BearerAuthMiddleware
             // Counted, not acted on here: five in five minutes is somebody working at it rather
             // than somebody mistyping, and that is an incident (docs/adr/0064). The refusal below
             // is what protects the request either way.
+            // A browser opening the panel without a session is a person who has not signed in
+            // yet, not an attack: it is sent to the sign-in page rather than counted.
+            if (HttpMethods.IsGet(context.Request.Method)
+                && context.Request.Path.StartsWithSegments("/ui")
+                && context.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.Ordinal))
+            {
+                context.Response.Redirect("/ui/login");
+                return;
+            }
+
             await watch.AuthenticationFailedAsync(
                 context.Request.Path.StartsWithSegments("/mcp") ? "mcp" : "api",
                 context.RequestAborted);

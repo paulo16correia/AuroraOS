@@ -107,6 +107,10 @@ app.UseMiddleware<LoopbackGuardMiddleware>();
 app.MapGet("/ui/session", (string? t, HttpContext context, OperatorSessions sessions) =>
     UiSessionExchange.Redeem(t, context, sessions));
 
+// The other way to open one: the operator passphrase, typed into /ui/login. For an Aurora running
+// as a service, which has no console of its own to print a link on.
+app.MapPost("/ui/session/passphrase", UiSessionExchange.SignInAsync);
+
 app.UseMiddleware<BearerAuthMiddleware>();
 
 app.MapMcp("/mcp");

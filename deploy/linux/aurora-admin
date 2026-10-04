@@ -1,0 +1,13 @@
+#!/bin/sh
+# aurora-admin <verb> [args] — runs an Aurora console verb (doctor, secret, plugin,
+# enroll-passphrase, backup, health …) as the aurora account, with the service's own configuration.
+# Installed by deploy/linux/install.sh, which fills in @DOTNET@.
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
+# The configuration is readable by root and the aurora group only; it holds the agent's token.
+exec runuser -u aurora -- /usr/bin/env $(grep -v '^[[:space:]]*#' /etc/aurora/aurora.env | xargs) \
+    @DOTNET@ /opt/aurora/app/Aurora.Server.dll "$@"
