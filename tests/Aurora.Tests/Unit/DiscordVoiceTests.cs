@@ -129,7 +129,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // Eleven, not fourteen: three measured piper's --length_scale and the sample-trimming that
         // came with it. There is no piper to slow down any more, and a voice's pace is now the
         // speech service's business rather than this plugin's.
-        RunPython("test_workspace", 11);
+        RunPython("test_workspace", 12);
     }
 
     [Fact]

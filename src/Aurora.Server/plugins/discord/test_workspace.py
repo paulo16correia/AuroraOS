@@ -84,13 +84,23 @@ class AudioContext(unittest.TestCase):
     recognition took. Shortening it to fit is free on the short utterances a conversation is made
     of, and destructive if cut too close — which is why the rule is a margin over what the audio
     needs rather than a number somebody liked.
+
+    And it stops where the measurement stopped. 0085 measured the gain on clips of up to about three
+    and a half seconds; turns are capped at eight now, and at eight the gain is gone — 3.2s at a
+    window of 800 against 3.1s at the full 1500, with a larger model taking 21.9s against 12.1s.
     """
 
     def test_the_window_is_twice_what_the_audio_needs(self):
-        # Fifty units a second is whisper's own ratio; twice that is the margin. Asserted above
-        # the floor, since below it the floor is the answer and this rule is not what is being read.
-        self.assertEqual(500, voice_engines.audio_context_for(5.0))
-        self.assertEqual(637, voice_engines.audio_context_for(6.37))
+        # Fifty units a second is whisper's own ratio; twice that is the margin. Asserted above the
+        # floor, since below it the floor is the answer and this rule is not what is being read.
+        self.assertEqual(400, voice_engines.audio_context_for(4.0))
+        self.assertEqual(390, voice_engines.audio_context_for(3.9))
+
+    def test_past_a_few_seconds_the_whole_window_is_the_cheaper_answer(self):
+        # Where shortening buys nothing it is not done, because a smaller window is not free: it is
+        # the same time on this model and much worse on a bigger one, for no transcript gained.
+        self.assertIsNone(voice_engines.audio_context_for(5.0))
+        self.assertIsNone(voice_engines.audio_context_for(8.0))
 
     def test_the_floor_wins_where_the_margin_would_be_smaller(self):
         # 3.48 seconds wants 348, which is under the floor. The floor is there because 256 was

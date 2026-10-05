@@ -163,17 +163,34 @@ CONTEXT_MARGIN = 2.0
 CONTEXT_FLOOR = 384
 CONTEXT_FULL = 1500
 
+# Past this, shortening the window stops paying and starts costing.
+#
+# docs/adr/0085 measured the gain on clips of up to about three and a half seconds, where it was
+# large: the transcript came back character for character identical at half the context and a third
+# of the time. Turns used to be whatever length somebody spoke for, so most of them were short.
+# They are capped at eight seconds now, and at that length the gain is gone — measured here, an
+# eight-second turn takes 3.2s at a window of 800 and 3.1s at the full 1500. For a bigger model it
+# is worse than gone: large-v3-turbo took 21.9s at 800 and 12.1s at the full window, which is the
+# decoder thrashing exactly as 0085 warned it would when the window is cut too close.
+#
+# So the sizing still applies where it was measured, and stops where the measurement stops.
+CONTEXT_WORTH_SHORTENING_SECONDS = 4.0
+
 
 def audio_context_for(seconds):
     """The encoder window one utterance needs, or None to use the whole thing."""
     if not seconds or seconds <= 0:
         return None
 
+    if seconds > CONTEXT_WORTH_SHORTENING_SECONDS:
+        # Long enough that the whole window is the cheaper answer as well as the better one.
+        return None
+
     wanted = int(seconds * CONTEXT_UNITS_PER_SECOND * CONTEXT_MARGIN)
 
     if wanted >= CONTEXT_FULL:
-        # Long enough to need the whole window. Asking for it explicitly and asking for nothing are
-        # the same thing to whisper, and nothing is the setting it documents.
+        # Asking for the whole window explicitly and asking for nothing are the same thing to
+        # whisper, and nothing is the setting it documents.
         return None
 
     return max(CONTEXT_FLOOR, wanted)
@@ -205,18 +222,23 @@ STT_ENGINES = [
     # "(speaking in foreign language)" — which is not a failure it reports, it is the transcript. A
     # system that only understands its owner in one language is not one to ship by default.
     #
-    # -bs 1 is greedy decoding. Measured, a beam search costs ~15% more time and changed no word of
-    # a short reply — and in a conversation the time is what is being spent.
+    # -bs 5 is a beam search, and this used to say 1 with "a beam search costs ~15% more time and
+    # changed no word of a short reply" beside it. Measured again on a turn the length turns actually
+    # are now — eight seconds of Discord audio rather than a short clean clip — a beam of five took
+    # 2.4s against 3.2s greedy. Not slower, and greedy decoding is what produces the confident
+    # nonsense this is meant to avoid: a word in the wrong alphabet, a place name turned into
+    # something that sounds like it. Where a beam costs nothing, taking the more careful search is
+    # free accuracy.
     #
     # --prompt is the surprising one. It is context, not a command, and seeding it with Aurora's own
     # name is the difference between a small model hearing "Aurora" and hearing "A hora" — measured,
     # with the same clip. A name is the word recognition gets wrong most, and telling the recogniser
     # the word exists costs nothing (docs/adr/0071).
     ("whisper-cli",
-     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "5", "-t", "{threads}",
       "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
     ("whisper.cpp",
-     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "1", "-t", "{threads}",
+     ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "5", "-t", "{threads}",
       "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]

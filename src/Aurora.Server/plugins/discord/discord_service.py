@@ -848,11 +848,30 @@ def _watch_turns(state):
     language = _setting("stt_language", "auto")
     threads = _setting("stt_threads")
 
-    # What the recogniser is told to expect. Aurora's own name, because that is the word it must
-    # get right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
+    # What the recogniser is told to expect. Aurora's own name, because that is the word it must get
+    # right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
+    #
+    # Written as a sentence rather than as a comma-separated list, and this is not cosmetic. whisper's
+    # initial prompt conditions the decoder as if it were text that came immediately before the
+    # audio, so a list of nouns asks it to carry on listing nouns, while a sentence asks it to carry
+    # on speaking. The owner's words are the ones that have to survive, so they go in a clause that
+    # reads like somebody about to say them.
+    #
+    # De-duplicated, because the name was arriving twice: this joined the bot's own name to a
+    # vocabulary setting that already contained it, and "Aurora, Aurora, Sobral da Abelheira" spends
+    # prompt on a repetition that teaches the decoder nothing.
     gateway = state.get("gateway")
     own_name = (gateway.status() if gateway else {}).get("bot_name") or "Aurora"
-    prompt = ", ".join([own_name] + list(_setting("stt_vocabulary", []) or []))
+
+    expected = [own_name]
+
+    for word in _setting("stt_vocabulary", []) or []:
+        if word and word not in expected:
+            expected.append(word)
+
+    prompt = "Uma conversa com %s. Falamos de %s." % (
+        own_name, ", ".join(expected[1:])) if len(expected) > 1 else (
+        "Uma conversa com %s." % own_name)
 
     while state.get("voice_listening"):
         time.sleep(0.05)
