@@ -95,5 +95,6 @@ system, read the [runbook](../guides/operator-runbook.md) and
 | 0084 | [A model that only makes sentences](0084-a-model-that-only-makes-sentences.md) | Implemented, provider-agnostic; partly superseded by 0087 |
 | 0085 | [An encoder window the size of what was said](0085-an-encoder-window-the-size-of-what-was-said.md) | Implemented |
 | 0086 | [Experiments do not live in the runtime](0086-experiments-do-not-live-in-the-runtime.md) | Implemented as a rule |
-| 0087 | [The model is reached through the plugin](0087-the-model-is-reached-through-the-plugin.md) | Implemented |
+| 0087 | [The model is reached through the plugin](0087-the-model-is-reached-through-the-plugin.md) | Superseded by 0089 |
 | 0088 | [The agent does not decide for itself](0088-the-agent-does-not-decide-for-itself.md) | Implemented |
+| 0089 | [The model is asked from Aurora](0089-the-model-is-asked-from-aurora.md) | Implemented |

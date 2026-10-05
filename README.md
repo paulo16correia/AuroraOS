@@ -15,7 +15,7 @@
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Python](https://img.shields.io/badge/python-3.13-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![Tests](https://img.shields.io/badge/tests-1345%20C%23%20%2B%20357%20Python-2ea043.svg)](tests/)
-[![ADRs](https://img.shields.io/badge/ADRs-87-8957e5.svg)](docs/adr/)
+[![ADRs](https://img.shields.io/badge/ADRs-88-8957e5.svg)](docs/adr/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-6e7681.svg)](#supported-platforms)
 [![Status](https://img.shields.io/badge/status-controlled%20demo-d29922.svg)](#project-status)
 
@@ -165,8 +165,8 @@ permission you did not grant does not get the capability. Both refusals are reco
 | [`src/Aurora.Core`](src/Aurora.Core) | Contracts, laws, the Kernel boundary. No I/O, no vendors — this is the part that must survive a rewrite of everything else. |
 | [`src/Aurora.Adapters`](src/Aurora.Adapters) | SQLite persistence, plugin hosting and sandboxes, personality, presence, vault, diagnostics. |
 | [`src/Aurora.Server`](src/Aurora.Server) | The process you run: MCP surface, console, `doctor`, secret entry. |
-| [`plugins/`](plugins) | Confined subprocesses. Zero third-party dependencies by design — the Discord plugin writes its own WebSocket, its own RTP, and its own AEAD rather than require a `pip install` before it has been granted a network. |
-| [`docs/`](docs) | 203 documents, of which 87 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
+| [`src/Aurora.Server/plugins/`](src/Aurora.Server/plugins) | Confined subprocesses. Zero third-party dependencies by design — the Discord plugin writes its own WebSocket, its own RTP, and its own AEAD rather than require a `pip install` before it has been granted a network. |
+| [`docs/`](docs) | 203 documents, of which 88 are [ADRs](docs/adr/). The RFCs are normative and use MUST/SHOULD in the RFC 2119 sense. |
 
 ---
 

@@ -172,7 +172,9 @@ public sealed partial class DocumentationTests
 
         Assert.All(records, name => Assert.Contains($"({name})", index, StringComparison.Ordinal));
 
-        var cited = new[] { "src", "tests", "plugins", "docs" }
+        // "plugins" is not here because it is not a top-level tree any more — it lives under
+        // src/Aurora.Server, which "src" already walks.
+        var cited = new[] { "src", "tests", "docs" }
             .SelectMany(folder => SourceFiles(folder, "*.*"))
             .Where(path => path.EndsWith(".cs", StringComparison.Ordinal) || path.EndsWith(".md", StringComparison.Ordinal)
                 || path.EndsWith(".py", StringComparison.Ordinal) || path.EndsWith(".js", StringComparison.Ordinal))

@@ -79,7 +79,8 @@ missing: the plugin hears and speaks, the boundary decides, and nothing between 
 
 It does not make the conversation good. The transcripts on this machine come back approximate —
 "Ponganara da Abelheira" for *Sobral da Abelheira* — and that is the model and the prompt, not the
-wiring. See `docs/adr/0090` if one gets written about it.
+wiring. No record has been written about that yet, and this sentence is not a promise that one will
+be.
 
 ## What would make this VERIFIED
 
