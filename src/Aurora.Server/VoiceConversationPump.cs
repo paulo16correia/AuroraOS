@@ -1,4 +1,5 @@
 using Aurora.Adapters.Presence;
+using Aurora.Adapters.Reasoning;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 
@@ -61,6 +62,8 @@ public sealed class VoiceConversationPump : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stopping)
     {
+        await PrepareTheModelAsync(stopping).ConfigureAwait(false);
+
         var empty = 0;
 
         while (!stopping.IsCancellationRequested)
@@ -95,6 +98,50 @@ public sealed class VoiceConversationPump : BackgroundService
             {
                 return;
             }
+        }
+    }
+
+    /// <summary>
+    /// Loads the model once, before anybody speaks, when voice is switched on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured here: a cold llama3.1:8b answers in 54 seconds and a loaded one in half a second,
+    /// and the conversation boundary waits ten. Without this the first thing said after a restart is
+    /// answered with silence — the request times out, the load it triggered finishes anyway, and the
+    /// second question works. Somebody who has to ask twice has not been answered.
+    /// </para>
+    /// <para>
+    /// Only when voice is enabled, because loading four gigabytes for a channel nobody is in is a
+    /// cost with no return — and voice is off until an owner turns it on. Not awaited for its answer
+    /// beyond logging nothing: if the runtime is absent, the first real question says so in words,
+    /// and a pump that refused to start over a warm-up would be worse than a slow first sentence.
+    /// </para>
+    /// </remarks>
+    private async Task PrepareTheModelAsync(CancellationToken ct)
+    {
+        try
+        {
+            using IServiceScope scope = _services.CreateScope();
+            IServiceProvider services = scope.ServiceProvider;
+
+            VoiceSettings voice = await services.GetRequiredService<IVoicePolicy>()
+                .CurrentAsync(ct).ConfigureAwait(false);
+
+            if (voice.Stopped || !voice.Enabled)
+            {
+                return;
+            }
+
+            if (services.GetRequiredService<ILocalLanguageModel>() is OllamaLanguageModel ollama)
+            {
+                await ollama.PrepareAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // A warm-up that failed is a slower first sentence, not a reason for the pump never to
+            // run — which is what throwing from here would mean.
         }
     }
 

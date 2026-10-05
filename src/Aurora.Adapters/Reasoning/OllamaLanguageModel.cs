@@ -122,6 +122,48 @@ public sealed class OllamaLanguageModel : ILocalLanguageModel, IDisposable
         }
     }
 
+    /// <summary>
+    /// Asks the runtime to load the model and hold it, so the first question is not the one that
+    /// pays for it. Returns whether it is now ready.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured on this machine: a cold llama3.1:8b takes <b>54 seconds</b> to answer and 0.3 to 0.5
+    /// seconds once loaded. The conversation boundary waits ten seconds. So without this, the first
+    /// thing anybody says after a restart is answered with silence — the request times out, the load
+    /// it started completes anyway, and the <i>second</i> question works. A system that only talks
+    /// to people who ask twice is not one that holds a conversation.
+    /// </para>
+    /// <para>
+    /// <c>docs/adr/0084</c> saw this coming and put the job on <see cref="IdentifyAsync"/>, which
+    /// cannot do it: listing what is installed says nothing about what is loaded. Separate and
+    /// explicit, because loading four gigabytes is not a side effect to hide inside a question about
+    /// names.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> PrepareAsync(CancellationToken ct)
+    {
+        try
+        {
+            // An empty prompt loads the model and generates nothing. keep_alive holds it, so a quiet
+            // half-hour does not undo the wait.
+            using HttpResponseMessage response = await _http.PostAsJsonAsync(
+                "/api/generate",
+                new Load(_model, string.Empty, KeepAlive: "30m"),
+                ct)
+                .ConfigureAwait(false);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception unreachable) when (unreachable is HttpRequestException
+                                               or TaskCanceledException or OperationCanceledException)
+        {
+            // Not a failure worth propagating: the runtime being absent is a fact about the machine,
+            // and the first real question will say so in words the caller can use.
+            return false;
+        }
+    }
+
     public async Task<LanguageModelAnswer> AnswerAsync(
         LanguageModelRequest request, CancellationToken ct)
     {
@@ -264,6 +306,11 @@ public sealed class OllamaLanguageModel : ILocalLanguageModel, IDisposable
 
     private sealed record ChatResponse(
         [property: JsonPropertyName("message")] Message? Message);
+
+    private sealed record Load(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("prompt")] string Prompt,
+        [property: JsonPropertyName("keep_alive")] string KeepAlive);
 
     private sealed record TagDetails(
         [property: JsonPropertyName("quantization_level")] string? Quantization);
