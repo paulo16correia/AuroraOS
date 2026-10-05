@@ -27,7 +27,7 @@ This is the one thing to read before deciding whether to turn voice on.
 | | |
 | --- | --- |
 | **Hearing** | whisper, locally. Nobody's voice is uploaded. A recording exists as bytes in memory and as one file in a scratch directory that is deleted in the same call that wrote it. |
-| **Thinking** | a model on this machine, over loopback. |
+| **Thinking** | a model on this machine, over loopback, asked from Aurora's own process — the one connection it opens, and only ever to an address that is this machine (`docs/adr/0089`). |
 | **Speaking** | **ElevenLabs.** The sentence Aurora is about to say is sent to them to be read aloud. |
 
 Every local European Portuguese voice that could be had was measured and none was good enough to be

@@ -1,10 +1,11 @@
 # Design 0084 — A model that only makes sentences
 
 **Status:** Implemented, provider-agnostic · **Date:** 2026-09-08
-**Partly superseded by `docs/adr/0087`:** the contract, the boundary and everything here about what a
-model may not do stand. Where the implementation lives does not — it is reached through the voice
-plugin rather than from inside Aurora, because Aurora's own process opens no connection and the
-graphics card this record reasons from belongs to Ollama's process either way.
+**Where the model lives is as this record says**, and `docs/adr/0089` explains why for a reason this
+one does not give: Windows refuses loopback to an AppContainer, so a confined plugin cannot reach a
+runtime on 127.0.0.1. The graphics-card argument below does not carry the conclusion — the model runs
+in Ollama's process either way — but the conclusion holds. `docs/adr/0087` moved it behind the plugin
+on the strength of that gap and has been superseded.
 **Rests on:** `docs/adr/0073` (voice tool bridge), `docs/adr/0074` (the conversation window),
 `docs/adr/0080`/`0081` (voice refusals), LAW-002, LAW-003, LAW-007
 

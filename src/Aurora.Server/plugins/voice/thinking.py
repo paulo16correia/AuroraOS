@@ -379,49 +379,6 @@ class Thinking:
         """What the model said about its own last answer. Empty when it said nothing."""
         return dict(self._last)
 
-    def identify(self):
-        """What the runtime says it is holding, asked of the runtime.
-
-        Ollama lists what is loaded rather than what is installed, which is the question worth
-        asking: a model that has been unloaded takes nearly a minute to come back, and that is five
-        times the boundary's own timeout (docs/adr/0084).
-        """
-        import urllib.error
-
-        request = urllib.request.Request(
-            self.settings.endpoint.rstrip("/") + "/api/tags", method="GET")
-
-        try:
-            with self._opener.open(request, timeout=self.settings.timeout_seconds) as answer:
-                listed = json.loads(answer.read().decode("utf-8", "replace"))
-        except urllib.error.URLError as unreachable:
-            raise ThinkingUnavailable(
-                E_UNREACHABLE,
-                "Ollama could not be reached at %s (%s)"
-                % (self.settings.endpoint, unreachable.reason))
-        except (TimeoutError, ValueError):
-            raise ThinkingUnavailable(
-                E_UNREACHABLE, "Ollama did not say what it is running")
-
-        wanted = self.settings.model
-        models = listed.get("models") or []
-
-        for found in models:
-            if str(found.get("name") or "") == wanted:
-                return {
-                    "runtime": "ollama",
-                    "model": wanted,
-                    "revision": ((found.get("details") or {}).get("quantization_level")
-                                 or found.get("digest", "")[:12] or None),
-                }
-
-        # Reached the runtime and the model it is configured for is not there. Named rather than
-        # shrugged at: "no model" sends somebody to the wrong place when the answer is `ollama pull`.
-        raise ThinkingUnavailable(
-            E_UNREACHABLE,
-            "Ollama is running and does not have '%s' (it has %s)"
-            % (wanted, ", ".join(str(m.get("name")) for m in models[:5]) or "nothing"))
-
     def telemetry(self):
         return {
             "model": self.settings.model,

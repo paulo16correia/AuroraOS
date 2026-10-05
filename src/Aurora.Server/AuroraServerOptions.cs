@@ -98,6 +98,18 @@ public sealed class AuroraServerOptions
     public TimeSpan HeartbeatInterval { get; init; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Where the local model runtime answers. Must be an address on this machine.
+    /// </summary>
+    /// <remarks>
+    /// Checked when the client is built rather than here, so a host somewhere else is refused with a
+    /// sentence instead of silently becoming something else. What this really chooses is the port.
+    /// </remarks>
+    public string ModelEndpoint { get; init; } = "http://127.0.0.1:11434";
+
+    /// <summary>The model to ask for, as the runtime names it.</summary>
+    public string ModelName { get; init; } = "llama3.1:8b";
+
+    /// <summary>
     /// File holding the key that encrypts deliberation traces (docs/adr/0040).
     /// </summary>
     /// <remarks>
@@ -247,6 +259,14 @@ public sealed class AuroraServerOptions
         var heartbeatSeconds =
             config.GetValue<int?>("Aurora:HeartbeatSeconds") ?? 300;
 
+        // The local model runtime. The host must be this machine and is checked when the client is
+        // built, so what this setting really chooses is the port and the model name — see
+        // OllamaLanguageModel and LocalOnlyTests.
+        var modelEndpoint =
+            config["Aurora:Model:Endpoint"] ?? "http://127.0.0.1:11434";
+
+        var modelName = config["Aurora:Model:Name"] ?? "llama3.1:8b";
+
         var allowUnconfinedPlugins =
             config.GetValue<bool?>("Aurora:Plugins:AllowUnconfined") ?? false;
 
@@ -328,6 +348,8 @@ public sealed class AuroraServerOptions
             AllowUnconfinedPlugins = allowUnconfinedPlugins,
             PluginInterpreters = interpreters,
             HeartbeatInterval = TimeSpan.FromSeconds(Math.Max(0, heartbeatSeconds)),
+            ModelEndpoint = modelEndpoint,
+            ModelName = modelName,
             VaultKeyPath = vaultKeyPath,
             PassphrasePath = passphrasePath,
             AuditKeyPath = auditKeyPath,

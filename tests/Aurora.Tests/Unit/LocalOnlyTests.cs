@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Aurora.Adapters.Reasoning;
 using Xunit;
 
 namespace Aurora.Tests.Unit;
@@ -42,14 +43,28 @@ public sealed class LocalOnlyTests
     ];
 
     /// <summary>
-    /// The one place Aurora opens a connection, and why it is allowed.
+    /// The two places Aurora opens a connection, and why each is allowed.
     /// </summary>
     /// <remarks>
-    /// The console's health verb asks Aurora's own liveness endpoint on 127.0.0.1, because the
-    /// runtime image carries no curl and giving a health probe a bearer token would be handing out
-    /// a credential to save a word. It cannot reach another machine: the address is a literal.
+    /// <para>
+    /// <b>OperationsConsole.cs</b> — the console's health verb asks Aurora's own liveness endpoint
+    /// on 127.0.0.1, because the runtime image carries no curl and giving a health probe a bearer
+    /// token would be handing out a credential to save a word. It cannot reach another machine: the
+    /// address is a literal.
+    /// </para>
+    /// <para>
+    /// <b>OllamaLanguageModel.cs</b> — the local model, which has to be reached from here because
+    /// Windows refuses loopback to an AppContainer and a confined plugin therefore cannot reach it
+    /// at all (docs/adr/0089). It earns this the same way the first one does: it cannot reach
+    /// another machine. The host is checked at construction against a fixed list of addresses that
+    /// mean this machine, and anything else is refused outright rather than defaulted — so the only
+    /// thing configuration can move is which port here answers. The test below holds that: a
+    /// configurable host would make this a statement about today's settings instead of about the
+    /// code.
+    /// </para>
     /// </remarks>
-    private const string AllowedFile = "OperationsConsole.cs";
+    private static readonly string[] AllowedFiles =
+        ["OperationsConsole.cs", "OllamaLanguageModel.cs"];
 
     private static string SourceRoot()
     {
@@ -87,9 +102,10 @@ public sealed class LocalOnlyTests
                     continue;
                 }
 
-                if (name == AllowedFile && what == "an HTTP client")
+                if (AllowedFiles.Contains(name, StringComparer.Ordinal)
+                    && what == "an HTTP client")
                 {
-                    // Allowed, and only because it is pinned to 127.0.0.1 below.
+                    // Allowed, and only because each is held to this machine by the tests below.
                     continue;
                 }
 
@@ -104,14 +120,48 @@ public sealed class LocalOnlyTests
     }
 
     [Fact]
-    public void TheOneConnectionAuroraOpensIsToItself()
+    public void TheHealthProbeAuroraOpensIsToItself()
     {
-        var console = Path.Combine(SourceRoot(), "Aurora.Server", AllowedFile);
+        var console = Path.Combine(SourceRoot(), "Aurora.Server", "OperationsConsole.cs");
         var text = File.ReadAllText(console);
 
         // A literal, so no configuration and no environment variable can point it elsewhere.
         Assert.Contains("http://127.0.0.1:", text, StringComparison.Ordinal);
         Assert.DoesNotContain("http://\" +", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheModelAuroraAsksHasToBeOnThisMachine()
+    {
+        // The other exception cannot be a literal — which port the runtime answers on is the
+        // owner's — so it is held by a check instead. These are the cases that matter: a host
+        // somewhere else is refused rather than defaulted, because defaulting would mean an
+        // installation that asked for a model elsewhere silently got a different one.
+        foreach (var elsewhere in new[]
+                 {
+                     "http://10.0.0.5:11434",
+                     "http://ollama.example.com:11434",
+                     "https://api.openai.com",
+                     "http://192.168.1.20:11434",
+                 })
+        {
+            Assert.Throws<ArgumentException>(() => OllamaLanguageModel.Loopback(elsewhere));
+        }
+
+        foreach (var here in new[]
+                 {
+                     "http://127.0.0.1:11434",
+                     "http://localhost:11434",
+                     "http://127.0.0.1:11434/",
+                     "http://[::1]:11434",
+                 })
+        {
+            Assert.Contains("11434", OllamaLanguageModel.Loopback(here), StringComparison.Ordinal);
+        }
+
+        // And nonsense is refused rather than guessed at.
+        Assert.Throws<ArgumentException>(() => OllamaLanguageModel.Loopback("not an address"));
+        Assert.Throws<ArgumentException>(() => OllamaLanguageModel.Loopback(""));
     }
 
     [Fact]

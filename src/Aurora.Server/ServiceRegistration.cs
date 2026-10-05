@@ -112,12 +112,12 @@ public static class ServiceRegistration
             // principal here, and treating them as one would make caller ID an authentication
             // mechanism.
             new Principal("voice", Environment.UserName)));
-        // The model, reached through the voice plugin rather than from inside Aurora. This is the
-        // one place that decision shows: Aurora's own process opens no connection, and the plugin
-        // that already talks to a model is the only thing that does (docs/adr/0087).
-        services.AddSingleton<ILocalLanguageModel>(sp => new PluginLanguageModel(
-            sp.GetRequiredService<AuroraKernel>(),
-            new Principal("voice", Environment.UserName)));
+        // The model, asked over loopback from here. It was reached through the voice plugin until
+        // the plugin turned out not to be able to reach it: Windows refuses loopback to an
+        // AppContainer, so a confined plugin cannot see a runtime on 127.0.0.1 at all
+        // (docs/adr/0089, correcting docs/adr/0087).
+        services.AddSingleton<ILocalLanguageModel>(
+            _ => new OllamaLanguageModel(options.ModelEndpoint, options.ModelName));
 
         // Everything between "somebody spoke to Aurora" and "Aurora spoke". It was written and
         // tested and registered by nothing, which meant the only thing that had ever held a voice

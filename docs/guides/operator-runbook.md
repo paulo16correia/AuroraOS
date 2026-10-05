@@ -148,6 +148,8 @@ arguments. All keys are optional; sensible per-user defaults apply.
 | `Aurora:Voice:Enabled` | Whether voice runs at all | `false` |
 | `Aurora:Voice:MaxConcurrentSessions` | Across every channel, not per channel | `2` |
 | `Aurora:Voice:MaxSessionDuration` | The longest a grant may ask for | `00:15:00` |
+| `Aurora:Model:Endpoint` | Where the local model runtime answers. Must be this machine | `http://127.0.0.1:11434` |
+| `Aurora:Model:Name` | The model to ask for, as the runtime names it | `llama3.1:8b` |
 
 ### Naming the interpreter
 

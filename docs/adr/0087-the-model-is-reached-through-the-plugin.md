@@ -1,6 +1,12 @@
 # Design 0087 — The model is reached through the plugin
 
-**Status:** Implemented · **Date:** 2026-10-02
+**Status:** **Superseded by `docs/adr/0089`** · **Date:** 2026-10-02
+
+> The argument below about the graphics card is sound and the conclusion drawn from it is not.
+> Windows refuses loopback to an AppContainer, so a confined plugin cannot reach a model on
+> 127.0.0.1 at all — measured, with Ollama serving. The model is asked from inside Aurora again. What
+> this record got right and 0089 keeps: an outcome is a result and not a refusal, and the plugin
+> reports while Aurora decides.
 **Supersedes:** the location `docs/adr/0084` chose for the model. Its contract, its boundary and
 everything it says about what a model may not do stand unchanged.
 **Rests on:** `docs/adr/0045` (Aurora binds loopback), `docs/adr/0073` (one voice, one direction),
