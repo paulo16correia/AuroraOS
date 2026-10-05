@@ -46,13 +46,12 @@ jobs:
         # nobody executes is documentation, and this repository has been bitten by that before.
         run: dotnet test --no-build --configuration Release --verbosity normal
 
-  # Everything that is not the sandbox should still compile and pass elsewhere. This job is
-  # deliberately build-only: claiming the full suite passes on Linux would be a guess until
-  # somebody has watched it, and an honest amber is worth more than a green that lies.
+  # The whole suite, with the sandbox Linux plugins actually run under. Pinned to the release the
+  # confinement tests were verified on rather than to whatever ubuntu-latest next points at.
   linux:
-    name: Build (Linux)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Build and test (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +60,30 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install bubblewrap
+        # Plugins are refused on Linux without it, so without it the confinement tests have
+        # nothing to confine. Ubuntu 24.04 also restricts unprivileged user namespaces through
+        # AppArmor, which bubblewrap needs when it does not run as root.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Lint the plugins
+        # Standard library only at runtime; pyflakes is a check on the source, never a dependency.
+        run: |
+          python -m pip install pyflakes==4.0.1
+          python -m pyflakes plugins
+
       - name: Restore
         run: dotnet restore
 
       - name: Build
         run: dotnet build --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test --no-build --configuration Release --verbosity normal

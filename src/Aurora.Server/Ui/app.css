@@ -138,3 +138,6 @@ form[role="search"] button {
   border: 1px solid var(--line); background: var(--card); color: var(--fg); min-width: 240px;
 }
 .card pre.request { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+
+/* The sign-in page: one card, the width of the field it holds. */
+.signin { max-width: 520px; }
