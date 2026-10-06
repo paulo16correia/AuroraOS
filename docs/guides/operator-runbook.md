@@ -175,9 +175,17 @@ used to claim no such setting existed. On a machine with a system-wide Python th
 and a per-user one beside it, `doctor` fails both plugins and the remedy is one line — not an
 administrator, and not reinstalling anything:
 
-```powershell
-$env:Aurora__Plugins__Interpreters__python3 = "$env:LocalAppData\Aurora\runtime\python\python.exe"
+```bash
+dotnet run --project src/Aurora.Server -- --Aurora:Plugins:Interpreters:python3=%LocalAppData%\Aurora\runtime\python\python.exe
 ```
+
+Passed as an argument rather than exported, and that is worth a sentence because it costs an
+evening to learn otherwise. `WebApplication.CreateBuilder(args)` reads the command line, so
+a `--` argument in that form works the same in PowerShell and in `cmd`. Exporting works too, with the
+doubled underscore — `Aurora__Plugins__Interpreters__python3` — but `set VAR=value` is `cmd`
+syntax, and in PowerShell `set` is an alias for `Set-Variable`: it sets a shell variable the
+server never sees. It fails silently, which is the worst way for a setting to fail — Aurora
+starts, reports the setting absent, and nothing says why.
 
 Otherwise: keep the interpreter you want first on `PATH`, or install it per-user.
 
