@@ -614,8 +614,16 @@ class ElevenLabsSpeaker:
 
         # Sent only when known: an empty language code is not the same as an absent one. The API
         # rejects the first and infers for the second.
+        #
+        # The language, not the variety. Measured against the real service: a request carrying
+        # `pt-PT` comes back 400, "Model 'eleven_flash_v2_5' does not support language_code
+        # 'pt-PT'". This model takes the primary subtag and nothing else, so the region is dropped
+        # here rather than at the caller — an owner writing `pt-PT` in their settings is saying
+        # something true about which Portuguese they speak, and the voice setting still honours it
+        # when choosing who speaks. What is lost is only a distinction the service could not have
+        # acted on.
         if self.locale:
-            body["language_code"] = str(self.locale)
+            body["language_code"] = language_of(self.locale)
 
         url = "%s/v1/text-to-speech/%s/stream?output_format=pcm_%d" % (
             _speech_base(self.base), self.voice_id, self.rate)
@@ -664,6 +672,16 @@ class ElevenLabsSpeaker:
 
         if not delivered:
             raise SpeechUnavailable("the speech service answered with no audio")
+
+
+def language_of(locale):
+    """The primary subtag of a locale: `pt-PT` becomes `pt`, `en` stays `en`.
+
+    Speech services name languages and owners name varieties. Keeping the two apart here means a
+    setting can say `pt-PT` — which is true, and which `resolve_voice` uses to pick a voice — without
+    the request carrying a code the model will refuse.
+    """
+    return str(locale or "").strip().replace("_", "-").split("-")[0].lower()
 
 
 def resolve_voice(setting, language=None):

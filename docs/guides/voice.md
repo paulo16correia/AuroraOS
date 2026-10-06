@@ -116,10 +116,15 @@ not having a voice of her own:
 
 `pt-PT` finds a voice filed under `pt`; `pt` is not found by `pt-BR`.
 
-`locale` is the language Aurora answers in by default and the one sent to the speech service. Sent
-only when known: an empty language code is not the same as an absent one — the service rejects the
-first and infers for the second. Inferring is the failure that matters, because "no" is a word in
-several languages and a wrong guess reads the whole sentence in the wrong one.
+`locale` is the language Aurora answers in by default. Write the variety you actually speak —
+`pt-PT` rather than `pt` — because that is what picks a voice when `tts_voice` maps languages to
+voices.
+
+What travels to the speech service is the **language** from it, not the variety: Flash v2.5 answers
+`pt` and refuses `pt-PT` outright, which cost an evening to learn. Sent only when known, because an
+empty language code is not the same as an absent one — the service rejects the first and infers for
+the second, and inferring is the failure that matters: "no" is a word in several languages and a
+wrong guess reads the whole sentence in the wrong one.
 
 ### 4. Install what hears
 

@@ -133,8 +133,18 @@ class OPedido(unittest.TestCase):
         self.assertIn("/v1/text-to-speech/voz-pt/stream", pedido["path"])
         self.assertIn("output_format=pcm_48000", pedido["path"])
         self.assertEqual("chave-de-teste", pedido["chave"])
-        self.assertEqual("pt-PT", pedido["corpo"]["language_code"])
+        # The language, not the variety. Measured against the real service: a request carrying
+        # "pt-PT" comes back 400, "Model 'eleven_flash_v2_5' does not support language_code
+        # 'pt-PT'". The setting still says pt-PT, because that is true and because it is what
+        # chooses a voice; only what travels is reduced.
+        self.assertEqual("pt", pedido["corpo"]["language_code"])
         self.assertEqual(voice_engines.ELEVENLABS_MODEL, pedido["corpo"]["model_id"])
+
+    def test_the_variety_still_chooses_the_voice(self):
+        # Reducing what travels must not reduce what decides. An owner mapping pt to one voice and
+        # writing pt-PT in their locale still gets that voice.
+        self.assertEqual(
+            "voz-pt", voice_engines.resolve_voice({"pt": "voz-pt", "default": "outra"}, "pt-PT"))
 
     def test_an_unknown_language_is_left_out_rather_than_sent_empty(self):
         with Falso() as falso:
