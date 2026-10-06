@@ -895,7 +895,7 @@ def _watch_turns(state):
     # answering the remainder is how one question becomes two wrong answers.
     unfinished = {}
 
-    def answer(speaker, transcript, ended_ms, recognition_started, recognised_at):
+    def answer(speaker, transcript, ended_ms, waited_ms, recognised_ms):
         """Decides whether a finished utterance is Aurora's to answer, and says so if it is."""
         decision = utterance_heard(
             state, speaker, transcript, int(time.monotonic() * 1000))
@@ -925,8 +925,10 @@ def _watch_turns(state):
             "reason": decision["reason"],
             "at_ms": now_ms,
             "latency": {
-                "waited_for_silence_ms": int(recognition_started - ended_ms),
-                "recognised_in_ms": int(recognised_at - recognition_started),
+                "waited_for_silence_ms": int(waited_ms),
+                # Across every fragment, when the sentence was stitched from more than one: the
+                # work recognition did, rather than the work the last piece of it did.
+                "recognised_in_ms": int(recognised_ms),
                 "since_speaker_stopped_ms": int(now_ms - ended_ms),
             },
         })
@@ -973,7 +975,7 @@ def _watch_turns(state):
 
             del unfinished[who]
             answer(who, half["transcript"], half["ended_ms"],
-                   half["recognition_started"], half["recognised_at"])
+                   half["waited_ms"], half["recognised_ms"])
 
         for action, detail in session.tick(now_ms):
             if action != "utterance_ended":
@@ -1037,12 +1039,18 @@ def _watch_turns(state):
             transcript = transcript.strip()
             half = unfinished.pop(speaker, None)
 
+            waited_ms = recognition_started - detail["ended_ms"]
+            recognised_ms = recognised_at - recognition_started
+
             if half:
                 # The rest of a sentence the ceiling cut. Joined with a space: the seam falls
                 # mid-sentence, so neither side ends or starts with punctuation that would make
                 # one reading of it wrong.
                 transcript = (half["transcript"] + " " + transcript).strip()
-                recognition_started = half["recognition_started"]
+
+                # The wait is this fragment's — it is how long after they finally stopped — while
+                # the recognition time is every fragment's, because that work was all done.
+                recognised_ms += half["recognised_ms"]
 
             if detail.get("cut_short") and len(transcript) < LONGEST_STITCHED:
                 # They were still speaking when the ceiling arrived. Hold this half and wait for
@@ -1050,14 +1058,13 @@ def _watch_turns(state):
                 unfinished[speaker] = {
                     "transcript": transcript,
                     "ended_ms": detail["ended_ms"],
-                    "recognition_started": recognition_started,
-                    "recognised_at": recognised_at,
+                    "waited_ms": waited_ms,
+                    "recognised_ms": recognised_ms,
                     "held_at_ms": int(time.monotonic() * 1000),
                 }
                 continue
 
-            answer(speaker, transcript, detail["ended_ms"],
-                   recognition_started, recognised_at)
+            answer(speaker, transcript, detail["ended_ms"], waited_ms, recognised_ms)
 
 def _wav(pcm):
     """Turns Discord's audio into what a speech recogniser expects.
