@@ -105,6 +105,38 @@ class TurnTaking(unittest.TestCase):
         for turn in ended:
             self.assertLessEqual(turn[1]["duration_ms"], 8100)
 
+    def test_a_turn_cut_by_the_ceiling_says_so(self):
+        """A turn handed over mid-sentence is marked, because it is half of something.
+
+        Without this the receiving end cannot tell a finished question from an interrupted one, and
+        answers both. That is how one question becomes two wrong answers.
+        """
+        s = session()
+        ended = []
+
+        for offset in range(0, 12000, 20):
+            at = 1000 + offset
+            s.audio(1, at)
+            ended += s.tick(at)
+
+        self.assertEqual(kinds(ended), ["utterance_ended"])
+        self.assertTrue(ended[0][1]["cut_short"])
+
+    def test_a_turn_that_ended_on_silence_is_not_marked_as_cut(self):
+        # Somebody who stopped talking asked a whole question, and waiting for a second half that
+        # is never coming would hold every ordinary sentence for nothing.
+        s = session()
+
+        for offset in range(0, 2000, 20):
+            at = 1000 + offset
+            s.audio(1, at)
+            s.tick(at)
+
+        ended = s.tick(1000 + 2000 + 1000)
+
+        self.assertEqual(kinds(ended), ["utterance_ended"])
+        self.assertFalse(ended[0][1]["cut_short"])
+
     def test_a_turn_that_pauses_normally_is_unaffected_by_the_ceiling(self):
         # The ceiling is for the case that would otherwise never end. An ordinary sentence still
         # ends on silence, at its own length.

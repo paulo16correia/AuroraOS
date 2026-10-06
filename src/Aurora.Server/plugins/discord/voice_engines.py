@@ -62,6 +62,8 @@ wav_seconds = _speech.wav_seconds
 _workspace = _speech.workspace
 is_silence = _speech.is_silence
 is_hallucination = _speech.is_hallucination
+is_prompt_echo = _speech.is_prompt_echo
+is_foreign_script = _speech.is_foreign_script
 
 
 # Local text-to-speech. `say` ships with macOS and speaks without a network.
@@ -292,7 +294,7 @@ def readiness(voice=None, api_key=None, language=None):
 
 
 def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
-               language="auto", prompt="", threads=None, audio_ctx=True):
+               language="auto", prompt="", threads=None, audio_ctx=False):
     """Turns speech into text, locally, and keeps neither the audio nor the file."""
     return _speech.transcribe(
         engine, audio_bytes, model=model, timeout=timeout, gpu=gpu, language=language,

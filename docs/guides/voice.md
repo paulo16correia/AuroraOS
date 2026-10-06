@@ -252,9 +252,22 @@ The path is tested end to end — audio in, `clock.now` through the real Kernel,
 recogniser and speaker scripted and the model reached over real HTTP on loopback. That proves every
 piece is connected to the next and that the Kernel is in the middle of it.
 
-It proves nothing about quality. Whether whisper hears European Portuguese, whether the model
-answers as Aurora rather than as a chat assistant, and whether a turn completes in under a second
-are questions for a machine with the models on it.
+It proves nothing about how well Aurora hears. That has since been measured separately, against
+sixteen known European Portuguese sentences pushed through the production audio path
+(`docs/adr/0091`), and the answer is **not well enough**:
+
+| | clean | with noise |
+|---|---|---|
+| `ggml-small`, as configured | 33.7% of words wrong | 66.2% |
+| `ggml-large-v3-turbo` | 23.1% | 32.6% |
+
+The large model halves the errors in the condition that matters and takes 11.6 seconds a sentence on
+this processor, which is not a conversation. It is affordable only on the graphics processor, and
+the graphics processor is not reachable from a confined plugin today. Until that changes, expect
+Aurora to mishear names and short questions.
+
+Whether the model answers as Aurora rather than as a chat assistant, and whether a turn completes in
+under a second, remain questions for a machine with the models on it.
 
 ## Known gaps
 
@@ -266,4 +279,8 @@ are questions for a machine with the models on it.
   wired to a device: `ListenAsync` carries audio in and `PumpAsync` carries it back out, both tested
   through the real host, with nothing at either end.
 - Discord voice is not yet on the shared session model.
-- Audio quality, latency and PT-PT recognition are entirely unmeasured.
+- **Recognition is measured and is the weakest part of the chain** (`docs/adr/0091`). Three of its
+  failure modes are now refused rather than answered — the prompt coming back as a transcript, a
+  transcript in another alphabet, and half a sentence the turn ceiling cut — but refusing a bad
+  transcript is silence, not hearing.
+- Audio quality and latency on a real microphone are still unmeasured.

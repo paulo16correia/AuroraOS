@@ -1,6 +1,6 @@
 # Design 0085 — An encoder window the size of what was said
 
-**Status:** Implemented · **Date:** 2026-09-09
+**Status:** Corrected by `docs/adr/0091` · **Date:** 2026-09-09
 **Rests on:** `docs/adr/0068` (voice), `docs/adr/0071` (the name), `docs/adr/0084` (the local model)
 
 ## Where the time actually went
@@ -86,3 +86,14 @@ why none are claimed.
 
 `stt_audio_ctx` in the plugin's settings turns the sizing off and restores the whole window, for
 whoever wants to check this on real voices.
+
+## Somebody checked
+
+`docs/adr/0091` measured the accuracy this record declined to claim, and the sizing turned out to
+cost seven points of word error clean and nine with noise, to save about a second a turn. So the
+default is now off — this document's own invitation, taken up.
+
+The evidence is still synthetic speech, which this record was right to call weak for an absolute
+number. It is stronger for the comparison it was used for: the same voice, the same sixteen
+sentences, the same audio path, differing only in the flag, measured in two noise conditions. A
+difference that size and that consistent between two settings is not the voice.

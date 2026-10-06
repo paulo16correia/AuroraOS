@@ -20,12 +20,14 @@ transcript in the wrong language.
 import io
 import json
 import os
+import re
 import secrets
 import shutil
 import struct
 import subprocess
 import tempfile
 import time
+import unicodedata
 import wave
 
 SAMPLE_RATE = 24000
@@ -178,7 +180,18 @@ CONTEXT_WORTH_SHORTENING_SECONDS = 4.0
 
 
 def audio_context_for(seconds):
-    """The encoder window one utterance needs, or None to use the whole thing."""
+    """The encoder window one utterance needs, or None to use the whole thing.
+
+    Off by default, and the default is the measurement rather than the intention. whisper encodes a
+    fixed thirty-second window whatever it is given, so shortening it for a short utterance looks
+    like free speed. It is not free: measured against sixteen known Portuguese sentences through the
+    production audio path, shortening the window cost seven points of word error clean (33.7% to
+    40.8%) and nine with noise, for about a second a turn. A turn Aurora mishears is a turn she
+    answers wrongly, which costs the exchange rather than a second of it.
+
+    Kept, rather than deleted, because the trade is real on slower hardware than this — an owner
+    whose machine takes ten seconds a turn may want it. It is `stt_audio_ctx` and it is off.
+    """
     if not seconds or seconds <= 0:
         return None
 
@@ -234,12 +247,23 @@ STT_ENGINES = [
     # name is the difference between a small model hearing "Aurora" and hearing "A hora" — measured,
     # with the same clip. A name is the word recognition gets wrong most, and telling the recogniser
     # the word exists costs nothing (docs/adr/0071).
+    # -nf turns off temperature fallback. When a segment fails whisper's own confidence checks it
+    # re-decodes at rising temperature, and a decoder sampling at temperature one on audio it could
+    # not read does not produce a worse transcript — it produces a confident invention, in whatever
+    # language the sampled tokens happened to spell. That is where "советар" came from. Measured
+    # against known speech it changed no word of the transcripts that were already right, and it
+    # removes the re-decodes, which is most of the time this used to spend.
+    #
+    # -sns suppresses the non-speech tokens, the ones that produce "[MÚSICA]" and "(música)" from a
+    # fan or a breath. They are not transcripts and nothing downstream should have to recognise
+    # them as noise.
     ("whisper-cli",
      ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "5", "-t", "{threads}",
-      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "--no-prints", "{gpu}"]),
+      "-nf", "-sns", "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "--no-prints",
+      "{gpu}"]),
     ("whisper.cpp",
      ["-m", "{model}", "-f", "{input}", "-l", "{language}", "-bs", "5", "-t", "{threads}",
-      "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
+      "-nf", "-sns", "{audio_ctx}", "--prompt", "{prompt}", "--output-txt", "{gpu}"]),
     ("whisper", ["--model", "base", "--output_format", "txt", "{input}"]),
 ]
 
@@ -402,8 +426,101 @@ def is_hallucination(text):
     return text.strip().lower() in HALLUCINATIONS
 
 
+# How much of a transcript may come from the prompt before it stops being a transcript.
+#
+# The prompt is handed to whisper as text that came immediately before the audio, so when the audio
+# is unclear the likeliest continuation is more of the prompt — and what comes back is the prompt
+# itself, spelled as though somebody had said it. Measured against known speech: with a prompt
+# reading "Uma conversa com Aurora. Falamos de Sobral da Abelheira, Ericeira.", the sentence
+# "Aurora, estás a ouvir?" came back as "Falamos de Sobral da Abelheira." Answering that is
+# answering a question nobody asked, which is worse than not hearing one.
+ECHO_FOREIGN_WORDS = 1
+
+# Below this many words, a transcript made of prompt words is likelier to be true than echoed. The
+# prompt holds the words that actually get said — a name, a town — and somebody saying only
+# "Aurora", or only "Sobral da Abelheira", still has to be heard.
+ECHO_SHORTEST = 4
+
+
+def is_prompt_echo(text, prompt):
+    """Whether this transcript is the prompt coming back rather than anything that was said.
+
+    True when the transcript is long enough to be a sentence and all but one of its words came from
+    the prompt. The threshold counts the words the prompt does *not* contain, rather than a
+    percentage, because what makes a transcript real is that it says something the prompt could not
+    have supplied — and one such word is enough to believe it.
+    """
+    if not prompt:
+        return False
+
+    said = _echo_words(text)
+
+    if len(said) < ECHO_SHORTEST:
+        return False
+
+    from_prompt = set(_echo_words(prompt))
+
+    return sum(1 for word in said if word not in from_prompt) <= ECHO_FOREIGN_WORDS
+
+
+# How much of a transcript may be written in an alphabet the conversation does not use.
+#
+# A third, because a stray character is not evidence of anything — a recogniser that emits one
+# Greek letter in a Portuguese sentence has made a spelling mistake, not changed language — while a
+# transcript a third of whose letters are from another script is not that sentence at all.
+FOREIGN_SCRIPT_SHARE = 0.34
+
+
+def is_foreign_script(text, prompt):
+    """Whether this transcript is written in an alphabet this conversation does not use.
+
+    The alphabet is taken from the prompt rather than from a table of languages, because the prompt
+    is already written in the owner's language and a table would be one more thing to keep true.
+
+    This is the second line and not the first. What produced "советар" in a Portuguese channel was
+    whisper's temperature fallback, re-decoding audio it could not read until it sampled something
+    — and that is off (`-nf` in `STT_ENGINES`). This catches what a decoder spells in another
+    alphabet anyway, which is rare and is never speech.
+    """
+    ours = _scripts(prompt)
+
+    if not ours:
+        return False
+
+    letters = [letter for letter in unicodedata.normalize("NFC", text or "") if letter.isalpha()]
+
+    if not letters:
+        return False
+
+    foreign = sum(1 for letter in letters if _script_of(letter) not in ours)
+
+    return foreign / float(len(letters)) >= FOREIGN_SCRIPT_SHARE
+
+
+def _scripts(text):
+    """The alphabets a piece of text is written in."""
+    return {_script_of(letter)
+            for letter in unicodedata.normalize("NFC", text or "")
+            if letter.isalpha()}
+
+
+def _script_of(letter):
+    """The alphabet one letter belongs to: LATIN, CYRILLIC, GREEK, and so on.
+
+    Taken from the character's own name, which is where Unicode puts it, rather than from a range
+    table that would have to be maintained.
+    """
+    return unicodedata.name(letter, "UNKNOWN").split(" ")[0]
+
+
+def _echo_words(text):
+    """Lowercase words, accents kept: in Portuguese they are part of the word."""
+    normalised = unicodedata.normalize("NFC", (text or "").lower())
+    return re.findall(r"[^\W\d_]+", normalised, re.UNICODE)
+
+
 def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
-               language="auto", prompt="", threads=None, audio_ctx=True):
+               language="auto", prompt="", threads=None, audio_ctx=False):
     """Turns speech into text, locally, and keeps neither the audio nor the file.
 
     The audio touches the disk because these programs read files, and it is removed in the same

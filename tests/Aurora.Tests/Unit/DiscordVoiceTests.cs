@@ -79,7 +79,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // plugin and once written out again here — until this plugin was given a copy of the
         // voice plugin's instead. Two of the tests guard that: the copy is compared byte for
         // byte, and this plugin is checked for not having quietly grown a second request.
-        RunPython("test_speech_service", 21);
+        RunPython("test_speech_service", 28);
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // The state machine is Python, so its tests are Python. Run from here so the suite is one
         // place to look: a rule about not talking over people is not less important for being
         // written in another language.
-        RunPython("test_voice", 16);
+        RunPython("test_voice", 18);
     }
 
     [Fact]

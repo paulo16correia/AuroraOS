@@ -353,5 +353,66 @@ class OQueEstaPronto(unittest.TestCase):
         self.assertIsNone(sem["speech_service"])
 
 
+class PromptEcho(unittest.TestCase):
+    """What comes back when the recogniser heard nothing and had a prompt to copy.
+
+    whisper takes the initial prompt as text that came immediately before the audio, so when the
+    audio is unclear the likeliest continuation is more of the prompt. Measured against known
+    speech: "Aurora, estás a ouvir?" came back as "Falamos de Sobral da Abelheira." — the prompt,
+    spelled as though somebody had said it. Answering that is answering a question nobody asked.
+    """
+
+    PROMPT = "Uma conversa com Aurora. Falamos de Sobral da Abelheira, Ericeira."
+
+    def test_the_prompt_coming_back_is_not_a_transcript(self):
+        self.assertTrue(voice_engines.is_prompt_echo("Falamos de Sobral da Abelheira.", self.PROMPT))
+        self.assertTrue(voice_engines.is_prompt_echo("Uma conversa com Aurora.", self.PROMPT))
+
+    def test_a_sentence_that_merely_uses_those_words_is_a_transcript(self):
+        # The prompt holds the words that actually get said, so sharing them is expected. What
+        # makes a transcript real is saying something the prompt could not have supplied.
+        self.assertFalse(voice_engines.is_prompt_echo(
+            "Eu moro em Sobral da Abelheira, perto da Ericeira.", self.PROMPT))
+        self.assertFalse(voice_engines.is_prompt_echo(
+            "Aurora, sabes onde fica a Ericeira?", self.PROMPT))
+
+    def test_somebody_saying_only_the_name_is_still_heard(self):
+        # Short transcripts made entirely of prompt words are likelier to be true than echoed:
+        # "Aurora" on its own is how somebody gets her attention.
+        self.assertFalse(voice_engines.is_prompt_echo("Aurora", self.PROMPT))
+        self.assertFalse(voice_engines.is_prompt_echo("Sobral da Abelheira", self.PROMPT))
+
+    def test_without_a_prompt_nothing_is_an_echo(self):
+        self.assertFalse(voice_engines.is_prompt_echo("Falamos de Sobral da Abelheira.", ""))
+        self.assertFalse(voice_engines.is_prompt_echo("Falamos de Sobral da Abelheira.", None))
+
+
+class ForeignScript(unittest.TestCase):
+    """A transcript in an alphabet the conversation does not use is not a transcript.
+
+    This is the second line and not the first: what produced советар in a Portuguese channel was
+    whisper's temperature fallback, and that is off. This catches what gets through.
+    """
+
+    PROMPT = "Uma conversa com Aurora. Falamos de Sobral da Abelheira, Ericeira."
+
+    def test_another_alphabet_is_not_speech_here(self):
+        self.assertTrue(voice_engines.is_foreign_script(u"советар", self.PROMPT))
+        self.assertTrue(voice_engines.is_foreign_script(u"αβγδεζ ηθικ", self.PROMPT))
+
+    def test_portuguese_with_its_accents_is_speech(self):
+        # The accents are the language, not another alphabet.
+        self.assertFalse(voice_engines.is_foreign_script(
+            u"Amanhã de manhã às sete e meia, põe-se a caminho.", self.PROMPT))
+        self.assertFalse(voice_engines.is_foreign_script(
+            u"Aurora, que horas são?", self.PROMPT))
+
+    def test_one_stray_letter_is_a_spelling_mistake_not_a_language(self):
+        # A recogniser that emits a single Greek letter in a Portuguese sentence got a character
+        # wrong. Throwing the sentence away for that would lose more than it saves.
+        self.assertFalse(voice_engines.is_foreign_script(
+            u"Aurora, que horas são α?", self.PROMPT))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

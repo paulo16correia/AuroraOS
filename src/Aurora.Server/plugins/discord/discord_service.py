@@ -838,6 +838,18 @@ def _media_report(state, session, transport, participants):
     }
 
 
+# How long half a sentence waits for the rest before it is answered on its own.
+#
+# The ceiling that cut it fires while somebody is still speaking, so the rest normally arrives
+# within a packet or two. This covers the case where it does not — they stopped within a breath of
+# the ceiling and nothing more is coming. Answering half a question late beats never answering it.
+UNFINISHED_PATIENCE_MS = 2000
+
+# How much stitched-together speech is still one question, in characters. Past this somebody is
+# making a speech rather than asking something, and waiting for them to finish is never answering.
+LONGEST_STITCHED = 600
+
+
 def _watch_turns(state):
     """Ends turns on silence and turns each one into a transcript.
 
@@ -857,6 +869,11 @@ def _watch_turns(state):
     # on speaking. The owner's words are the ones that have to survive, so they go in a clause that
     # reads like somebody about to say them.
     #
+    # It is also why `is_prompt_echo` exists below: the same fluency that helps the decoder hear
+    # these words lets it return them when it heard nothing. The prompt earns its place on clean
+    # audio — dropping it cost twelve points of word error, measured — and the guard pays for it on
+    # the audio that is not clean.
+    #
     # De-duplicated, because the name was arriving twice: this joined the bot's own name to a
     # vocabulary setting that already contained it, and "Aurora, Aurora, Sobral da Abelheira" spends
     # prompt on a repetition that teaches the decoder nothing.
@@ -873,6 +890,71 @@ def _watch_turns(state):
         own_name, ", ".join(expected[1:])) if len(expected) > 1 else (
         "Uma conversa com %s." % own_name)
 
+    # Halves of sentences the ceiling cut, by whoever was speaking. A turn that ended because the
+    # ceiling arrived is not a question, it is the first part of one, and answering it and then
+    # answering the remainder is how one question becomes two wrong answers.
+    unfinished = {}
+
+    def answer(speaker, transcript, ended_ms, recognition_started, recognised_at):
+        """Decides whether a finished utterance is Aurora's to answer, and says so if it is."""
+        decision = utterance_heard(
+            state, speaker, transcript, int(time.monotonic() * 1000))
+
+        # The raw audio is gone by here. What leaves this function is words, and only because
+        # somebody asked Aurora to listen.
+        if not decision["speak"] or conversation_window(state) is None:
+            return
+
+        # A pause before answering is what makes a reply sound like a person rather than a buzzer,
+        # and it is also time nobody gets back. Scaled rather than removed, so the owner can have
+        # either without the code pretending the choice is free.
+        pace = float(_setting("answer_pace", 1.0))
+        time.sleep((decision.get("delay_ms") or 0) * pace / 1000.0)
+
+        waiting = state.setdefault("voice_pending", [])
+
+        # Timed, because "it feels slow" and "which part is slow" are different questions and only
+        # the second one can be fixed. Milliseconds from the moment the speaker stopped: how long
+        # the pause rule waited, how long recognition took, and how long the whole thing took
+        # before anybody could answer.
+        now_ms = int(time.monotonic() * 1000)
+
+        waiting.append({
+            "speaker_id": speaker,
+            "transcript": transcript,
+            "reason": decision["reason"],
+            "at_ms": now_ms,
+            "latency": {
+                "waited_for_silence_ms": int(recognition_started - ended_ms),
+                "recognised_in_ms": int(recognised_at - recognition_started),
+                "since_speaker_stopped_ms": int(now_ms - ended_ms),
+            },
+        })
+
+        # Only the most recent few. A conversation that got ahead of whoever is answering is one
+        # where the old lines are no longer worth saying — answering a question from a minute ago
+        # is worse than having missed it.
+        del waiting[:-3]
+
+        session = state.get("voice")
+
+        # The pending turns rather than only the latest. Aurora decides what to say from the
+        # conversation, and a plugin that reported one line would be choosing for it. Where it
+        # happened goes too: it is not used to reach the plugin back — the plugin knows which call
+        # it is in — but a record that cannot say where a sentence was said is a record somebody
+        # has to take on trust.
+        report("voice.wants_to_answer", {
+            "guild_id": session.guild_id if session else None,
+            "channel_id": session.channel_id if session else None,
+            "speaker_id": speaker,
+            "transcript": transcript,
+            "reason": decision["reason"],
+            "conversation": [
+                {"speaker": str(turn["speaker_id"]), "said": turn["transcript"]}
+                for turn in waiting
+            ],
+        })
+
     while state.get("voice_listening"):
         time.sleep(0.05)
 
@@ -882,7 +964,18 @@ def _watch_turns(state):
         if session is None or heard is None:
             continue
 
-        for action, detail in session.tick(int(time.monotonic() * 1000)):
+        now_ms = int(time.monotonic() * 1000)
+
+        # Halves whose other half never arrived.
+        for who, half in list(unfinished.items()):
+            if now_ms - half["held_at_ms"] < UNFINISHED_PATIENCE_MS:
+                continue
+
+            del unfinished[who]
+            answer(who, half["transcript"], half["ended_ms"],
+                   half["recognition_started"], half["recognised_at"])
+
+        for action, detail in session.tick(now_ms):
             if action != "utterance_ended":
                 heard.pop(detail.get("user_id"), None)
                 continue
@@ -904,7 +997,7 @@ def _watch_turns(state):
             try:
                 transcript = voice_engines.transcribe(
                     engine, _wav(audio), language=language, prompt=prompt, threads=threads,
-                    audio_ctx=bool(_setting("stt_audio_ctx", True)))
+                    audio_ctx=bool(_setting("stt_audio_ctx", False)))
             except Exception as unheard:
                 # The message. A recogniser that cannot run and one that heard nothing produce the
                 # same exception type and need entirely different fixes.
@@ -921,60 +1014,50 @@ def _watch_turns(state):
                 # recogniser says when it heard nothing. Answering it would be answering nobody.
                 continue
 
-            decision = utterance_heard(
-                state, speaker, transcript, int(time.monotonic() * 1000))
-
-            # The raw audio is gone by here. What leaves this function is words, and only because
-            # somebody asked Aurora to listen.
-            if decision["speak"] and conversation_window(state) is not None:
-                # A pause before answering is what makes a reply sound like a person rather than a
-                # buzzer, and it is also time nobody gets back. Scaled rather than removed, so the
-                # owner can have either without the code pretending the choice is free.
-                pace = float(_setting("answer_pace", 1.0))
-                time.sleep((decision.get("delay_ms") or 0) * pace / 1000.0)
-
-                waiting = state.setdefault("voice_pending", [])
-
-                # Only the most recent few. A conversation that got ahead of whoever is answering
-                # is one where the old lines are no longer worth saying — answering a question
-                # from a minute ago is worse than having missed it.
-                # Timed, because "it feels slow" and "which part is slow" are different questions
-                # and only the second one can be fixed. Milliseconds from the moment the speaker
-                # stopped: how long the pause rule waited, how long recognition took, and how long
-                # the whole thing took before anybody could answer.
-                now_ms = int(time.monotonic() * 1000)
-
-                waiting.append({
+            if voice_engines.is_foreign_script(transcript, prompt):
+                # Written in an alphabet this conversation does not use. "советар" came back
+                # from a channel where everyone was speaking Portuguese; it is what a decoder
+                # produces when it has to produce something, and it is never speech.
+                report("voice.not_understood", {
                     "speaker_id": speaker,
-                    "transcript": transcript,
-                    "reason": decision["reason"],
-                    "at_ms": now_ms,
-                    "latency": {
-                        "waited_for_silence_ms": int(recognition_started - detail["ended_ms"]),
-                        "recognised_in_ms": int(recognised_at - recognition_started),
-                        "since_speaker_stopped_ms": int(now_ms - detail["ended_ms"]),
-                    },
+                    "reason": "the transcript was not in this conversation's alphabet",
                 })
+                continue
 
-                del waiting[:-3]
-
-                # The pending turns rather than only the latest. Aurora decides what to say from
-                # the conversation, and a plugin that reported one line would be choosing for it.
-                # Where it happened goes too: it is not used to reach the plugin back — the plugin
-                # knows which call it is in — but a record that cannot say where a sentence was
-                # said is a record somebody has to take on trust.
-                report("voice.wants_to_answer", {
-                    "guild_id": session.guild_id if session else None,
-                    "channel_id": session.channel_id if session else None,
+            if voice_engines.is_prompt_echo(transcript, prompt):
+                # The prompt came back instead of what was said. Measured against known speech:
+                # "Aurora, estás a ouvir?" transcribed as "Falamos de Sobral da Abelheira." That is
+                # the prompt, not a question, and answering it is answering nobody.
+                report("voice.not_understood", {
                     "speaker_id": speaker,
-                    "transcript": transcript,
-                    "reason": decision["reason"],
-                    "conversation": [
-                        {"speaker": str(turn["speaker_id"]), "said": turn["transcript"]}
-                        for turn in waiting
-                    ],
+                    "reason": "the recogniser returned the prompt rather than speech",
                 })
+                continue
 
+            transcript = transcript.strip()
+            half = unfinished.pop(speaker, None)
+
+            if half:
+                # The rest of a sentence the ceiling cut. Joined with a space: the seam falls
+                # mid-sentence, so neither side ends or starts with punctuation that would make
+                # one reading of it wrong.
+                transcript = (half["transcript"] + " " + transcript).strip()
+                recognition_started = half["recognition_started"]
+
+            if detail.get("cut_short") and len(transcript) < LONGEST_STITCHED:
+                # They were still speaking when the ceiling arrived. Hold this half and wait for
+                # the rest rather than answer a question that is not finished being asked.
+                unfinished[speaker] = {
+                    "transcript": transcript,
+                    "ended_ms": detail["ended_ms"],
+                    "recognition_started": recognition_started,
+                    "recognised_at": recognised_at,
+                    "held_at_ms": int(time.monotonic() * 1000),
+                }
+                continue
+
+            answer(speaker, transcript, detail["ended_ms"],
+                   recognition_started, recognised_at)
 
 def _wav(pcm):
     """Turns Discord's audio into what a speech recogniser expects.

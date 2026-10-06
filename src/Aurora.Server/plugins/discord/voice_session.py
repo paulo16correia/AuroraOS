@@ -184,6 +184,10 @@ class VoiceSession:
                 "started_ms": turn["started"],
                 "ended_ms": turn["last"],
                 "duration_ms": length,
+                # Whether they had actually stopped. A turn that ended because the ceiling arrived
+                # is half of something, and whoever receives it has to know that before treating it
+                # as a whole sentence.
+                "cut_short": not quiet,
             }))
 
         if not self._talking and self.state == LISTENING:
