@@ -44,16 +44,25 @@ class BeingAddressed(unittest.TestCase):
         # A name is the word speech recognition gets wrong most — a proper noun, usually absent
         # from the vocabulary. "Aurora" came back as "aurra" from a real call. Requiring it exactly
         # means the one word that must be recognised is the one least likely to be.
-        for misheard in ("aurra", "auroa", "aurorra", "auror"):
+        # "aura" is from a real channel on 2026-10-06 — "Aura o Ericar de São Paulo" — and it is two
+        # edits, not one. The rule used to stop at one and so could not match the example written
+        # beside it.
+        for misheard in ("aurra", "auroa", "aurorra", "auror", "aura"):
             self.assertTrue(c.heard(PAULO, "%s, tudo bem?" % misheard, 10000)["named"], misheard)
 
     def test_a_word_that_merely_resembles_the_name_does_not_count(self):
         c = group()
 
-        # One edit, not two. At two edits a six-letter name starts matching ordinary words, and
-        # something that answers to whatever rhymes with its name is worse than something slightly
-        # deaf.
-        for other in ("agora", "aurora boreal is nice", "amora", "aurea"):
+        # Two edits are allowed now, but only with the first three letters intact — and that prefix
+        # is what keeps this list safe. "agora" is one of the commonest words in Portuguese and is
+        # two edits from "aurora"; without the prefix rule Aurora would answer every time somebody
+        # said "now". "amora" is two edits and starts "amo".
+        #
+        # "aurea" left this list when the tolerance widened: it keeps the prefix and is two edits,
+        # so it matches now. That is a real cost, taken deliberately — see the test below. A rare
+        # word occasionally catching her attention is a smaller failure than her never answering to
+        # her own name, which is what the narrower rule produced in a real channel.
+        for other in ("agora", "aurora boreal is nice", "amora", "ahora", "arara"):
             heard = c.heard(PAULO, other, 10000)
             if other.startswith("aurora"):
                 continue

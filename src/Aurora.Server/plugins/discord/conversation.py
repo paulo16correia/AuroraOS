@@ -38,26 +38,64 @@ OPEN_TO_THE_ROOM = re.compile(
     r"^(does anyone|has anyone|can anyone|anybody|alguém|alguem|does someone)\b", re.I)
 
 
-def _within_one_edit(word, name):
-    """Whether one insertion, deletion or substitution turns one into the other."""
-    if abs(len(word) - len(name)) > 1:
+def _edits(word, name, ceiling):
+    """How many edits turn one into the other, giving up once past `ceiling`.
+
+    Ordinary Levenshtein, bounded. Bounded because the answer is only ever compared against a small
+    number and the words are short, and because giving up early says what is meant: past the ceiling
+    the distance stops being interesting.
+    """
+    if abs(len(word) - len(name)) > ceiling:
+        return ceiling + 1
+
+    previous = list(range(len(name) + 1))
+
+    for i, letter in enumerate(word, start=1):
+        row = [i]
+
+        for j, other in enumerate(name, start=1):
+            row.append(min(
+                previous[j] + 1,
+                row[j - 1] + 1,
+                previous[j - 1] + (letter != other)))
+
+        if min(row) > ceiling:
+            return ceiling + 1
+
+        previous = row
+
+    return previous[-1]
+
+
+# How much of the start has to survive before two edits are forgiven.
+#
+# Three letters, and the number is doing real work. At two edits and no prefix rule, "aurora" matches
+# "agora" — one of the commonest words in Portuguese — and Aurora would answer every time somebody
+# said "now". With it, "agora" starts "ago" and is not considered at all, while "aura" starts "aur"
+# and is. Speech recognition mangles the ends of proper nouns far more than the beginnings, which is
+# why the start is the part worth trusting.
+SURVIVING_PREFIX = 3
+
+
+def _is_near_miss(word, name):
+    """Whether this word is the name, misheard.
+
+    One edit on a name of five letters or more, which is the old rule. Or two, when the first three
+    letters are intact — added because the old rule could not match the example its own comment
+    gave: "Aurora" to "Aura" is two edits, and that is exactly what came back from a real channel.
+    """
+    if len(name) < 5:
+        # Too short for a tolerance that would not match half the dictionary.
         return False
 
-    if word == name:
+    if _edits(word, name, 1) <= 1:
         return True
 
-    shorter, longer = sorted((word, name), key=len)
-    at = 0
-
-    while at < len(shorter) and shorter[at] == longer[at]:
-        at += 1
-
-    if len(shorter) == len(longer):
-        # A substitution: everything after the first difference must match.
-        return shorter[at + 1:] == longer[at + 1:]
-
-    # An insertion or deletion: the rest of the shorter word matches from one further along.
-    return shorter[at:] == longer[at + 1:]
+    return (
+        len(name) >= 6
+        and len(word) >= SURVIVING_PREFIX
+        and word[:SURVIVING_PREFIX] == name[:SURVIVING_PREFIX]
+        and _edits(word, name, 2) <= 2)
 
 
 class Conversation:
@@ -194,9 +232,15 @@ class Conversation:
         in a real call. Matching it exactly means the one word that must be recognised is the one
         least likely to be.
 
-        So a near miss counts — one edit on a name of five letters or more. Not two: at two edits
-        a six-letter name starts matching ordinary words, and something that answers to words that
-        merely rhyme with its name is worse than something slightly deaf.
+        So a near miss counts — one edit on a name of five letters or more, or two when the first
+        three letters survive. The prefix is what makes the second safe: at two edits and nothing
+        else, "aurora" matches "agora", and something that answers every time somebody says "now" is
+        worse than something slightly deaf. Recognisers mangle the ends of proper nouns far more
+        than the beginnings.
+
+        This rule used to stop at one edit, and could not match the example written beside it:
+        "Aurora" to "Aura" is two. A real channel produced "Aura o Ericar de São Paulo" and she sat
+        there.
         """
         if not self.own_name:
             return False
@@ -204,12 +248,8 @@ class Conversation:
         if re.search(r"\b%s\b" % re.escape(self.own_name), lowered) is not None:
             return True
 
-        if len(self.own_name) < 5:
-            # Too short for a tolerance that would not match half the dictionary.
-            return False
-
         return any(
-            _within_one_edit(word, self.own_name)
+            _is_near_miss(word, self.own_name)
             for word in re.findall(r"[^\W\d_]+", lowered, re.UNICODE))
 
     @staticmethod
