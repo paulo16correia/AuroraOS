@@ -16,9 +16,17 @@ public interface IServerIdentity
 public interface IConsentSessionStore
 {
     /// <summary>
-    /// Opens a session for this principal, bound to the current boot and policy version. An
-    /// existing live session is returned rather than duplicated.
+    /// Opens a session for this principal's <b>person</b>, bound to the current boot and policy
+    /// version. An existing live session is returned rather than duplicated.
     /// </summary>
+    /// <remarks>
+    /// The person, not the interface. A window is authority somebody granted, and which of Aurora's
+    /// faces they granted it through — the MCP client, the panel, the voice boundary — is a fact
+    /// about how they said it rather than about what they allowed. Keying it to the face made the
+    /// one capability built to open a window impossible to spend: `discord.voice.converse` is
+    /// approved by an operator and the only thing that answers is Aurora's voice principal
+    /// (docs/adr/0090).
+    /// </remarks>
     Task<ConsentSession> OpenAsync(Principal principal, CancellationToken ct);
 
     /// <summary>
@@ -33,8 +41,8 @@ public interface IConsentSessionStore
         int maxActions, CancellationToken ct);
 
     /// <summary>
-    /// Atomically finds a live session for this principal and spends one unit of its action
-    /// budget. Returns <see cref="ConsentSessionUseOutcome.None"/> when there is no live session,
+    /// Atomically finds a live session belonging to this principal's person and spends one unit of
+    /// its action budget. Returns <see cref="ConsentSessionUseOutcome.None"/> when there is no live session,
     /// when it has expired, when the budget is exhausted, or when it belongs to an earlier boot or
     /// policy version.
     /// </summary>

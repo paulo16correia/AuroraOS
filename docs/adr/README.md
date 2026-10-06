@@ -98,3 +98,4 @@ system, read the [runbook](../guides/operator-runbook.md) and
 | 0087 | [The model is reached through the plugin](0087-the-model-is-reached-through-the-plugin.md) | Superseded by 0089 |
 | 0088 | [The agent does not decide for itself](0088-the-agent-does-not-decide-for-itself.md) | Implemented |
 | 0089 | [The model is asked from Aurora](0089-the-model-is-asked-from-aurora.md) | Implemented |
+| 0090 | [A window belongs to the person](0090-a-window-belongs-to-the-person.md) | Implemented |

@@ -156,7 +156,7 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
                    SET actions_used = actions_used + 1
                  WHERE session_id = (
                        SELECT session_id FROM consent_session
-                        WHERE principal_client_id = @cid
+                        WHERE principal_os_user = @osuser
                           AND server_boot_id = @boot
                           AND policy_version = @pv
                           AND status = @active
@@ -222,7 +222,7 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
                policy_version, status, actions_used, max_actions, created_at_utc, expires_at_utc,
                covered_actions
           FROM consent_session
-         WHERE principal_client_id = @cid
+         WHERE principal_os_user = @osuser
            AND server_boot_id = @boot
            AND policy_version = @pv
            AND status = @active
@@ -234,7 +234,11 @@ public sealed class SqliteConsentSessionStore : IConsentSessionStore
 
     private void Bind(Microsoft.Data.Sqlite.SqliteCommand command, Principal principal, DateTimeOffset now)
     {
+        // Both bound, and only one matched on. The client id is kept because the record should say
+        // which of Aurora's faces asked for the window; the os user is what decides who may spend
+        // it, because a window is authority a person granted and the person is the os user.
         command.Parameters.AddWithValue("@cid", principal.ClientId);
+        command.Parameters.AddWithValue("@osuser", principal.OsUser);
         command.Parameters.AddWithValue("@boot", _server.BootId);
         command.Parameters.AddWithValue("@pv", _policy.Version);
         command.Parameters.AddWithValue("@active", ConsentSessionStatus.Active);

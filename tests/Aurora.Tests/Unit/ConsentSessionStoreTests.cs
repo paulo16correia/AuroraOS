@@ -23,6 +23,72 @@ public sealed class ConsentSessionStoreTests
             new VersionedFakePolicy(true, policyVersion),
             new ConsentSessionOptions(lifetime ?? TimeSpan.FromMinutes(15), maxActions));
 
+    /// <summary>
+    /// A window belongs to the person who granted it, not to the interface they used.
+    /// </summary>
+    /// <remarks>
+    /// Found in production. Approving <c>discord.voice.converse</c> opened a window over
+    /// <c>discord.voice.reply</c> for <c>local-mcp-client</c>, and the only thing that answers in a
+    /// voice conversation is Aurora's own boundary as <c>voice</c>. The window was active, had its
+    /// full budget, and could never be spent — so every sentence asked for approval again, which is
+    /// precisely what the capability exists to avoid (docs/adr/0090).
+    /// </remarks>
+    [Fact]
+    public async Task AWindowOneFaceOfAuroraOpenedIsSpentByAnother()
+    {
+        using var db = new SqliteTestDb();
+        SqliteConsentSessionStore store = Store(db);
+
+        var operatorAtTheKeyboard = new Principal("local-mcp-client", "paulo");
+        var auroraAnswering = new Principal("voice", "paulo");
+
+        await store.OpenAsync(
+            operatorAtTheKeyboard, ["discord.voice.reply"], TimeSpan.FromMinutes(15), 30,
+            CancellationToken.None);
+
+        ConsentSessionUse use = await store.TryUseAsync(
+            auroraAnswering, "discord.voice.reply", CancellationToken.None);
+
+        Assert.Equal(ConsentSessionUseOutcome.Used, use.Outcome);
+    }
+
+    [Fact]
+    public async Task AWindowIsNotSpentBySomebodyElse()
+    {
+        // The person is the limit, and it is a limit this did not have before: the old clause
+        // matched the client id and never looked at who the caller was at all.
+        using var db = new SqliteTestDb();
+        SqliteConsentSessionStore store = Store(db);
+
+        await store.OpenAsync(
+            new Principal("local-mcp-client", "paulo"), ["discord.voice.reply"],
+            TimeSpan.FromMinutes(15), 30, CancellationToken.None);
+
+        ConsentSessionUse use = await store.TryUseAsync(
+            new Principal("local-mcp-client", "someone-else"), "discord.voice.reply",
+            CancellationToken.None);
+
+        Assert.Equal(ConsentSessionUseOutcome.None, use.Outcome);
+    }
+
+    [Fact]
+    public async Task AWindowStillOnlyCoversWhatItNamed()
+    {
+        // Widening who may spend it does not widen what it covers. The named actions are the
+        // authority; the person is only who holds it.
+        using var db = new SqliteTestDb();
+        SqliteConsentSessionStore store = Store(db);
+
+        await store.OpenAsync(
+            new Principal("local-mcp-client", "paulo"), ["discord.voice.reply"],
+            TimeSpan.FromMinutes(15), 30, CancellationToken.None);
+
+        ConsentSessionUse use = await store.TryUseAsync(
+            new Principal("voice", "paulo"), "discord.messages.send", CancellationToken.None);
+
+        Assert.Equal(ConsentSessionUseOutcome.None, use.Outcome);
+    }
+
     [Fact]
     public async Task TryUse_WithoutASession_ReportsNone()
     {
