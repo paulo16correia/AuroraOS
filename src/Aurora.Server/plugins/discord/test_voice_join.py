@@ -13,7 +13,9 @@ because the count of those *is* what the people in the call saw.
 
 import unittest
 
+import conversation
 import discord_service
+import voice_session as vs
 import voice_transport as vt
 
 
@@ -188,6 +190,66 @@ class TerminalCloseCodes(unittest.TestCase):
 
         self.assertEqual(refusal.exception.close_code, 4017)
         self.assertIsNotNone(vt.terminal_close_reason(refusal.exception))
+
+
+class OneUtteranceThroughTheRealSession(unittest.TestCase):
+    """`utterance_heard` against a real VoiceSession, which nothing exercised before.
+
+    This is the gap two defects have now walked through. `test_conversation` drives the decision
+    with a roster it builds itself, and `test_local` fakes the engines; between them sits the line
+    that actually asks the session who is here, and nobody was testing it. Twice that line raised:
+    `session.transport` after the telephone was removed, and `session.participants()` on what is a
+    property. Both times the listening thread died and a working conversation looked exactly like
+    an empty room.
+    """
+
+    AURORA = "1542272336613343292"
+    PAULO = "710960489315827734"
+
+    def setUp(self):
+        self.reported = []
+        self._real_report = discord_service.report
+        discord_service.report = lambda kind, payload: self.reported.append((kind, payload))
+
+    def tearDown(self):
+        discord_service.report = self._real_report
+
+    def _state(self):
+        session = vs.VoiceSession("g1", "c1", self.AURORA)
+        session.participant_joined(self.PAULO)
+        session.identify_speaker(1, self.PAULO)
+
+        return {
+            "voice": session,
+            "conversation": conversation.Conversation("Aurora", self.AURORA),
+        }
+
+    def test_a_named_utterance_is_decided_on_and_not_an_exception(self):
+        decision = discord_service.utterance_heard(
+            self._state(), self.PAULO, "Aurora, estás a ouvir?", 10000)
+
+        self.assertTrue(decision["speak"])
+        self.assertTrue(decision["named"])
+        self.assertEqual("addressed", decision["reason"])
+
+    def test_the_roster_reaches_the_decision(self):
+        # The whole reason that line exists: without the session's roster, how many people are
+        # here is guessed from who has spoken, and the first speaker is always exactly one person.
+        state = self._state()
+        state["voice"].participant_joined("111111111111111111")
+        state["voice"].participant_joined("222222222222222222")
+
+        decision = discord_service.utterance_heard(
+            state, self.PAULO, "Aurora, estás aí?", 10000)
+
+        # Three others plus Aurora, counted from the channel rather than from who has spoken.
+        self.assertEqual(4, decision["people_present"])
+
+    def test_every_utterance_is_reported_even_the_ones_it_stays_quiet_for(self):
+        discord_service.utterance_heard(self._state(), self.PAULO, "pois", 10000)
+
+        kinds = [kind for kind, _ in self.reported]
+        self.assertIn("voice.heard", kinds)
 
 
 if __name__ == "__main__":

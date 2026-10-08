@@ -986,99 +986,116 @@ def _watch_turns(state):
                    half["waited_ms"], half["recognised_ms"])
 
         for action, detail in session.tick(now_ms):
-            if action != "utterance_ended":
-                heard.pop(detail.get("user_id"), None)
-                continue
-
-            speaker = detail["user_id"]
-            audio = bytes(heard.pop(speaker, b""))
-
-            if not audio:
-                continue
-
-            if voice_engines.is_silence(audio):
-                # Not asked at all. A recogniser handed near-silence answers with the most common
-                # phrase in its training data — "Thank you.", "Thanks for watching!" — and the only
-                # reliable way not to believe that is not to ask.
-                continue
-
-            recognition_started = time.monotonic() * 1000
-
             try:
-                if remote_stt:
-                    # Uploaded. The owner named this recogniser; `readiness` says so and the
-                    # secret's stated purpose says so.
-                    transcript = voice_engines.transcribe_remotely(
-                        _wav(audio), state.get("speech_key"), language=language)
-                else:
-                    transcript = voice_engines.transcribe(
-                        engine, _wav(audio), language=language, prompt=prompt, threads=threads,
-                        audio_ctx=bool(_setting("stt_audio_ctx", False)))
-            except Exception as unheard:
-                # The message. A recogniser that cannot run and one that heard nothing produce the
-                # same exception type and need entirely different fixes.
+                if action != "utterance_ended":
+                    heard.pop(detail.get("user_id"), None)
+                    continue
+
+                speaker = detail["user_id"]
+                audio = bytes(heard.pop(speaker, b""))
+
+                if not audio:
+                    continue
+
+                if voice_engines.is_silence(audio):
+                    # Not asked at all. A recogniser handed near-silence answers with the most common
+                    # phrase in its training data — "Thank you.", "Thanks for watching!" — and the only
+                    # reliable way not to believe that is not to ask.
+                    continue
+
+                recognition_started = time.monotonic() * 1000
+
+                try:
+                    if remote_stt:
+                        # Uploaded. The owner named this recogniser; `readiness` says so and the
+                        # secret's stated purpose says so.
+                        transcript = voice_engines.transcribe_remotely(
+                            _wav(audio), state.get("speech_key"), language=language)
+                    else:
+                        transcript = voice_engines.transcribe(
+                            engine, _wav(audio), language=language, prompt=prompt, threads=threads,
+                            audio_ctx=bool(_setting("stt_audio_ctx", False)))
+                except Exception as unheard:
+                    # The message. A recogniser that cannot run and one that heard nothing produce the
+                    # same exception type and need entirely different fixes.
+                    report("voice.not_understood", {
+                        "speaker_id": speaker,
+                        "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
+                    })
+                    continue
+
+                recognised_at = time.monotonic() * 1000
+
+                if not transcript.strip() or voice_engines.is_hallucination(transcript):
+                    # It got through the energy gate and still came back as one of the things a
+                    # recogniser says when it heard nothing. Answering it would be answering nobody.
+                    continue
+
+                if voice_engines.is_foreign_script(transcript, prompt):
+                    # Written in an alphabet this conversation does not use. "советар" came back
+                    # from a channel where everyone was speaking Portuguese; it is what a decoder
+                    # produces when it has to produce something, and it is never speech.
+                    report("voice.not_understood", {
+                        "speaker_id": speaker,
+                        "reason": "the transcript was not in this conversation's alphabet",
+                    })
+                    continue
+
+                if voice_engines.is_prompt_echo(transcript, prompt):
+                    # The prompt came back instead of what was said. Measured against known speech:
+                    # "Aurora, estás a ouvir?" transcribed as "Falamos de Sobral da Abelheira." That is
+                    # the prompt, not a question, and answering it is answering nobody.
+                    report("voice.not_understood", {
+                        "speaker_id": speaker,
+                        "reason": "the recogniser returned the prompt rather than speech",
+                    })
+                    continue
+
+                transcript = transcript.strip()
+                half = unfinished.pop(speaker, None)
+
+                waited_ms = recognition_started - detail["ended_ms"]
+                recognised_ms = recognised_at - recognition_started
+
+                if half:
+                    # The rest of a sentence the ceiling cut. Joined with a space: the seam falls
+                    # mid-sentence, so neither side ends or starts with punctuation that would make
+                    # one reading of it wrong.
+                    transcript = (half["transcript"] + " " + transcript).strip()
+
+                    # The wait is this fragment's — it is how long after they finally stopped — while
+                    # the recognition time is every fragment's, because that work was all done.
+                    recognised_ms += half["recognised_ms"]
+
+                if detail.get("cut_short") and len(transcript) < LONGEST_STITCHED:
+                    # They were still speaking when the ceiling arrived. Hold this half and wait for
+                    # the rest rather than answer a question that is not finished being asked.
+                    unfinished[speaker] = {
+                        "transcript": transcript,
+                        "ended_ms": detail["ended_ms"],
+                        "waited_ms": waited_ms,
+                        "recognised_ms": recognised_ms,
+                        "held_at_ms": int(time.monotonic() * 1000),
+                    }
+                    continue
+
+                answer(speaker, transcript, detail["ended_ms"], waited_ms, recognised_ms)
+            except Exception as broke:
+                # One utterance must not be able to end the listening. This thread has now died
+                # twice to an exception raised while handling a single turn: `session.transport`
+                # after the telephone was removed, and `session.participants()` on what is a
+                # property. Both times a working conversation became indistinguishable from an
+                # empty room — Aurora sat there, audio kept arriving, and nothing was ever
+                # transcribed again.
+                #
+                # Reported rather than swallowed. A turn that was lost is something somebody may
+                # need to know about, and a silent `pass` here would be the same failure wearing
+                # a different hat.
                 report("voice.not_understood", {
-                    "speaker_id": speaker,
-                    "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
+                    "speaker_id": detail.get("user_id"),
+                    "reason": "the turn could not be handled: %s: %s" % (
+                        type(broke).__name__, str(broke)[:200]),
                 })
-                continue
-
-            recognised_at = time.monotonic() * 1000
-
-            if not transcript.strip() or voice_engines.is_hallucination(transcript):
-                # It got through the energy gate and still came back as one of the things a
-                # recogniser says when it heard nothing. Answering it would be answering nobody.
-                continue
-
-            if voice_engines.is_foreign_script(transcript, prompt):
-                # Written in an alphabet this conversation does not use. "советар" came back
-                # from a channel where everyone was speaking Portuguese; it is what a decoder
-                # produces when it has to produce something, and it is never speech.
-                report("voice.not_understood", {
-                    "speaker_id": speaker,
-                    "reason": "the transcript was not in this conversation's alphabet",
-                })
-                continue
-
-            if voice_engines.is_prompt_echo(transcript, prompt):
-                # The prompt came back instead of what was said. Measured against known speech:
-                # "Aurora, estás a ouvir?" transcribed as "Falamos de Sobral da Abelheira." That is
-                # the prompt, not a question, and answering it is answering nobody.
-                report("voice.not_understood", {
-                    "speaker_id": speaker,
-                    "reason": "the recogniser returned the prompt rather than speech",
-                })
-                continue
-
-            transcript = transcript.strip()
-            half = unfinished.pop(speaker, None)
-
-            waited_ms = recognition_started - detail["ended_ms"]
-            recognised_ms = recognised_at - recognition_started
-
-            if half:
-                # The rest of a sentence the ceiling cut. Joined with a space: the seam falls
-                # mid-sentence, so neither side ends or starts with punctuation that would make
-                # one reading of it wrong.
-                transcript = (half["transcript"] + " " + transcript).strip()
-
-                # The wait is this fragment's — it is how long after they finally stopped — while
-                # the recognition time is every fragment's, because that work was all done.
-                recognised_ms += half["recognised_ms"]
-
-            if detail.get("cut_short") and len(transcript) < LONGEST_STITCHED:
-                # They were still speaking when the ceiling arrived. Hold this half and wait for
-                # the rest rather than answer a question that is not finished being asked.
-                unfinished[speaker] = {
-                    "transcript": transcript,
-                    "ended_ms": detail["ended_ms"],
-                    "waited_ms": waited_ms,
-                    "recognised_ms": recognised_ms,
-                    "held_at_ms": int(time.monotonic() * 1000),
-                }
-                continue
-
-            answer(speaker, transcript, detail["ended_ms"], waited_ms, recognised_ms)
 
 def _wav(pcm):
     """Turns Discord's audio into what a speech recogniser expects.
@@ -1178,7 +1195,7 @@ def utterance_heard(state, user_id, text, at_ms):
 
     decision = (
         conversation.heard(user_id, text, at_ms,
-                           present=session.participants() if session else None)
+                           present=session.participants if session else None)
         if conversation is not None
         else {"speak": False, "reason": "not_conversing", "delay_ms": None})
 
