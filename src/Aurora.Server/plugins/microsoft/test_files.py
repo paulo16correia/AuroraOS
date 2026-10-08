@@ -16,7 +16,9 @@ from test_graph import StubTokens, client_for
 
 def _code_of(module):
     """A module with its leading docstring removed, for tests about what the code does."""
-    return open(module.__file__).read().split('"""', 2)[2]
+    # UTF-8 named: the file is Python source, which is UTF-8 by the language's rule, while
+    # the default on Windows is cp1252. One accented comment would otherwise fail this.
+    return open(module.__file__, encoding="utf-8").read().split('"""', 2)[2]
 
 
 def state_for(service):

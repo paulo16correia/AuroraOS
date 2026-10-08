@@ -442,7 +442,11 @@ class TheModelHasNoAuthority(VoiceTest):
             if os.path.basename(path).startswith("test_"):
                 continue
 
-            with open(path) as handle:
+            # UTF-8 named, not left to the locale. These files are Python source, which is
+            # UTF-8 by the language's own rule, and on Windows the default is cp1252 — so
+            # reading them without saying so fails on the first accented comment. It did:
+            # a transcript quoted in a comment in speech.py broke two tests here.
+            with open(path, encoding="utf-8") as handle:
                 source = handle.read()
 
             where = os.path.basename(path)
@@ -457,7 +461,7 @@ class TheModelHasNoAuthority(VoiceTest):
         """Read as a syntax tree rather than as text, so this says something about the code."""
         import ast
 
-        with open(speech.__file__) as handle:
+        with open(speech.__file__, encoding="utf-8") as handle:
             tree = ast.parse(handle.read())
 
         launches = 0
@@ -487,7 +491,7 @@ class TheModelHasNoAuthority(VoiceTest):
         self.assertEqual(1, launches)
 
     def test_the_loop_cannot_execute_anything_itself(self):
-        with open(local_provider.__file__) as handle:
+        with open(local_provider.__file__, encoding="utf-8") as handle:
             source = handle.read()
 
         # No shell, no subprocess, no eval. The provider reports and speaks; it never acts.

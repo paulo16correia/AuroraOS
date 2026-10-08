@@ -63,15 +63,23 @@ public sealed class VoicePluginTests
     }
 
     [Fact]
-    public void SpeakingIsTheOnlyThingThatLeavesTheMachine()
+    public void WhateverLeavesTheMachineSaysSoWhereItIsWritten()
     {
         var source = File.ReadAllText(Path.Combine(PluginSource(), "speech.py"));
 
-        // Recognition is local and must stay local: a recording is somebody's voice, and sending
-        // it would take a private conversation off the owner's machine without anybody deciding
-        // to. Synthesis is not local, deliberately, and the file says so rather than leaving a
-        // reader to infer it from an import.
+        // This was called SpeakingIsTheOnlyThingThatLeavesTheMachine, and it was true until
+        // `docs/adr/0093` added a recogniser that uploads. The name was the test's whole claim, so
+        // it changed with the claim rather than being left to mislead the next reader.
+        //
+        // What is still held: the file states what leaves, in prose, rather than leaving somebody
+        // to infer it from an import. Both legs now have something to state — the sentence Aurora
+        // is about to say always leaves, and a recording of somebody's voice leaves when the owner
+        // chose the remote recogniser. Which is in force at runtime is `audio_leaves_this_machine`,
+        // and the Python tests hold that it follows the setting.
         Assert.Contains("leaves the machine", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "A recording of somebody's voice leaves the machine when this is the recogniser",
+            source, StringComparison.Ordinal);
 
         // One host, named once. A second would mean a second thing to approve and a second place
         // for audio to go.

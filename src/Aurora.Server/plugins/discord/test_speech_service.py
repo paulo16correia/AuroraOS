@@ -16,6 +16,7 @@ import os
 import unittest
 
 import voice_engines
+from vendor.aurora_voice import speech
 
 
 class Servidor(http.server.BaseHTTPRequestHandler):
@@ -352,6 +353,16 @@ class OQueEstaPronto(unittest.TestCase):
         self.assertFalse(sem["text_leaves_this_machine"])
         self.assertIsNone(sem["speech_service"])
 
+    def test_it_says_when_the_recording_leaves_too(self):
+        # The whole point of reporting this separately. An owner who chose the remote recogniser
+        # has to be able to find that out from Aurora rather than from a comment in a source file,
+        # and an owner who did not must never see it turn true on its own.
+        local = voice_engines.readiness(voice="vozinha", api_key="k")
+        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
+
+        self.assertFalse(local["audio_leaves_this_machine"])
+        self.assertTrue(remoto["audio_leaves_this_machine"])
+
 
 class PromptEcho(unittest.TestCase):
     """What comes back when the recogniser heard nothing and had a prompt to copy.
@@ -412,6 +423,80 @@ class ForeignScript(unittest.TestCase):
         # wrong. Throwing the sentence away for that would lose more than it saves.
         self.assertFalse(voice_engines.is_foreign_script(
             u"Aurora, que horas são α?", self.PROMPT))
+
+
+class RemoteListener(unittest.TestCase):
+    """The recogniser that uploads: what it needs, what it sends, and what it refuses to guess.
+
+    It exists because the local one is not good enough in European Portuguese — a third of the
+    words wrong, measured, against Scribe's published 3.1% (`docs/adr/0093`). The cost is that a
+    recording of somebody's voice leaves the machine, so none of this is reachable unless the owner
+    named it.
+    """
+
+    def test_it_needs_the_key_and_says_so_where_to_fix_it(self):
+        sem = voice_engines.listener(api_key="", language="pt-PT")
+
+        self.assertFalse(sem.available())
+        self.assertTrue(any("elevenlabs_api_key" in m for m in sem.missing()))
+
+        # Named with the command that sets it: "no key" sends somebody hunting in a config file
+        # for something that only exists in the vault.
+        self.assertTrue(any("secret set" in m for m in sem.missing()))
+
+    def test_it_refuses_rather_than_returning_silence(self):
+        # Silence and "the quota ran out" need completely different fixes, and a caller handed an
+        # empty string cannot tell them apart.
+        sem = voice_engines.listener(api_key="", language="pt")
+
+        with self.assertRaises(Exception):
+            sem.listen(b"RIFF....")
+
+        com = voice_engines.listener(api_key="k", language="pt")
+
+        with self.assertRaises(Exception):
+            com.listen(b"")
+
+    def test_it_sends_the_language_and_not_the_variety(self):
+        # Same rule as the speaker, for the same reason: the service refuses `pt-PT` and infers
+        # when the code is absent, and inferring reads a whole turn as another language.
+        fields = {"model_id": "scribe_v2", "language_code": speech.language_of("pt-PT")}
+        corpo, tipo = speech._form(fields, "file", "utterance.wav", b"RIFFdata", "audio/wav")
+
+        self.assertIn(b"pt", corpo)
+        self.assertNotIn(b"pt-PT", corpo)
+
+    def test_the_body_carries_the_model_and_the_audio(self):
+        corpo, tipo = speech._form(
+            {"model_id": "scribe_v2"}, "file", "utterance.wav", b"RIFFdata", "audio/wav")
+
+        self.assertTrue(tipo.startswith("multipart/form-data; boundary="))
+        self.assertIn(b'name="model_id"', corpo)
+        self.assertIn(b'filename="utterance.wav"', corpo)
+        self.assertIn(b"RIFFdata", corpo)
+
+        # The boundary it declares is the boundary it used, or the service reads nothing.
+        fronteira = tipo.split("boundary=", 1)[1].encode("ascii")
+        self.assertIn(b"--" + fronteira, corpo)
+        self.assertTrue(corpo.rstrip().endswith(b"--" + fronteira + b"--"))
+
+    def test_it_goes_to_the_one_host_that_was_already_approved(self):
+        # One host, so there is one thing to approve and one place audio can go. A second would be
+        # a second entry in network_endpoints and a second company holding recordings.
+        self.assertEqual(voice_engines.ELEVENLABS_HOST, speech.ElevenLabsListener.HOST)
+
+    def test_the_request_is_not_built_in_this_file(self):
+        # The key never appears outside speech.py: this module borrows the request rather than
+        # writing a second one that could disagree with it about what gets sent.
+        aqui = os.path.join(os.path.dirname(os.path.abspath(__file__)), "voice_engines.py")
+
+        with open(aqui, encoding="utf-8") as h:
+            fonte = h.read()
+
+        # The endpoint path, not the phrase: "speech-to-text" appears here legitimately, in
+        # the sentence that tells somebody a local recogniser is missing.
+        self.assertNotIn("/v1/speech-to-text", fonte)
+        self.assertNotIn("xi-api-key", fonte)
 
 
 if __name__ == "__main__":

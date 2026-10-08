@@ -1,10 +1,16 @@
 """Speech in and out, and the one place where Aurora is not local.
 
-**Listening is local and stays local.** The easy way to do speech recognition is to send somebody's
-voice to a service, and doing that would take a private conversation off the owner's machine
-without anybody deciding to. So recognition is a program already installed here, with no fallback
-that reaches the network. This file never uploads audio and never keeps it: a recording exists as
-bytes in memory for as long as it takes to become text, and then it is gone.
+**Listening is local unless the owner chose otherwise, and it is local by default.** The easy way
+to do speech recognition is to send somebody's voice to a service, and doing that without anybody
+deciding to would take a private conversation off the owner's machine. So the default recogniser is
+a program already installed here, which never uploads audio and never keeps it: a recording exists
+as bytes in memory for as long as it takes to become text, and then it is gone.
+
+The other recogniser is ElevenLabs Scribe, and **it uploads the recording.** It exists because the
+local one is not good enough in the language this was built for — a third of the words wrong against
+Scribe's published 3.1% (`docs/adr/0093`) — and it is reached only when `stt_provider` names it.
+Which one is listening is reported by `readiness` as `audio_leaves_this_machine`, so the answer is
+never inferred from this paragraph.
 
 **Speaking is not local, and that was a decision.** Every local voice that could be had was
 measured, and in the language this was built for none of them was good enough to be Aurora's — the
@@ -219,7 +225,12 @@ def synthesise_stream(engine, text, api_key, timeout=ELEVENLABS_TIMEOUT, base=No
         raise RuntimeError(str(mudo)) from mudo
 
 
-def readiness(voice=None, api_key=None, language=None):
+def listener(api_key=None, language=None):
+    """The recogniser that uploads, for when the owner asked for it. Never reached by default."""
+    return _speech.ElevenLabsListener(api_key=api_key, locale=language or "")
+
+
+def readiness(voice=None, api_key=None, language=None, remote_stt=False):
     """What voice can and cannot do on this machine, as a plain answer.
 
     Reported rather than discovered at the moment of failure: somebody deciding whether to have
@@ -283,11 +294,12 @@ def readiness(voice=None, api_key=None, language=None):
         "tts": tts.name if tts else None,
         "missing": missing,
 
-        # Said explicitly, because these are the properties that would be quietly lost first, and
-        # they are no longer the same answer. Recognition is still local: nobody's voice is
-        # uploaded, and a recording exists only as bytes in memory until it becomes text. Speaking
-        # is not: the sentence Aurora is about to say is sent to ElevenLabs to be read aloud.
-        "audio_leaves_this_machine": False,
+        # Said explicitly, because these are the properties that would be quietly lost first,
+        # and they are not the same answer. Speaking is never local: the sentence Aurora is about
+        # to say is sent to ElevenLabs to be read aloud. Listening is local unless the owner named
+        # the remote recogniser, and then a recording of somebody's voice is uploaded — which is
+        # the one fact about this plugin somebody would most want not to have to guess at.
+        "audio_leaves_this_machine": remote_stt,
         "text_leaves_this_machine": bool(tts),
         "speech_service": ELEVENLABS_HOST if tts else None,
     }
@@ -299,3 +311,13 @@ def transcribe(engine, audio_bytes, model=None, timeout=180, gpu=True,
     return _speech.transcribe(
         engine, audio_bytes, model=model, timeout=timeout, gpu=gpu, language=language,
         prompt=prompt, threads=threads, audio_ctx=audio_ctx)
+
+
+def transcribe_remotely(audio_bytes, api_key, language=None):
+    """Turns speech into text by uploading it. The caller has to have been told to.
+
+    Separate function rather than a flag on `transcribe`, because the two differ in the one way
+    that matters to somebody reading the call site: this one sends a recording of a voice to
+    another company. A boolean argument would let that happen in a diff nobody noticed.
+    """
+    return listener(api_key=api_key, language=language).listen(audio_bytes)

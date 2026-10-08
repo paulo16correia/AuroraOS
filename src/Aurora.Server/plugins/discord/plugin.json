@@ -32,7 +32,7 @@
     },
     {
       "name": "elevenlabs_api_key",
-      "purpose": "Reads Aurora's replies aloud. The sentence she is about to say is sent to ElevenLabs; nobody's recorded voice ever is. Speech recognition stays on this machine."
+      "purpose": "Reads Aurora's replies aloud: the sentence she is about to say is sent to ElevenLabs. If you set stt_provider to elevenlabs, this key also uploads recordings of what people say in the channel, so that it can be transcribed off this machine. That is off unless you choose it, and `voice.readiness` reports audio_leaves_this_machine either way."
     }
   ],
   "capabilities": [

@@ -646,6 +646,133 @@ class WhisperCppRecogniser:
 # ---------------------------------------------------------------------------
 
 
+def _form(fields, file_field, filename, content, content_type):
+    """A multipart/form-data body, built by hand, and the boundary to declare with it.
+
+    By hand because the standard library has no encoder for it and this file takes no dependencies:
+    whatever reaches a speech service from here is built in code somebody can read.
+    """
+    boundary = "----aurora" + secrets.token_hex(16)
+    body = bytearray()
+
+    for name, value in fields.items():
+        body += ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
+                 % (boundary, name, value)).encode("utf-8")
+
+    body += ('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\n'
+             'Content-Type: %s\r\n\r\n'
+             % (boundary, file_field, filename, content_type)).encode("utf-8")
+    body += content
+    body += ('\r\n--%s--\r\n' % boundary).encode("utf-8")
+
+    return bytes(body), "multipart/form-data; boundary=" + boundary
+
+
+class ElevenLabsListener:
+    """Recognition that is not local, and the reason this file no longer promises that it is.
+
+    **A recording of somebody's voice leaves the machine when this is the recogniser.** That is the
+    whole cost and it is not hidden: `readiness` reports `audio_leaves_this_machine` from which
+    listener is in use, the secret's stated purpose says it, and the owner has to choose this
+    explicitly because the default is the local one.
+
+    Why it exists anyway. Measured against sixteen known European Portuguese sentences through the
+    production audio path (`docs/adr/0091`), whisper-small gets a third of the words wrong and
+    `large-v3-turbo` — which needs the graphics processor to run in a conversation at all — gets a
+    quarter. ElevenLabs publishes 3.1% on FLEURS Portuguese and 5.5% on Common Voice. Five times
+    fewer errors is not a tuning difference; it is the difference between Aurora answering the
+    question and Aurora answering a question nobody asked.
+
+    The audio never touches the disk here. It arrives as bytes, becomes a request body, and is
+    gone — the local path writes a file because the programs it runs read files, and this one has
+    no such excuse.
+    """
+
+    name = "elevenlabs"
+
+    # The same host the speaker uses. One host, so there is one thing to approve and one place
+    # audio can go, rather than two.
+    HOST = "api.elevenlabs.io"
+    BASE = "https://" + HOST
+
+    # Scribe v2. The batch model rather than the realtime one: this is called once per finished
+    # turn, so there is no partial transcript to stream and nothing to gain from holding a socket
+    # open between utterances.
+    MODEL = "scribe_v2"
+
+    # Longer than the speaker's thirty. A refusal because the network was slow is a turn lost, and
+    # this is the leg where the whole recording has to be uploaded before anything comes back.
+    TIMEOUT = 60.0
+
+    def __init__(self, api_key=None, locale="", base=None):
+        self.api_key = (api_key or "").strip()
+        self.locale = locale
+        self.base = base
+
+    def available(self):
+        return bool(self.api_key)
+
+    def missing(self):
+        """What is absent, named where the person has to go and fix it."""
+        if self.api_key:
+            return []
+
+        return ["the elevenlabs_api_key secret (set it with `secret set plugin/discord "
+                "elevenlabs_api_key`; it is never passed on a command line)"]
+
+    def listen(self, audio_bytes):
+        """Turns speech into text, over the network. Returns the words, or raises.
+
+        Raises rather than returning an empty string. Silence and "the quota ran out" need
+        completely different fixes, and a caller handed "" cannot tell them apart — the local path
+        learned that the same way.
+        """
+        import urllib.error
+        import urllib.request
+
+        if not self.available():
+            raise SpeechUnavailable("; ".join(self.missing()))
+
+        if not audio_bytes:
+            raise SpeechUnavailable("nothing was heard")
+
+        fields = {"model_id": self.MODEL}
+
+        # The language, not the variety, and only when known — same rule as the speaker, for the
+        # same reason. The service infers when it is absent and refuses an empty one, and inferring
+        # is the failure that matters: a wrong guess reads a whole turn as another language.
+        if self.locale:
+            fields["language_code"] = language_of(self.locale)
+
+        body, content_type = _form(
+            fields, "file", "utterance.wav", audio_bytes, "audio/wav")
+
+        request = urllib.request.Request(
+            "%s/v1/speech-to-text" % _speech_base(self.base),
+            data=body, method="POST",
+            headers={"xi-api-key": self.api_key, "Content-Type": content_type,
+                     "Accept": "application/json"})
+
+        try:
+            with urllib.request.urlopen(request, timeout=self.TIMEOUT) as response:
+                heard = json.loads(response.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as error:
+            detail = ""
+
+            try:
+                detail = error.read()[:400].decode("utf-8", "replace")
+            except Exception:
+                pass
+
+            raise SpeechUnavailable("the recogniser refused (HTTP %d) %s"
+                                    % (error.code, detail.strip())) from error
+        except Exception as error:
+            raise SpeechUnavailable("the recogniser could not be reached: %s: %s"
+                                    % (type(error).__name__, error)) from error
+
+        return str(heard.get("text") or "").strip()
+
+
 class ElevenLabsSpeaker:
     """The voice Aurora speaks with, and the one thing in this file that uses the network.
 

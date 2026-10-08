@@ -860,6 +860,14 @@ def _watch_turns(state):
     language = _setting("stt_language", "auto")
     threads = _setting("stt_threads")
 
+    # Which recogniser, decided once per listening session rather than per turn: changing who
+    # hears the room is not something that should happen in the middle of a sentence.
+    #
+    # Local unless the owner wrote the other one down. A fresh installation that began uploading a
+    # channel's audio because nobody had said otherwise would be the same failure the default-off
+    # posture was built to prevent.
+    remote_stt = _remote_stt()
+
     # What the recogniser is told to expect. Aurora's own name, because that is the word it must get
     # right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
     #
@@ -997,9 +1005,15 @@ def _watch_turns(state):
             recognition_started = time.monotonic() * 1000
 
             try:
-                transcript = voice_engines.transcribe(
-                    engine, _wav(audio), language=language, prompt=prompt, threads=threads,
-                    audio_ctx=bool(_setting("stt_audio_ctx", False)))
+                if remote_stt:
+                    # Uploaded. The owner named this recogniser; `readiness` says so and the
+                    # secret's stated purpose says so.
+                    transcript = voice_engines.transcribe_remotely(
+                        _wav(audio), state.get("speech_key"), language=language)
+                else:
+                    transcript = voice_engines.transcribe(
+                        engine, _wav(audio), language=language, prompt=prompt, threads=threads,
+                        audio_ctx=bool(_setting("stt_audio_ctx", False)))
             except Exception as unheard:
                 # The message. A recogniser that cannot run and one that heard nothing produce the
                 # same exception type and need entirely different fixes.
@@ -1254,7 +1268,17 @@ def _readiness(state):
     became false with a misleading reason attached.
     """
     return voice_engines.readiness(
-        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"))
+        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"),
+        remote_stt=_remote_stt())
+
+
+def _remote_stt():
+    """Whether the owner named the recogniser that uploads. Asked in one place, like the rest.
+
+    Local unless it says otherwise, and the string has to match: a typo in a setting should leave
+    the private default in place rather than guess at what was meant.
+    """
+    return str(_setting("stt_provider", "local")).strip().lower() == "elevenlabs"
 
 
 def _speech_engine(state):
