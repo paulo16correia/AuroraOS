@@ -98,6 +98,14 @@ def _is_near_miss(word, name):
         and _edits(word, name, 2) <= 2)
 
 
+# How long an exchange with one person stays open after the last thing either of them said.
+#
+# Forty-five seconds, which is a pause in a conversation rather than the end of one: long enough to
+# think before answering or to be interrupted by something in the room, short enough that coming
+# back to a cold channel an hour later does not count as carrying on.
+EXCHANGE_WINDOW_MS = 45000
+
+
 class Conversation:
     """What Aurora knows about the room, and what it decides to do about it."""
 
@@ -119,10 +127,25 @@ class Conversation:
         # from a group, which changes what counts as being spoken to.
         self._recent = {}
 
+        # user id -> when Aurora was last in an exchange with that person: they named her, or she
+        # answered them. By speaker rather than a single instant, because in a room with several
+        # people "was somebody talking to me recently" is not the useful question — "is *this*
+        # person talking to me" is. Without it, a group leaves her nothing to go on but her name,
+        # which means being addressed by name every single sentence.
+        self._addressed_by = {}
+
     # ---- what happened ----
 
-    def heard(self, user_id, text, at_ms):
-        """Records an utterance and decides what, if anything, it asks of Aurora."""
+    def heard(self, user_id, text, at_ms, present=None):
+        """Records an utterance and decides what, if anything, it asks of Aurora.
+
+        `present` is who is in the channel, when the caller knows. It matters more than it looks:
+        without it, how many people are here is guessed from who has spoken lately, and at the
+        start of a conversation that is one person — so Aurora decides she is alone with whoever
+        spoke first and answers a question that was asked of somebody else. Measured in a
+        simulated three-person room: she answered Maria twice, both times when Maria was talking
+        to Joao.
+        """
         self._recent[user_id] = at_ms
 
         words = (text or "").strip()
@@ -133,16 +156,22 @@ class Conversation:
         to_the_room = bool(OPEN_TO_THE_ROOM.match(words))
         trivial = self._is_backchannel(lowered)
 
-        others = self._others_present(at_ms)
+        others = self._how_many_others(present, at_ms)
+        in_exchange = self._in_exchange_with(user_id, at_ms)
 
         reason = self._decide(
             named=named, question=question, to_the_room=to_the_room,
-            trivial=trivial, others=others, at_ms=at_ms)
+            trivial=trivial, others=others, in_exchange=in_exchange, at_ms=at_ms)
 
         speak = reason == "addressed" or reason == "invited"
 
         if named or speak:
             self._last_addressed_ms = at_ms
+
+            # Against this speaker too, which is what keeps the exchange open for them and for
+            # nobody else. Somebody across the room saying something a moment later is not part
+            # of it.
+            self._addressed_by[user_id] = at_ms
 
         return {
             "speak": speak,
@@ -173,9 +202,13 @@ class Conversation:
     def left(self, user_id):
         self._recent.pop(user_id, None)
 
+        # Whoever walks out is no longer mid-conversation. Coming back starts a new one, which is
+        # the same thing it means between people.
+        self._addressed_by.pop(user_id, None)
+
     # ---- the decision ----
 
-    def _decide(self, named, question, to_the_room, trivial, others, at_ms):
+    def _decide(self, named, question, to_the_room, trivial, others, in_exchange, at_ms):
         if trivial and not named:
             # "yeah" is not an opening, however warmly it is meant.
             return "backchannel"
@@ -184,8 +217,25 @@ class Conversation:
             # Being named is an invitation, and nearly the only reliable one.
             return "addressed"
 
+        if in_exchange and not trivial and (others <= 1 or question):
+            # An exchange already under way with this person, so their next sentence is still part
+            # of it. Being named once opens it; it does not have to be reopened every sentence.
+            #
+            # Checked *before* the floor-holding rules below, and that ordering is the whole fix.
+            # Those rules exist to stop Aurora inserting herself into a conversation that was not
+            # hers. A reply to somebody who is already talking to her is not that — and while
+            # `just_spoke` came first, every answer she gave closed the door on the next sentence
+            # for eight seconds, so the only way to carry on was to say her name again. That is
+            # not a conversation, it is a wake word, and it is what the owner was stuck doing.
+            #
+            # In a room with other people a question is required as well as the exchange: a
+            # statement might be to somebody else, and claiming it would be worse than missing it.
+            # Alone with her, anything that is not a grunt is for her, because there is nobody else
+            # it could be for.
+            return "invited"
+
         if self._just_spoke(at_ms):
-            # Having just had the floor makes the next contribution less welcome, not more.
+            # Having just had the floor makes an *uninvited* contribution less welcome, not more.
             return "just_spoke"
 
         if self._unprompted_in_a_row >= self._monologue_limit:
@@ -194,10 +244,8 @@ class Conversation:
 
         if others <= 1 and question:
             # One other person, and they asked something. There is nobody else it could be for.
-            return "invited"
-
-        if others <= 1 and not trivial and self._recently_addressed(at_ms):
-            # A two-person exchange already under way: the next sentence is still part of it.
+            # Still needed with the rule above: this is how the first question gets answered,
+            # before any exchange exists to be continued.
             return "invited"
 
         if to_the_room:
@@ -257,6 +305,18 @@ class Conversation:
         stripped = re.sub(r"[^\w\s]", "", lowered).strip()
         return bool(stripped) and stripped in BACKCHANNEL
 
+    def _how_many_others(self, present, at_ms):
+        """How many people are here besides Aurora.
+
+        From the channel roster when the caller has one, because that is the true answer. Falling
+        back to who has spoken recently, which is a floor rather than a count: somebody sitting
+        quietly is still somebody the room might be talking to.
+        """
+        if present is None:
+            return self._others_present(at_ms)
+
+        return sum(1 for user_id in set(present) if user_id != self.own_user_id)
+
     def _others_present(self, at_ms, window_ms=120000):
         return sum(
             1 for user_id, when in self._recent.items()
@@ -267,13 +327,24 @@ class Conversation:
             self._last_spoke_ms is not None
             and at_ms - self._last_spoke_ms < self._quiet_for_ms)
 
-    def _recently_addressed(self, at_ms, window_ms=45000):
+    def _recently_addressed(self, at_ms, window_ms=EXCHANGE_WINDOW_MS):
         return (
             self._last_addressed_ms is not None
             and at_ms - self._last_addressed_ms <= window_ms)
+
+    def _in_exchange_with(self, user_id, at_ms, window_ms=EXCHANGE_WINDOW_MS):
+        """Whether this person and Aurora are in the middle of talking to each other.
+
+        True once they have named her or she has answered them, and for as long afterwards as a
+        pause in a conversation lasts. It is what lets the name be said once instead of every time.
+        """
+        when = self._addressed_by.get(user_id)
+
+        return when is not None and at_ms - when <= window_ms
 
     def snapshot(self):
         return {
             "unprompted_in_a_row": self._unprompted_in_a_row,
             "people_recently_speaking": len(self._recent),
+            "in_exchange_with": len(self._addressed_by),
         }

@@ -215,5 +215,122 @@ class TheRoom(unittest.TestCase):
         self.assertFalse(answer["speak"])
 
 
+class BeingTalkedTo(unittest.TestCase):
+    """Whether she can tell she is being spoken to without being named every sentence.
+
+    The owner's complaint, in their words: "tenho que tar sempre a dizer Aurora para ela
+    responder". Two causes, and the first was an ordering: `just_spoke` was checked before
+    `invited`, so for eight seconds after every answer she refused anything without her name in
+    it — and a reply in a real conversation arrives inside eight seconds. The rule exists to stop
+    her inserting herself where she was not wanted; applied to a reply to somebody already talking
+    to her, it did the opposite of what it was written for.
+    """
+
+    AURORA = "999000999000999000"
+    PAULO = "444444444444444444"
+    MARIA = "555555555555555555"
+    JOAO = "666666666666666666"
+
+    def _exchange(self, present, lines):
+        """Plays an exchange through, with Aurora speaking whenever she decides to."""
+        talk = Conversation("Aurora", self.AURORA)
+        at = 10000
+        said = []
+
+        for who, words in lines:
+            at += 3000
+            decision = talk.heard(who, words, at, present=present)
+            said.append(decision)
+
+            if decision["speak"]:
+                # She answers, which is what used to close the door on the next sentence.
+                talk.spoke(at + 900, invited=True)
+
+        return said
+
+    def test_the_name_is_said_once_and_the_conversation_carries_on(self):
+        spoke = self._exchange([self.PAULO, self.AURORA], [
+            (self.PAULO, "Aurora, estás a ouvir?"),
+            (self.PAULO, "E de onde é que tu és?"),
+            (self.PAULO, "Pois, eu moro perto da Ericeira."),
+            (self.PAULO, "Achas que vale a pena ir amanhã?"),
+        ])
+
+        self.assertEqual("addressed", spoke[0]["reason"])
+        self.assertTrue(all(turn["speak"] for turn in spoke))
+
+        # Named once, at the start, and never again.
+        self.assertTrue(spoke[0]["named"])
+        self.assertFalse(any(turn["named"] for turn in spoke[1:]))
+
+    def test_a_grunt_is_still_not_an_opening(self):
+        # The exchange staying open is not a licence to answer everything inside it.
+        spoke = self._exchange([self.PAULO, self.AURORA], [
+            (self.PAULO, "Aurora, estás a ouvir?"),
+            (self.PAULO, "sim"),
+        ])
+
+        self.assertTrue(spoke[0]["speak"])
+        self.assertFalse(spoke[1]["speak"])
+        self.assertEqual("backchannel", spoke[1]["reason"])
+
+    def test_she_stays_out_of_a_question_asked_of_somebody_else(self):
+        # Measured before the roster was passed in: she answered both of Maria's turns, and both
+        # times Maria was talking to João.
+        spoke = self._exchange([self.PAULO, self.MARIA, self.JOAO, self.AURORA], [
+            (self.MARIA, "Então João, viste o jogo ontem?"),
+            (self.JOAO, "Vi, foi horrível."),
+        ])
+
+        self.assertFalse(any(turn["speak"] for turn in spoke))
+
+    def test_an_exchange_belongs_to_whoever_opened_it(self):
+        # In a room, being mid-conversation with one person says nothing about the next person to
+        # speak. Keyed by speaker for exactly this: a single "when was I last addressed" would
+        # hand Aurora every sentence anybody said for the next forty-five seconds.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        asked = talk.heard(self.PAULO, "Aurora, que horas são?", 10000, present=room)
+        self.assertTrue(asked["speak"])
+        talk.spoke(11000, invited=True)
+
+        # Paulo carries on and is answered; Maria was never in this exchange and is not.
+        carried = talk.heard(self.PAULO, "E amanhã vai chover?", 14000, present=room)
+        self.assertTrue(carried["speak"])
+        self.assertEqual("invited", carried["reason"])
+
+        other = talk.heard(self.MARIA, "João, passas-me o link?", 17000, present=room)
+        self.assertFalse(other["speak"])
+
+    def test_who_is_in_the_room_beats_who_has_spoken(self):
+        # Without the roster, how many people are here is guessed from who has spoken lately, and
+        # the first speaker in a conversation is always exactly one person. That is how she decided
+        # she was alone with Maria.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+
+        # One each. Asking the same instance twice would have the first answer open an exchange
+        # that the second call then continues — which is true of a real mistake too: once she has
+        # wrongly answered somebody, she keeps answering them. All the more reason not to make the
+        # first one.
+        alone = Conversation("Aurora", self.AURORA).heard(
+            self.MARIA, "Então João, viste o jogo?", 10000)
+        crowded = Conversation("Aurora", self.AURORA).heard(
+            self.MARIA, "Então João, viste o jogo?", 10000, present=room)
+
+        self.assertEqual(2, alone["people_present"])
+        self.assertEqual(4, crowded["people_present"])
+        self.assertFalse(crowded["speak"])
+
+    def test_somebody_who_leaves_is_no_longer_mid_conversation(self):
+        talk = Conversation("Aurora", self.AURORA)
+
+        talk.heard(self.PAULO, "Aurora, estás aí?", 10000, present=[self.PAULO, self.AURORA])
+        talk.left(self.PAULO)
+
+        # Coming back starts a new conversation, which is what it means between people too.
+        self.assertEqual(0, talk.snapshot()["in_exchange_with"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

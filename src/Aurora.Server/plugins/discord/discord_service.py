@@ -1177,7 +1177,8 @@ def utterance_heard(state, user_id, text, at_ms):
     session = state.get("voice")
 
     decision = (
-        conversation.heard(user_id, text, at_ms)
+        conversation.heard(user_id, text, at_ms,
+                           present=session.participants() if session else None)
         if conversation is not None
         else {"speak": False, "reason": "not_conversing", "delay_ms": None})
 
