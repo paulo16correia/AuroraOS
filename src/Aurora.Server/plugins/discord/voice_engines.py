@@ -240,10 +240,19 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
     import dave
 
     opus = find_opus()
-    stt = find_stt()
     tts = cloud_tts(voice, api_key, language)
     transport = has_transport()
     e2ee = dave.available()
+
+    # Both recognisers, and then the one actually in force. Asked separately because they fail
+    # differently and are fixed by different people: the local one needs a model file on disk, the
+    # remote one needs a secret in the vault. Reporting the wrong one's problem sends somebody to
+    # download a file they do not need.
+    local = find_stt()
+    remote = _speech.ElevenLabsListener(api_key=api_key, locale=language or "")
+
+    hears = remote.name if remote_stt and remote.available() else (
+        local["name"] if not remote_stt and local else None)
 
     missing = []
 
@@ -259,8 +268,11 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
             "beside it — an install missing a file rather than a feature nobody wrote")
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
-    if not stt:
-        if _find_program("whisper-cli") and not find_model():
+    if not hears:
+        # Whichever one is meant to be listening, and only that one.
+        if remote_stt:
+            missing.extend(remote.missing())
+        elif _find_program("whisper-cli") and not find_model():
             missing.append(
                 "a whisper model file — the program is installed but has nothing to run; "
                 "put a ggml-*.bin in the plugin's models/ directory, where the sandbox can "
@@ -281,7 +293,7 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
 
     return {
         "can_join": bool(opus and transport),
-        "can_listen": bool(opus and stt and transport),
+        "can_listen": bool(opus and hears and transport),
         "can_speak": bool(opus and tts and transport),
         "transport": transport,
         # Which voice, not only that there is one. The setting may hold several and which one
@@ -290,9 +302,13 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
         "language": language,
         "e2ee": e2ee,
         "opus": opus,
-        "stt": stt["name"] if stt else None,
+        # The one that is listening, not the one that happens to be installed. These were the
+        # same answer until a second recogniser existed, and then this field spent a session
+        # reporting "whisper-cli" beside `audio_leaves_this_machine: true` — a pair that cannot
+        # both be true, in the report somebody reads to find out exactly this.
+        "stt": hears,
         "tts": tts.name if tts else None,
-        "missing": missing,
+        "missing": list(dict.fromkeys(missing)),
 
         # Said explicitly, because these are the properties that would be quietly lost first,
         # and they are not the same answer. Speaking is never local: the sentence Aurora is about

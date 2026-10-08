@@ -363,6 +363,33 @@ class OQueEstaPronto(unittest.TestCase):
         self.assertFalse(local["audio_leaves_this_machine"])
         self.assertTrue(remoto["audio_leaves_this_machine"])
 
+    def test_it_names_the_recogniser_that_is_listening(self):
+        # These were the same answer until a second recogniser existed, and then this field spent
+        # a session reporting "whisper-cli" beside audio_leaves_this_machine: true — a pair that
+        # cannot both be true, in the report somebody reads to find out exactly this.
+        local = voice_engines.readiness(voice="vozinha", api_key="k")
+        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
+
+        self.assertEqual("elevenlabs", remoto["stt"])
+        self.assertNotEqual(remoto["stt"], local["stt"])
+
+    def test_the_remote_recogniser_does_not_need_a_whisper_model(self):
+        # It was not only a label. `can_listen` required a local engine and the missing list asked
+        # for a ggml-*.bin, so an installation using Scribe with no model on disk reported that it
+        # could not hear and sent somebody to download a file it has no use for.
+        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
+
+        self.assertFalse(any("ggml" in m for m in remoto["missing"]))
+        self.assertFalse(any("whisper" in m for m in remoto["missing"]))
+
+    def test_the_key_both_legs_need_is_asked_for_once(self):
+        # Speaking and remote listening use the same secret. Naming it twice would read as two
+        # separate problems to go and fix.
+        nenhum = voice_engines.readiness(voice="vozinha", api_key="", remote_stt=True)
+        chave = [m for m in nenhum["missing"] if "elevenlabs_api_key" in m]
+
+        self.assertEqual(1, len(chave))
+
 
 class PromptEcho(unittest.TestCase):
     """What comes back when the recogniser heard nothing and had a prompt to copy.
