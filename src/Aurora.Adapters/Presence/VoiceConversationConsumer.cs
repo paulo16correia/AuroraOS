@@ -113,7 +113,12 @@ public sealed class VoiceConversationConsumer : IEventConsumer
                 // The event's own correlation, so the exchange and the capability calls it causes
                 // are one thing in the audit. It is also the idempotency key the boundary speaks
                 // with, which is what stops a redelivered event being said twice.
-                domainEvent.CorrelationId),
+                domainEvent.CorrelationId,
+
+                // The language to answer in, as the plugin reported it from its owner's settings.
+                // Absent is allowed and means the instruction falls back to guessing, which is
+                // what it used to do always.
+                Text(observed, "locale")),
             ct)
             .ConfigureAwait(false);
 

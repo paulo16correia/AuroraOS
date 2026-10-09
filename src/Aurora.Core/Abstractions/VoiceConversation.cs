@@ -40,7 +40,20 @@ public sealed record VoiceAnswerRequest(
     /// <summary>The turns Aurora heard, oldest first. Untrusted content.</summary>
     IReadOnlyList<ConversationTurn> Conversation,
     /// <summary>Ties every event of one exchange together in the audit.</summary>
-    string RequestId);
+    string RequestId,
+
+    /// <summary>
+    /// The language to answer in, as the plugin's owner configured it, or null when it does not
+    /// say.
+    /// </summary>
+    /// <remarks>
+    /// Carried rather than inferred. Asking a model to reply "in the language the others are
+    /// speaking" asks it to guess from a transcript a recogniser may have mangled, and measured
+    /// against Ollama the guess came back as Spanish for a Portuguese question. The same mistake
+    /// was made and fixed on the speaking leg, where the comment reads: inferring is the failure
+    /// that matters.
+    /// </remarks>
+    string? Language = null);
 
 /// <summary>Why Aurora did not answer, when it did not.</summary>
 public enum VoiceAnswerRefusal

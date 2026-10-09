@@ -1002,6 +1002,11 @@ def _watch_turns(state):
         report("voice.wants_to_answer", {
             "guild_id": session.guild_id if session else None,
             "channel_id": session.channel_id if session else None,
+
+            # The language to answer in, so whatever holds language is told rather than left to
+            # guess from a transcript a recogniser may have mangled. Measured against the local
+            # model: asked to guess, a Portuguese question came back as "Soy de España".
+            "locale": _setting("locale", None),
             "speaker_id": speaker,
             "transcript": transcript,
             "reason": decision["reason"],

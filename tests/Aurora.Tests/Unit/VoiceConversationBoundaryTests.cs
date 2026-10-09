@@ -188,6 +188,40 @@ public sealed class VoiceConversationBoundaryTests : IDisposable
         Assert.Empty(_model.Asked);
     }
 
+    // ---- the language is told, not guessed ----
+
+    [Fact]
+    public void TheInstructionNamesTheLanguageWhenTheOwnerSaysWhatItIs()
+    {
+        var told = VoiceConversationBoundary.InstructionIn("European Portuguese");
+
+        Assert.Contains("Reply in European Portuguese", told, StringComparison.Ordinal);
+
+        // And says not to do the thing it used to do, because a model handed a mangled transcript
+        // will otherwise decide for itself what language it is reading.
+        Assert.Contains("in no other language", told, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WithNoLanguageItFallsBackToGuessing()
+    {
+        // Which is what it always did. A plugin that does not say is not a reason to answer in the
+        // wrong language deliberately.
+        Assert.Equal(VoiceConversationBoundary.Instruction, VoiceConversationBoundary.InstructionIn(null));
+        Assert.Equal(VoiceConversationBoundary.Instruction, VoiceConversationBoundary.InstructionIn("  "));
+    }
+
+    [Fact]
+    public async Task TheLanguageOnTheRequestReachesTheModel()
+    {
+        // The point of carrying it across the boundary at all. Measured against Ollama with the
+        // instruction as the only variable, a Portuguese question answered "Soy de España" when
+        // the model was asked to guess and in European Portuguese when it was told.
+        await Answer(Heard("Aurora, de onde és tu?") with { Language = "pt-PT" });
+
+        Assert.Contains("Reply in pt-PT", _model.Last!.Instruction, StringComparison.Ordinal);
+    }
+
     // ---- 3. what people say is data ----
 
     [Fact]
