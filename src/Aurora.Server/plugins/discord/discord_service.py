@@ -840,10 +840,15 @@ def _media_report(state, session, transport, participants):
 
 # How long half a sentence waits for the rest before it is answered on its own.
 #
-# The ceiling that cut it fires while somebody is still speaking, so the rest normally arrives
-# within a packet or two. This covers the case where it does not — they stopped within a breath of
-# the ceiling and nothing more is coming. Answering half a question late beats never answering it.
-UNFINISHED_PATIENCE_MS = 2500
+# Short, because it is no longer what decides. The flush is gated on the speaker having actually
+# stopped, and somebody who resumes mid-sentence is holding the floor again before this elapses —
+# so all this has to cover is the moment between their last packet and being sure of it.
+#
+# It was 2500ms, chosen to outlast the whole silence-plus-recognition round trip in case the rest
+# of the sentence was still coming. That was belt and braces on top of the gate, and it was costing
+# two and a half seconds on every answer: measured end to end, five to seven seconds from the owner
+# finishing a sentence to hearing a reply, which is not a conversation.
+UNFINISHED_PATIENCE_MS = 800
 
 # How much stitched-together speech is still one question, in characters. Past this somebody is
 # making a speech rather than asking something, and waiting for them to finish is never answering.
@@ -1289,6 +1294,37 @@ def utterance_heard(state, user_id, text, at_ms):
     return decision
 
 
+# How long a reply waits for a gap before giving up on being said.
+#
+# Not zero, which is what it was. Waiting for silence to be *total* in a voice channel is waiting
+# for something that may not happen: open microphones carry breathing, a fan, a room. A reply that
+# Aurora decided to give and then dropped because somebody was clearing their throat is worse than
+# one that lands a beat late.
+#
+# Three seconds, which is about as long as a person holds a thought before saying it anyway.
+FLOOR_PATIENCE_MS = 3000
+
+
+def _floor_or_wait(state, session):
+    """The floor to speak from, waiting briefly for a gap rather than giving up at once.
+
+    Returns None only if nobody stopped talking for the whole wait, which is the case where
+    speaking really would be talking over somebody.
+    """
+    until = time.monotonic() + FLOOR_PATIENCE_MS / 1000.0
+
+    while True:
+        speech = session.begin_speaking()
+
+        if speech is not None:
+            return speech
+
+        if time.monotonic() >= until:
+            return None
+
+        time.sleep(0.1)
+
+
 def speak_in_conversation(state, text, invited):
     """Says something inside an open window, spending one of its utterances.
 
@@ -1310,11 +1346,18 @@ def speak_in_conversation(state, text, invited):
     if state.get("voice_muted"):
         raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
 
-    speech = session.begin_speaking()
+    speech = _floor_or_wait(state, session)
 
     if speech is None:
-        # Somebody has the floor. Not queued: by the time they finish, what Aurora was going to
-        # say may no longer be the right thing to say.
+        # Nobody stopped. Still not queued: by the time they finish, what Aurora was going to say
+        # may no longer be the right thing to say.
+        #
+        # Traced, because this refusal was invisible. The kernel reports an opaque "Execution
+        # failed" and nothing said which refusal it was, so an answer she had decided to give
+        # vanished with no record anywhere — in a channel where the microphones transmit almost
+        # continuously, that was every answer.
+        _trace(state, "recusado: a palavra esta tomada")
+
         raise Refused("floor_taken", "somebody is speaking; Aurora does not talk over people")
 
     # Answered. Cleared before the audio plays rather than after, so a long sentence does not leave

@@ -252,6 +252,63 @@ class OneUtteranceThroughTheRealSession(unittest.TestCase):
         self.assertIn("voice.heard", kinds)
 
 
+class WaitingForAGap(unittest.TestCase):
+    """A reply waits briefly for somebody to stop, rather than being dropped on the spot.
+
+    `speak_in_conversation` refuses when the floor is taken, which is right — Aurora does not talk
+    over people. It was refusing instantly, and in a channel where the microphones carry breathing
+    and a fan there is hardly ever a moment when nobody holds the floor. Measured: every answer she
+    decided to give was refused, the kernel reported an opaque "Execution failed", and nothing said
+    which refusal it had been.
+    """
+
+    class Floor:
+        """A session that holds the floor for a given number of attempts and then lets go."""
+
+        def __init__(self, busy_for):
+            self.busy_for = busy_for
+            self.asked = 0
+
+        def begin_speaking(self):
+            self.asked += 1
+
+            if self.asked <= self.busy_for:
+                return None
+
+            return 7
+
+    def setUp(self):
+        self._patience = discord_service.FLOOR_PATIENCE_MS
+        discord_service.FLOOR_PATIENCE_MS = 600
+
+    def tearDown(self):
+        discord_service.FLOOR_PATIENCE_MS = self._patience
+
+    def test_a_free_floor_is_taken_at_once(self):
+        floor = self.Floor(busy_for=0)
+
+        self.assertEqual(7, discord_service._floor_or_wait({}, floor))
+        self.assertEqual(1, floor.asked)
+
+    def test_it_waits_for_a_gap_instead_of_giving_up(self):
+        # The case that matters. Somebody is mid-word when Aurora is ready to answer; a beat later
+        # they stop, and the answer is still worth saying.
+        floor = self.Floor(busy_for=2)
+
+        self.assertEqual(7, discord_service._floor_or_wait({}, floor))
+        self.assertGreater(floor.asked, 1)
+
+    def test_it_gives_up_if_nobody_ever_stops(self):
+        # Still bounded. Waiting indefinitely would hold the capability open and then say something
+        # answering a question two minutes old.
+        floor = self.Floor(busy_for=10_000)
+
+        self.assertIsNone(discord_service._floor_or_wait({}, floor))
+
+        # And it tried more than once on the way, rather than returning the first refusal.
+        self.assertGreater(floor.asked, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

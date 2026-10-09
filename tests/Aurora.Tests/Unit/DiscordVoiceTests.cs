@@ -105,7 +105,7 @@ public sealed class DiscordVoiceTests : IDisposable
         // The join retry is paid for in public: every attempt is one more appearance and
         // disappearance in front of everybody in the call. These tests count those appearances,
         // which is the thing that was actually wrong (docs/adr/0080).
-        RunPython("test_voice_join", 14);
+        RunPython("test_voice_join", 17);
     }
 
     [Fact]
