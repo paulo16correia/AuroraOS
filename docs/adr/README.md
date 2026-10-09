@@ -101,4 +101,5 @@ system, read the [runbook](../guides/operator-runbook.md) and
 | 0090 | [A window belongs to the person](0090-a-window-belongs-to-the-person.md) | Implemented |
 | 0091 | [Hearing is measured, not argued](0091-hearing-is-measured-not-argued.md) | Implemented |
 | 0092 | [The operating system is the sandbox, not a container](0092-the-operating-system-is-the-sandbox.md) | Implemented, by what was already built |
-| 0093 | [Listening may leave the machine, if the owner chooses it](0093-listening-may-leave-the-machine-if-chosen.md) | Implemented, off by default |
+| 0093 | [Listening may leave the machine, if the owner chooses it](0093-listening-may-leave-the-machine-if-chosen.md) | Superseded by 0094 |
+| 0094 | [One recogniser, and it is not local](0094-one-recogniser-and-it-is-not-local.md) | Implemented |

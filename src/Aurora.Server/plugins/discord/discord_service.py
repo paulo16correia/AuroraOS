@@ -843,11 +843,87 @@ def _media_report(state, session, transport, participants):
 # The ceiling that cut it fires while somebody is still speaking, so the rest normally arrives
 # within a packet or two. This covers the case where it does not — they stopped within a breath of
 # the ceiling and nothing more is coming. Answering half a question late beats never answering it.
-UNFINISHED_PATIENCE_MS = 2000
+UNFINISHED_PATIENCE_MS = 2500
 
 # How much stitched-together speech is still one question, in characters. Past this somebody is
 # making a speech rather than asking something, and waiting for them to finish is never answering.
 LONGEST_STITCHED = 600
+
+# Below this much *audio*, a turn is a fragment rather than an utterance, and is held for whatever
+# comes next instead of being transcribed on its own.
+#
+# A second and a half, measured against what recognition can actually do. Turns were arriving with
+# 60ms, 400ms and 1200ms of audio in them — somebody speaking one clause, breathing, and carrying
+# on — and a recogniser handed a clause with its first word clipped does not report that it is
+# short: it invents. The same 1.2s clip went to ElevenLabs Scribe and to a local large-v3-turbo and
+# both produced confident nonsense, which is how this was traced to the audio rather than to either
+# of them.
+#
+# Measured on the audio and not on the turn's wall-clock length, because those are different
+# numbers: Discord sends silence frames, so a turn can run two seconds and carry one of speech.
+FRAGMENT_MS = 1500
+
+# Discord's audio is 48kHz, two channels, sixteen bits — so this many bytes to the millisecond.
+BYTES_PER_MS = 48000 * 2 * 2 // 1000
+
+
+def _trace(state, mensagem):
+    """One line of the listening trail, when the owner asked for it. Off unless they did.
+
+    Built because three rounds of this were debugged blind. A confined plugin's stderr does not
+    reach Aurora's log, observations carry payloads that are never persisted, and the audit stores
+    hashes — so when Aurora sits in a channel and says nothing there is, by construction, no way to
+    find out which step dropped the sentence. Every previous answer came from instrumenting the
+    plugin by hand and throwing it away afterwards.
+
+    It writes transcripts, which is why it is a setting and not a default: a trail of what people
+    said in a voice channel is the same private thing the recordings were.
+
+    It goes to the plugin's working directory and not to the directory it runs from. The sandbox
+    grants the installed directory read-and-execute and no writing, so the obvious place silently
+    does nothing — the first version of this wrote beside `__file__`, the write raised, the `except`
+    below swallowed it, and the answer was another round of debugging with no trail at all. TEMP
+    under the sandbox is this container's own working directory, granted to it and to nothing else.
+    """
+    if not _setting("voice_trace", False):
+        return
+
+    try:
+        import tempfile
+
+        caminho = os.path.join(tempfile.gettempdir(), "voice-trace.txt")
+
+        with open(caminho, "a", encoding="utf-8") as handle:
+            handle.write("%.3f %s%s" % (time.monotonic(), mensagem, chr(10)))
+    except Exception:
+        # A trail that cannot be written is not a reason to stop listening.
+        pass
+
+
+def _keep_for_inspection(state, speaker, pcm):
+    """Writes one utterance beside the trail, when the owner turned the trail on.
+
+    The trail says what came back; this says what went in, and without both there is no way to tell
+    a recogniser that is failing from audio that was never intelligible. Three rounds of this were
+    argued from transcripts alone.
+
+    Under the same setting as the trail and for the same reason: this is a recording of somebody's
+    voice, which is the thing the whole local-only posture exists to protect. It is written to the
+    plugin's own working directory, it is overwritten by the next utterance rather than accumulated,
+    and it goes away when the setting does.
+    """
+    if not _setting("voice_trace", False):
+        return
+
+    try:
+        import tempfile
+
+        caminho = os.path.join(tempfile.gettempdir(), "last-utterance.wav")
+
+        with open(caminho, "wb") as handle:
+            handle.write(_wav_as_received(pcm))
+    except Exception:
+        pass
 
 
 def _watch_turns(state):
@@ -856,47 +932,7 @@ def _watch_turns(state):
     Separate from the audio thread on purpose: recognition takes as long as it takes, and doing it
     where the packets arrive would stop draining the socket while somebody is still speaking.
     """
-    engine = voice_engines.find_stt(_setting("stt_model"))
     language = _setting("stt_language", "auto")
-    threads = _setting("stt_threads")
-
-    # Which recogniser, decided once per listening session rather than per turn: changing who
-    # hears the room is not something that should happen in the middle of a sentence.
-    #
-    # Local unless the owner wrote the other one down. A fresh installation that began uploading a
-    # channel's audio because nobody had said otherwise would be the same failure the default-off
-    # posture was built to prevent.
-    remote_stt = _remote_stt()
-
-    # What the recogniser is told to expect. Aurora's own name, because that is the word it must get
-    # right and the word it gets wrong (docs/adr/0071), plus anything the owner adds.
-    #
-    # Written as a sentence rather than as a comma-separated list, and this is not cosmetic. whisper's
-    # initial prompt conditions the decoder as if it were text that came immediately before the
-    # audio, so a list of nouns asks it to carry on listing nouns, while a sentence asks it to carry
-    # on speaking. The owner's words are the ones that have to survive, so they go in a clause that
-    # reads like somebody about to say them.
-    #
-    # It is also why `is_prompt_echo` exists below: the same fluency that helps the decoder hear
-    # these words lets it return them when it heard nothing. The prompt earns its place on clean
-    # audio — dropping it cost twelve points of word error, measured — and the guard pays for it on
-    # the audio that is not clean.
-    #
-    # De-duplicated, because the name was arriving twice: this joined the bot's own name to a
-    # vocabulary setting that already contained it, and "Aurora, Aurora, Sobral da Abelheira" spends
-    # prompt on a repetition that teaches the decoder nothing.
-    gateway = state.get("gateway")
-    own_name = (gateway.status() if gateway else {}).get("bot_name") or "Aurora"
-
-    expected = [own_name]
-
-    for word in _setting("stt_vocabulary", []) or []:
-        if word and word not in expected:
-            expected.append(word)
-
-    prompt = "Uma conversa com %s. Falamos de %s." % (
-        own_name, ", ".join(expected[1:])) if len(expected) > 1 else (
-        "Uma conversa com %s." % own_name)
 
     # Halves of sentences the ceiling cut, by whoever was speaking. A turn that ended because the
     # ceiling arrived is not a question, it is the first part of one, and answering it and then
@@ -907,6 +943,11 @@ def _watch_turns(state):
         """Decides whether a finished utterance is Aurora's to answer, and says so if it is."""
         decision = utterance_heard(
             state, speaker, transcript, int(time.monotonic() * 1000))
+
+        _trace(state, "decisao: fala=%s porque=%s nomeada=%s pergunta=%s presentes=%s janela=%s" % (
+            decision.get("speak"), decision.get("reason"), decision.get("named"),
+            decision.get("question"), decision.get("people_present"),
+            conversation_window(state) is not None))
 
         # The raw audio is gone by here. What leaves this function is words, and only because
         # somebody asked Aurora to listen.
@@ -977,7 +1018,17 @@ def _watch_turns(state):
         now_ms = int(time.monotonic() * 1000)
 
         # Halves whose other half never arrived.
+        #
+        # Gated on the speaker actually being quiet, and not only on the clock. The rest of a
+        # sentence cannot arrive until they stop, the turn ends, and it is transcribed — which adds
+        # up to more than any patience worth waiting, so a timer alone would flush every fragment
+        # just before its continuation showed up and the stitching would do nothing.
+        falando = set((session.snapshot() or {}).get("speaking_now") or [])
+
         for who, half in list(unfinished.items()):
+            if who in falando:
+                continue
+
             if now_ms - half["held_at_ms"] < UNFINISHED_PATIENCE_MS:
                 continue
 
@@ -997,6 +1048,10 @@ def _watch_turns(state):
                 if not audio:
                     continue
 
+                _trace(state, "turno: quem=%s %dms cortado=%s bytes=%d silencio=%s" % (
+                    speaker, detail.get("duration_ms", -1), detail.get("cut_short"),
+                    len(audio), voice_engines.is_silence(audio)))
+
                 if voice_engines.is_silence(audio):
                     # Not asked at all. A recogniser handed near-silence answers with the most common
                     # phrase in its training data — "Thank you.", "Thanks for watching!" — and the only
@@ -1006,15 +1061,11 @@ def _watch_turns(state):
                 recognition_started = time.monotonic() * 1000
 
                 try:
-                    if remote_stt:
-                        # Uploaded. The owner named this recogniser; `readiness` says so and the
-                        # secret's stated purpose says so.
-                        transcript = voice_engines.transcribe_remotely(
-                            _wav(audio), state.get("speech_key"), language=language)
-                    else:
-                        transcript = voice_engines.transcribe(
-                            engine, _wav(audio), language=language, prompt=prompt, threads=threads,
-                            audio_ctx=bool(_setting("stt_audio_ctx", False)))
+                    # Uploaded, always. There is no local recogniser in this path any more
+                    # (docs/adr/0094), and the audio goes up at the rate it arrived rather than
+                    # decimated to the 16kHz whisper.cpp used to insist on.
+                    transcript = voice_engines.transcribe_remotely(
+                        _wav_as_received(audio), state.get("speech_key"), language=language)
                 except Exception as unheard:
                     # The message. A recogniser that cannot run and one that heard nothing produce the
                     # same exception type and need entirely different fixes.
@@ -1026,29 +1077,12 @@ def _watch_turns(state):
 
                 recognised_at = time.monotonic() * 1000
 
+                _trace(state, "ouviu: %r" % (transcript[:200],))
+                _keep_for_inspection(state, speaker, audio)
+
                 if not transcript.strip() or voice_engines.is_hallucination(transcript):
                     # It got through the energy gate and still came back as one of the things a
                     # recogniser says when it heard nothing. Answering it would be answering nobody.
-                    continue
-
-                if voice_engines.is_foreign_script(transcript, prompt):
-                    # Written in an alphabet this conversation does not use. "советар" came back
-                    # from a channel where everyone was speaking Portuguese; it is what a decoder
-                    # produces when it has to produce something, and it is never speech.
-                    report("voice.not_understood", {
-                        "speaker_id": speaker,
-                        "reason": "the transcript was not in this conversation's alphabet",
-                    })
-                    continue
-
-                if voice_engines.is_prompt_echo(transcript, prompt):
-                    # The prompt came back instead of what was said. Measured against known speech:
-                    # "Aurora, estás a ouvir?" transcribed as "Falamos de Sobral da Abelheira." That is
-                    # the prompt, not a question, and answering it is answering nobody.
-                    report("voice.not_understood", {
-                        "speaker_id": speaker,
-                        "reason": "the recogniser returned the prompt rather than speech",
-                    })
                     continue
 
                 transcript = transcript.strip()
@@ -1067,9 +1101,14 @@ def _watch_turns(state):
                     # the recognition time is every fragment's, because that work was all done.
                     recognised_ms += half["recognised_ms"]
 
-                if detail.get("cut_short") and len(transcript) < LONGEST_STITCHED:
-                    # They were still speaking when the ceiling arrived. Hold this half and wait for
-                    # the rest rather than answer a question that is not finished being asked.
+                fragmento = len(audio) < FRAGMENT_MS * BYTES_PER_MS
+
+                if (detail.get("cut_short") or fragmento) and len(transcript) < LONGEST_STITCHED:
+                    # Not a whole thing yet. Either they were still speaking when the ceiling
+                    # arrived, or the turn ended on silence with too little audio in it to have
+                    # been a sentence — a clause and a breath. Either way the rest is coming, and
+                    # transcribing this on its own is how one question became four fragments of
+                    # nonsense.
                     unfinished[speaker] = {
                         "transcript": transcript,
                         "ended_ms": detail["ended_ms"],
@@ -1127,6 +1166,40 @@ def _wav(pcm):
         mono += struct.pack("<h", max(-32768, min(32767, total // 3)))
 
     channels, rate, bits = 1, 16000, 16
+    block = channels * bits // 8
+
+    return (
+        b"RIFF" + struct.pack("<I", 36 + len(mono)) + b"WAVEfmt "
+        + struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
+        + b"data" + struct.pack("<I", len(mono)) + bytes(mono))
+
+
+def _wav_as_received(pcm):
+    """Discord's audio as a WAV, at the rate it arrived: 48kHz, one channel.
+
+    The companion to `_wav`, and the difference between them is the whole point. That one exists
+    because whisper.cpp will only take 16kHz mono, so it decimates — three samples become one, and
+    everything above 8kHz is gone. A recogniser that accepts the original has no reason to be
+    handed the wreckage: the band that decimation throws away is where much of the difference
+    between "Aurora" and "a hora" lives, and the consonants that separate Portuguese words from
+    each other sit right at the top of it.
+
+    Measured in a real channel while the remote recogniser was being fed the 16kHz version:
+    "A hora que eu aredado", "A honor de orador", "Agora eu rede o áudio". The service publishes
+    3.1% word error for Portuguese and none of that is 3.1%.
+
+    Stereo is folded to mono because Discord sends the same voice in both channels and a recogniser
+    has no use for the second copy. That is an average, not a decimation: no rate changes, so no
+    band is lost.
+    """
+    frames = len(pcm) // 4
+    mono = bytearray()
+
+    for frame in range(frames):
+        left, right = struct.unpack_from("<hh", pcm, frame * 4)
+        mono += struct.pack("<h", (left + right) // 2)
+
+    channels, rate, bits = 1, 48000, 16
     block = channels * bits // 8
 
     return (
@@ -1286,17 +1359,7 @@ def _readiness(state):
     became false with a misleading reason attached.
     """
     return voice_engines.readiness(
-        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"),
-        remote_stt=_remote_stt())
-
-
-def _remote_stt():
-    """Whether the owner named the recogniser that uploads. Asked in one place, like the rest.
-
-    Local unless it says otherwise, and the string has to match: a typo in a setting should leave
-    the private default in place rather than guess at what was meant.
-    """
-    return str(_setting("stt_provider", "local")).strip().lower() == "elevenlabs"
+        _setting("tts_voice"), state.get("speech_key"), _setting("locale", "en"))
 
 
 def _speech_engine(state):

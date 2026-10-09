@@ -337,55 +337,51 @@ class OQueEstaPronto(unittest.TestCase):
         self.assertTrue(any("tts_voice" in m for m in sem_voz["missing"]))
         self.assertFalse(any("tts_voice" in m for m in sem_chave["missing"]))
 
-    def test_it_says_which_half_of_voice_leaves_the_machine(self):
-        # The two are no longer the same answer and would be the properties quietly lost first.
+    def test_both_legs_of_voice_leave_the_machine(self):
+        """What goes out, said rather than implied.
+
+        This test used to hold the opposite for audio, and the inversion is the point: listening
+        was a whisper model on this machine until the owner chose accuracy over locality
+        (`docs/adr/0094`). A recording of whoever speaks now goes to the same service the replies
+        already went to, and this field is where anybody finds that out.
+        """
         com = voice_engines.readiness(voice="vozinha", api_key="k")
-        sem = voice_engines.readiness(voice=None, api_key=None)
 
-        self.assertFalse(com["audio_leaves_this_machine"])
-        self.assertFalse(sem["audio_leaves_this_machine"])
-
+        self.assertTrue(com["audio_leaves_this_machine"])
         self.assertTrue(com["text_leaves_this_machine"])
         self.assertEqual(voice_engines.ELEVENLABS_HOST, com["speech_service"])
 
-        # Nothing configured means nothing is sent anywhere, and it says so rather than naming a
-        # service it cannot reach.
+    def test_with_no_key_nothing_is_sent_because_nothing_works(self):
+        # False here is not privacy. It means neither leg can run, and it says so rather than
+        # naming a service it cannot reach.
+        sem = voice_engines.readiness(voice=None, api_key=None)
+
+        self.assertFalse(sem["audio_leaves_this_machine"])
         self.assertFalse(sem["text_leaves_this_machine"])
         self.assertIsNone(sem["speech_service"])
-
-    def test_it_says_when_the_recording_leaves_too(self):
-        # The whole point of reporting this separately. An owner who chose the remote recogniser
-        # has to be able to find that out from Aurora rather than from a comment in a source file,
-        # and an owner who did not must never see it turn true on its own.
-        local = voice_engines.readiness(voice="vozinha", api_key="k")
-        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
-
-        self.assertFalse(local["audio_leaves_this_machine"])
-        self.assertTrue(remoto["audio_leaves_this_machine"])
+        self.assertIsNone(sem["stt"])
 
     def test_it_names_the_recogniser_that_is_listening(self):
-        # These were the same answer until a second recogniser existed, and then this field spent
-        # a session reporting "whisper-cli" beside audio_leaves_this_machine: true — a pair that
-        # cannot both be true, in the report somebody reads to find out exactly this.
-        local = voice_engines.readiness(voice="vozinha", api_key="k")
-        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
+        # This field spent a session reporting "whisper-cli" beside audio_leaves_this_machine:
+        # true — a pair that cannot both be true, in the report somebody reads to find out exactly
+        # this. There is one recogniser now and this is its name.
+        com = voice_engines.readiness(voice="vozinha", api_key="k")
 
-        self.assertEqual("elevenlabs", remoto["stt"])
-        self.assertNotEqual(remoto["stt"], local["stt"])
+        self.assertEqual("elevenlabs", com["stt"])
 
-    def test_the_remote_recogniser_does_not_need_a_whisper_model(self):
-        # It was not only a label. `can_listen` required a local engine and the missing list asked
-        # for a ggml-*.bin, so an installation using Scribe with no model on disk reported that it
-        # could not hear and sent somebody to download a file it has no use for.
-        remoto = voice_engines.readiness(voice="vozinha", api_key="k", remote_stt=True)
+    def test_hearing_does_not_need_a_whisper_model_any_more(self):
+        # `can_listen` used to require a local engine and the missing list asked for a ggml-*.bin,
+        # so an installation with no model on disk reported that it could not hear and sent its
+        # owner to download a file that is no longer used at all.
+        com = voice_engines.readiness(voice="vozinha", api_key="k")
 
-        self.assertFalse(any("ggml" in m for m in remoto["missing"]))
-        self.assertFalse(any("whisper" in m for m in remoto["missing"]))
+        self.assertFalse(any("ggml" in m for m in com["missing"]))
+        self.assertFalse(any("whisper" in m for m in com["missing"]))
 
     def test_the_key_both_legs_need_is_asked_for_once(self):
-        # Speaking and remote listening use the same secret. Naming it twice would read as two
-        # separate problems to go and fix.
-        nenhum = voice_engines.readiness(voice="vozinha", api_key="", remote_stt=True)
+        # Speaking and listening use the same secret. Naming it twice would read as two separate
+        # problems to go and fix.
+        nenhum = voice_engines.readiness(voice="vozinha", api_key="")
         chave = [m for m in nenhum["missing"] if "elevenlabs_api_key" in m]
 
         self.assertEqual(1, len(chave))

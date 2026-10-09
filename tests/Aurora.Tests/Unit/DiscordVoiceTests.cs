@@ -255,10 +255,12 @@ public sealed class DiscordVoiceTests : IDisposable
 
         JsonNode capabilities = JsonNode.Parse(status.OutputJson!)!["capabilities"]!;
 
-        // The property that would be quietly lost first, asserted rather than assumed. There is no
-        // fallback in this plugin that reaches a speech service: if nothing local is installed the
-        // capability refuses and says what to install.
-        Assert.False(capabilities["audio_leaves_this_machine"]!.GetValue<bool>());
+        // The property that would be quietly lost first, asserted rather than assumed — and it
+        // inverted. This held False while recognition was a whisper model on this machine; the
+        // owner chose ElevenLabs for both legs (docs/adr/0094), so a recording of whoever speaks
+        // is uploaded and the report has to say so. The key here is the test token provider's,
+        // which is enough to make the listener available.
+        Assert.True(capabilities["audio_leaves_this_machine"]!.GetValue<bool>());
 
         // And whatever this machine is missing is named, so somebody deciding whether to have
         // Aurora join a call finds out first rather than in the middle of a conversation.

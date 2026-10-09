@@ -1,16 +1,14 @@
 """Speech in and out, and the one place where Aurora is not local.
 
-**Listening is local unless the owner chose otherwise, and it is local by default.** The easy way
-to do speech recognition is to send somebody's voice to a service, and doing that without anybody
-deciding to would take a private conversation off the owner's machine. So the default recogniser is
-a program already installed here, which never uploads audio and never keeps it: a recording exists
-as bytes in memory for as long as it takes to become text, and then it is gone.
+**Neither leg is local, and that is the whole cost of this plugin.** Listening used to be: a
+whisper model on this machine, with no fallback that reached the network. It was measured against
+known European Portuguese and got a third of the words wrong, and the owner chose accuracy
+(`docs/adr/0094`). So **a recording of whoever speaks in the channel is uploaded to ElevenLabs**,
+and there is no local recogniser left here to fall back to.
 
-The other recogniser is ElevenLabs Scribe, and **it uploads the recording.** It exists because the
-local one is not good enough in the language this was built for — a third of the words wrong against
-Scribe's published 3.1% (`docs/adr/0093`) — and it is reached only when `stt_provider` names it.
-Which one is listening is reported by `readiness` as `audio_leaves_this_machine`, so the answer is
-never inferred from this paragraph.
+That is reported rather than implied: `readiness` answers `audio_leaves_this_machine`, and the
+secret's stated purpose in the manifest says it too, because somebody reading either of those
+should not have to come and read this paragraph.
 
 **Speaking is not local, and that was a decision.** Every local voice that could be had was
 measured, and in the language this was built for none of them was good enough to be Aurora's — the
@@ -19,9 +17,10 @@ were licence-blocked, Brazilian, or too heavy to sit on the same card as the lan
 than ship a voice the owner does not want, this leg was given to ElevenLabs, and the cost is stated
 instead of buried: **the sentence Aurora is about to say leaves the machine.**
 
-The two facts are reported separately by `readiness` — `audio_leaves_this_machine` and
-`text_leaves_this_machine` — because they are no longer the same answer, and a reader who assumes
-one from the other would be wrong in a way that matters.
+The two are still reported separately by `readiness` — `audio_leaves_this_machine` and
+`text_leaves_this_machine` — even though both are now true together, because one of them can fail
+on its own: without a key neither works, and the fields say which rather than leaving a reader to
+assume one from the other.
 
 There is no local fallback. A voice the owner rejected is not a safety net, and falling back to it
 mid-conversation would be worse than failing: Aurora has nothing to say without her language model
@@ -230,7 +229,7 @@ def listener(api_key=None, language=None):
     return _speech.ElevenLabsListener(api_key=api_key, locale=language or "")
 
 
-def readiness(voice=None, api_key=None, language=None, remote_stt=False):
+def readiness(voice=None, api_key=None, language=None):
     """What voice can and cannot do on this machine, as a plain answer.
 
     Reported rather than discovered at the moment of failure: somebody deciding whether to have
@@ -244,15 +243,10 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
     transport = has_transport()
     e2ee = dave.available()
 
-    # Both recognisers, and then the one actually in force. Asked separately because they fail
-    # differently and are fixed by different people: the local one needs a model file on disk, the
-    # remote one needs a secret in the vault. Reporting the wrong one's problem sends somebody to
-    # download a file they do not need.
-    local = find_stt()
-    remote = _speech.ElevenLabsListener(api_key=api_key, locale=language or "")
-
-    hears = remote.name if remote_stt and remote.available() else (
-        local["name"] if not remote_stt and local else None)
+    # One recogniser, and it needs a secret rather than a file on disk. This used to ask about two
+    # and report on whichever was in force; the local one is gone (docs/adr/0094).
+    ears = _speech.ElevenLabsListener(api_key=api_key, locale=language or "")
+    hears = ears.name if ears.available() else None
 
     missing = []
 
@@ -269,16 +263,7 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
     if not opus:
         missing.append("libopus (Discord voice carries Opus; install it with your package manager)")
     if not hears:
-        # Whichever one is meant to be listening, and only that one.
-        if remote_stt:
-            missing.extend(remote.missing())
-        elif _find_program("whisper-cli") and not find_model():
-            missing.append(
-                "a whisper model file — the program is installed but has nothing to run; "
-                "put a ggml-*.bin in the plugin's models/ directory, where the sandbox can "
-                "reach it")
-        else:
-            missing.append("a local speech-to-text program (whisper.cpp)")
+        missing.extend(ears.missing())
     if not tts:
         # Which half is missing, because the two are fixed in different places by different
         # people: the voice is a setting somebody chooses, the key is a secret somebody types.
@@ -310,12 +295,11 @@ def readiness(voice=None, api_key=None, language=None, remote_stt=False):
         "tts": tts.name if tts else None,
         "missing": list(dict.fromkeys(missing)),
 
-        # Said explicitly, because these are the properties that would be quietly lost first,
-        # and they are not the same answer. Speaking is never local: the sentence Aurora is about
-        # to say is sent to ElevenLabs to be read aloud. Listening is local unless the owner named
-        # the remote recogniser, and then a recording of somebody's voice is uploaded — which is
-        # the one fact about this plugin somebody would most want not to have to guess at.
-        "audio_leaves_this_machine": remote_stt,
+        # Said explicitly, because this is the fact about this plugin somebody would most want
+        # not to have to guess at. Both legs leave now: the sentence Aurora is about to say is sent
+        # to be read aloud, and a recording of whoever spoke is sent to be transcribed. False here
+        # does not mean privacy — it means nothing can listen at all, because there is no key.
+        "audio_leaves_this_machine": bool(hears),
         "text_leaves_this_machine": bool(tts),
         "speech_service": ELEVENLABS_HOST if tts else None,
     }
