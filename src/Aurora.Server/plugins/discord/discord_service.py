@@ -747,6 +747,13 @@ def voice_listen(state, args, nonce=None):
             for action, detail in session.audio(ssrc, at_ms):
                 if action == "speaker_started":
                     heard[detail["user_id"]] = bytearray()
+                elif action == "stop_speaking":
+                    # Somebody started talking while she was. The session had decided this all
+                    # along and the transport could always do it — `play` checks every frame — and
+                    # nothing joined the two, so she read whole sentences over people. Done here,
+                    # in the audio thread, because this is the moment their first frame arrives and
+                    # any later is a moment she is still talking over them.
+                    transport.stop()
 
         speaker = session.speaker_for(ssrc)
 
@@ -857,11 +864,15 @@ def _media_report(state, session, transport, participants):
 # stopped, and somebody who resumes mid-sentence is holding the floor again before this elapses —
 # so all this has to cover is the moment between their last packet and being sure of it.
 #
+# Four hundred, down from eight. Every millisecond here is spent before the recogniser is even
+# asked, and the measured budget was 1928ms of waiting plus 710ms of recognising before the model
+# saw a word.
+#
 # It was 2500ms, chosen to outlast the whole silence-plus-recognition round trip in case the rest
 # of the sentence was still coming. That was belt and braces on top of the gate, and it was costing
 # two and a half seconds on every answer: measured end to end, five to seven seconds from the owner
 # finishing a sentence to hearing a reply, which is not a conversation.
-UNFINISHED_PATIENCE_MS = 800
+UNFINISHED_PATIENCE_MS = 400
 
 # How much held audio is still one question, in milliseconds. Past this somebody is making a
 # speech rather than asking something, and waiting for them to finish is never answering.
