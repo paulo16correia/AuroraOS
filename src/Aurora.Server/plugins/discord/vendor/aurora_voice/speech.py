@@ -656,8 +656,13 @@ def _form(fields, file_field, filename, content, content_type):
     body = bytearray()
 
     for name, value in fields.items():
-        body += ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
-                 % (boundary, name, value)).encode("utf-8")
+        # A list becomes one part per item under the same name, which is how multipart says "more
+        # than one of these" and how this service wants its keyterms. Sending the list as a single
+        # JSON string instead came back HTTP 400, "All keywords must be less than 50 characters":
+        # it had read the whole array as one very long keyword.
+        for one in (value if isinstance(value, (list, tuple)) else [value]):
+            body += ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
+                     % (boundary, name, one)).encode("utf-8")
 
     body += ('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\n'
              'Content-Type: %s\r\n\r\n'
@@ -736,6 +741,11 @@ class ElevenLabsListener:
         if not audio_bytes:
             raise SpeechUnavailable("nothing was heard")
 
+        # The model and the language, and nothing else. Biasing the recogniser towards a list of
+        # expected words is a real feature of this service and it is deliberately not used here:
+        # it was written to paper over transcripts that were bad because the *audio* was bad, and
+        # once that was fixed the honest thing was to find out what the recogniser does on its own.
+        # It costs a fifth more per request, and it is one line to add back with a measurement.
         fields = {"model_id": self.MODEL}
 
         # The language, not the variety, and only when known — same rule as the speaker, for the

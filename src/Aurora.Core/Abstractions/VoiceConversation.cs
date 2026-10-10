@@ -131,7 +131,14 @@ public sealed record VoiceConversationLimits(
     /// <summary>The whole conversation's size. Past it Aurora refuses rather than trimming blindly.</summary>
     int MaxContextCharacters = 4000,
     /// <summary>The longest thing Aurora will say in one turn.</summary>
-    int MaxAnswerCharacters = 400,
+    /// <remarks>
+    /// A hundred and sixty characters, which is about ten seconds of speech. It was four hundred,
+    /// which is nearer half a minute, and a model given room to use it uses it: measured in a real
+    /// channel, a single spoken sentence was answered with a four-clause apology explaining what
+    /// Aurora cannot do. Out loud that is not a long answer, it is an interruption of the person
+    /// waiting for it — and most of the delay they complain about is the reply still being read.
+    /// </remarks>
+    int MaxAnswerCharacters = 160,
     /// <summary>How long a sentence may take before the moment for it has passed.</summary>
     TimeSpan ModelTimeout = default)
 {

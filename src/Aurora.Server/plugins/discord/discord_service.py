@@ -733,15 +733,28 @@ def voice_listen(state, args, nonce=None):
         # filtered, but a microphone with voice detection switched off transmits the sound of the
         # room continuously — real audio, encoded properly, carrying nothing. Counting that as
         # speech means somebody is always talking, and Aurora waits for a floor that never frees.
-        if voice_engines.is_silence(pcm):
-            return
+        #
+        # So this decides turn-taking and nothing else. It used to `return` here, and that dropped
+        # the frame from the recording as well: what went to the recogniser was a concatenation of
+        # only the loud frames, with the pauses cut out and a discontinuity at every seam. It
+        # erases word boundaries and prosody, and in Portuguese it shreds exactly the low-energy
+        # sounds — the fricatives and unstressed vowels that "Ericeira" is made of. The number was
+        # in the trail for hours: a turn 1829ms long carrying 1.2s of audio, and the missing 600ms
+        # were the speaker's own pauses.
+        speaking = not voice_engines.is_silence(pcm)
 
-        for action, detail in session.audio(ssrc, at_ms):
-            if action == "speaker_started":
-                heard[detail["user_id"]] = bytearray()
+        if speaking:
+            for action, detail in session.audio(ssrc, at_ms):
+                if action == "speaker_started":
+                    heard[detail["user_id"]] = bytearray()
 
         speaker = session.speaker_for(ssrc)
 
+        # Kept whether or not this frame was loud, as long as a turn of theirs is open. A buffer
+        # only exists between somebody starting to speak and their turn being taken, so the quiet
+        # frames that get kept are the pauses *inside* what they said — which is what makes it a
+        # recording rather than a collage. Room noise between turns still accumulates nowhere,
+        # because between turns there is no buffer to put it in.
         if speaker is not None and speaker in heard:
             heard[speaker].extend(pcm)
 
@@ -874,6 +887,14 @@ LONGEST_HELD_MS = 15000
 # only way it gets one right — and it is one request per sentence instead of one per fragment.
 FRAGMENT_MS = 1500
 
+# Below this much audio there is no question in there, and asking costs a request to be told so.
+#
+# Seven hundred milliseconds, from the trail: 'É' at 580ms, 'Isso' at 380ms, 'dá muito' at 400ms,
+# and twice nothing at all from 280ms and 260ms. Every one of those was paid for. A held fragment
+# whose speaker simply stopped can be this short, so the floor is checked where the asking happens
+# rather than where the holding does.
+WORTH_ASKING_MS = 700
+
 # Discord's audio is 48kHz, two channels, sixteen bits — so this many bytes to the millisecond.
 BYTES_PER_MS = 48000 * 2 * 2 // 1000
 
@@ -981,6 +1002,10 @@ def _watch_turns(state):
 
         _remember(state, speaker, transcript)
 
+        _trace(state, "vai responder: esperou %dms pelo silencio, %dms a reconhecer, "
+                      "%dms desde que paraste" % (
+                          waited_ms, recognised_ms, now_ms - ended_ms))
+
         waiting.append({
             "speaker_id": speaker,
             "transcript": transcript,
@@ -1031,6 +1056,10 @@ def _watch_turns(state):
         because the second copy of this went on reading the keys of an earlier design and a held
         fragment could never be answered at all.
         """
+        if len(audio) < WORTH_ASKING_MS * BYTES_PER_MS:
+            _trace(state, "curto demais para perguntar: %dms" % (len(audio) // BYTES_PER_MS,))
+            return
+
         started = time.monotonic() * 1000
 
         try:
@@ -1475,6 +1504,16 @@ def speak_in_conversation(state, text, invited, answering=None):
     exchange = state.setdefault("exchange", [])
     exchange.append({"speaker": own, "said": text})
     del exchange[:-EXCHANGE_REMEMBERED]
+
+    # What she actually said. The trail recorded what she heard and what she decided and stopped
+    # there, which left the one question an owner asks — is it mishearing me or talking nonsense —
+    # impossible to answer from it. Both halves are needed to tell those apart.
+    #
+    # Timed in two parts, because "it took five seconds" is one complaint and two problems: waiting
+    # for her to start is the model and the floor, and waiting for her to finish is the length of
+    # what she decided to say. Reading one number for both sent me looking in the wrong place.
+    _trace(state, "disse (%dms a sintetizar, %dms a falar, %d caracteres): %r" % (
+        spoke_at - synthesis_started, time.monotonic() * 1000 - spoke_at, len(text), text[:160]))
 
     return {
         "spoke": True,

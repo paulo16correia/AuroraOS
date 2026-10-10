@@ -154,9 +154,9 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
     /// Degrades to the plain instruction rather than to silence. A profile that cannot be read is
     /// a reason to sound generic, not a reason to stop answering.
     /// </remarks>
-    private async Task<string> WhoAndHowAsync(string? language, CancellationToken ct)
+    private async Task<string> WhoAndHowAsync(VoiceAnswerRequest request, CancellationToken ct)
     {
-        var how = InstructionIn(language);
+        var how = InstructionIn(request.Language);
 
         if (_personality is null)
         {
@@ -173,7 +173,7 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
                 resolved.Profile,
                 VoiceChannel.Discord,
                 new VoiceGrant([], 0, _limits.Timeout, string.Empty, DisclosureRequired: true),
-                []);
+                Present(request));
 
             return who + Environment.NewLine + how;
         }
@@ -183,6 +183,29 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
             // service's own business to report; this is the voice channel and its job is to speak.
             return how;
         }
+    }
+
+    /// <summary>Who is in this conversation, for the context the identity is composed with.</summary>
+    /// <remarks>
+    /// The turns already carry names, and that was not enough: asked "sabes com quem é que tás a
+    /// falar" she answered "sou a Aurora, um sistema" — which answers what she is, not who she is
+    /// talking to. A label beside each line is something a reader has to notice; this says it.
+    ///
+    /// Taken from the turns rather than from a roster, because the people who have said something
+    /// are the people she is talking to, and somebody sitting silently in a channel is not part of
+    /// the conversation in any sense she needs.
+    /// </remarks>
+    private static IReadOnlyList<string> Present(VoiceAnswerRequest request)
+    {
+        var names = request.Conversation
+            .Select(turn => turn.Speaker)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return names.Count == 0
+            ? []
+            : [$"You are talking to {string.Join(" and ", names)}. Use their name when it is natural."];
     }
 
     public async Task<VoiceAnswerOutcome> AnswerAsync(VoiceAnswerRequest request, CancellationToken ct)
@@ -253,7 +276,7 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
 
         LanguageModelAnswer answer = await _model.AnswerAsync(
             new LanguageModelRequest(
-                await WhoAndHowAsync(request.Language, ct).ConfigureAwait(false),
+                await WhoAndHowAsync(request, ct).ConfigureAwait(false),
                 spoken, _limits.MaxAnswerCharacters, _limits.Timeout),
             ct)
             .ConfigureAwait(false);
