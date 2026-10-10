@@ -2,6 +2,7 @@ using System.Text.Json;
 using Aurora.Adapters.Observability;
 using Aurora.Adapters.Persistence;
 using Aurora.Adapters.Presence;
+using Aurora.Adapters.Personality;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
@@ -80,12 +81,50 @@ public sealed class VoiceConversationBoundaryTests : IDisposable
             new NoOperatorPrompt());
 
     private VoiceConversationBoundary Boundary(
-        VoiceConversationLimits? limits = null, VoiceSettings? voice = null) =>
+        VoiceConversationLimits? limits = null, VoiceSettings? voice = null,
+        IPersonalityService? personality = null) =>
         new(_model, Kernel(), Aurora,
             new VoicePolicyService(
                 voice ?? VoiceSettings.Default with { Enabled = true },
                 new SqliteVoiceSessionStore(_db.Factory, _clock), _audit),
-            limits);
+            limits,
+            personality);
+
+    /// <summary>A personality service that answers with the minimum safe profile, or throws.</summary>
+    private sealed class Personality(bool throws = false) : IPersonalityService
+    {
+        public Task<ResolvedProfile> ResolveAsync(
+            string ownerId, string channel, DateTimeOffset at, CancellationToken ct)
+        {
+            if (throws)
+            {
+                throw new InvalidOperationException("no profile here");
+            }
+
+            PersonalityProfile profile = SqlitePersonalityService.MinimumSafe;
+
+            return Task.FromResult(new ResolvedProfile(
+                profile,
+                new CommunicationPreference(
+                    ownerId, channel, profile.DefaultLocale, 0.5, null, "{}", false,
+                    "2026-01-01T00:00:00.0000000+00:00"),
+                profile.Voice, profile.DefaultLocale, Degraded: true, "test"));
+        }
+
+        public Task<PersonalityProfile> ProposeAsync(
+            PersonalityProfile profile, CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<PersonalityProfile> ActivateAsync(
+            string profileId, string approvalRef, string actor, string reason,
+            CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<IdentityChange>> HistoryAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<CommunicationPreference> SetPreferenceAsync(
+            CommunicationPreference preference, CancellationToken ct) =>
+            throw new NotSupportedException();
+    }
 
     private static VoiceAnswerRequest Heard(params string[] said) =>
         new("plugin/discord", "g1", "c1",
@@ -220,6 +259,44 @@ public sealed class VoiceConversationBoundaryTests : IDisposable
         await Answer(Heard("Aurora, de onde és tu?") with { Language = "pt-PT" });
 
         Assert.Contains("Reply in pt-PT", _model.Last!.Instruction, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheModelIsToldWhoAuroraIsAndNotOnlyHowToSpeak()
+    {
+        // The owner's complaint, in their words: "parece que é outra pessoa a cada fala". The
+        // instruction said how to speak and never said who she is, so the model invented a
+        // biography per answer. Measured against the local model with the identity as the only
+        // variable, four consecutive questions produced Paris, a marketing career, living in
+        // Porto, and a name given to her by her grandmother. With it: "não vivo em nenhum lugar,
+        // sou uma entidade digital", consistently.
+        await Boundary(personality: new Personality()).AnswerAsync(
+            Heard("Aurora, de onde és tu?") with { Language = "pt-PT" }, default);
+
+        var asked = _model.Last!.Instruction;
+
+        // Who, from the profile and not from this file.
+        Assert.Contains("You are Aurora", asked, StringComparison.Ordinal);
+
+        // And the clause that stops the inventing, which is the whole point.
+        Assert.Contains("never invent a body, a family or a life", asked, StringComparison.Ordinal);
+
+        // How, still, including the language.
+        Assert.Contains("Reply in pt-PT", asked, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AProfileThatCannotBeReadStillGetsAnAnswer()
+    {
+        // Sounding generic beats going quiet. A personality service that throws is a reason to
+        // fall back to the plain instruction, not to stop talking to somebody mid-conversation.
+        VoiceAnswerOutcome outcome = await Boundary(personality: new Personality(throws: true))
+            .AnswerAsync(Heard("Aurora, estás aí?") with { Language = "pt-PT" }, default);
+
+        Assert.Equal(VoiceAnswerRefusal.None, outcome.Refusal);
+        Assert.Contains("Reply in pt-PT", _model.Last!.Instruction, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "You are a persistent entity", _model.Last!.Instruction, StringComparison.Ordinal);
     }
 
     // ---- 3. what people say is data ----

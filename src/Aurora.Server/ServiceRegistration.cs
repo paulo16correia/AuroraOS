@@ -132,7 +132,13 @@ public static class ServiceRegistration
 
             // The operator's switch. Without it, `voice stop` stopped a voice-plugin session and
             // left a Discord voice conversation talking.
-            sp.GetRequiredService<IVoicePolicy>()));
+            sp.GetRequiredService<IVoicePolicy>(),
+            limits: null,
+
+            // Who Aurora is. The composer for this existed, was tested, and was reached only by
+            // VoiceRuntime — so the one channel that has ever spoken was composing no identity at
+            // all, and the model invented a fresh biography per answer.
+            sp.GetRequiredService<IPersonalityService>()));
 
         services.AddSingleton(sp => new VoiceRuntime(
             sp.GetRequiredService<IVoiceSessionStore>(),

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Aurora.Core.Abstractions;
+using Aurora.Core.Presence;
 using Aurora.Core.Contracts;
 using Aurora.Core.Kernel;
 
@@ -105,16 +106,24 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
     private readonly AuroraKernel _kernel;
     private readonly Principal _principal;
     private readonly VoiceConversationLimits _limits;
+    private readonly IPersonalityService? _personality;
 
     public VoiceConversationBoundary(
         ILocalLanguageModel model,
         AuroraKernel kernel,
         Principal principal,
         IVoicePolicy? policy = null,
-        VoiceConversationLimits? limits = null)
+        VoiceConversationLimits? limits = null,
+        IPersonalityService? personality = null)
     {
         _model = model;
         _kernel = kernel;
+
+        // Who Aurora is, read rather than written here. Without it this layer composed no identity
+        // at all and the model invented one per answer — "Estou na Noruega, fui criada por reis".
+        // Optional because the identity is an improvement on answering, not a condition of it: a
+        // profile that cannot be read degrades to the plain instruction rather than to silence.
+        _personality = personality;
 
         // Aurora's own switch, which this did not consult and should always have. The plugin's
         // conversation window says whether somebody is talking to Aurora; it says nothing about
@@ -127,6 +136,53 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
         // authentication mechanism.
         _principal = principal;
         _limits = limits ?? VoiceConversationLimits.Default;
+    }
+
+    /// <summary>
+    /// Who Aurora is and how this channel works, with the language named.
+    /// </summary>
+    /// <remarks>
+    /// Composed from the active personality profile rather than written here, which is the rule
+    /// <see cref="VoiceIdentity"/> exists to keep: a good prompt written in this file would be a
+    /// second Aurora, diverging from the real one every time somebody edited either.
+    ///
+    /// The grant names nothing, and that is accurate rather than lazy. In a Discord conversation
+    /// the only thing Aurora does is talk — the reply is the whole action, and the window that
+    /// authorised it is the plugin's. So the composer tells her she can ask for nothing here and
+    /// should say so if somebody wants something done, which is true.
+    ///
+    /// Degrades to the plain instruction rather than to silence. A profile that cannot be read is
+    /// a reason to sound generic, not a reason to stop answering.
+    /// </remarks>
+    private async Task<string> WhoAndHowAsync(string? language, CancellationToken ct)
+    {
+        var how = InstructionIn(language);
+
+        if (_personality is null)
+        {
+            return how;
+        }
+
+        try
+        {
+            ResolvedProfile resolved = await _personality
+                .ResolveAsync(Environment.UserName, "voice", DateTimeOffset.UtcNow, ct)
+                .ConfigureAwait(false);
+
+            var who = VoiceIdentity.Compose(
+                resolved.Profile,
+                VoiceChannel.Discord,
+                new VoiceGrant([], 0, _limits.Timeout, string.Empty, DisclosureRequired: true),
+                []);
+
+            return who + Environment.NewLine + how;
+        }
+        catch (Exception)
+        {
+            // Sounding generic beats not answering. Which profile was active is the personality
+            // service's own business to report; this is the voice channel and its job is to speak.
+            return how;
+        }
     }
 
     public async Task<VoiceAnswerOutcome> AnswerAsync(VoiceAnswerRequest request, CancellationToken ct)
@@ -197,8 +253,8 @@ public sealed class VoiceConversationBoundary : IVoiceConversationBoundary
 
         LanguageModelAnswer answer = await _model.AnswerAsync(
             new LanguageModelRequest(
-                InstructionIn(request.Language), spoken, _limits.MaxAnswerCharacters,
-                _limits.Timeout),
+                await WhoAndHowAsync(request.Language, ct).ConfigureAwait(false),
+                spoken, _limits.MaxAnswerCharacters, _limits.Timeout),
             ct)
             .ConfigureAwait(false);
 

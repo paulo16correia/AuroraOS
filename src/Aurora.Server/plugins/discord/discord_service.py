@@ -973,6 +973,8 @@ def _watch_turns(state):
         # before anybody could answer.
         now_ms = int(time.monotonic() * 1000)
 
+        _remember(state, speaker, transcript)
+
         waiting.append({
             "speaker_id": speaker,
             "transcript": transcript,
@@ -1010,10 +1012,9 @@ def _watch_turns(state):
             "speaker_id": speaker,
             "transcript": transcript,
             "reason": decision["reason"],
-            "conversation": [
-                {"speaker": str(turn["speaker_id"]), "said": turn["transcript"]}
-                for turn in waiting
-            ],
+            # Both sides, oldest first, so she can be consistent with what she already said
+            # rather than meeting everybody again every turn.
+            "conversation": list(state.get("exchange") or []),
         })
 
     while state.get("voice_listening"):
@@ -1299,6 +1300,26 @@ def utterance_heard(state, user_id, text, at_ms):
     return decision
 
 
+# How much of the exchange travels with a request for an answer.
+#
+# Both sides of it, which it did not use to be. The turns were taken from the pending queue, which
+# only ever held utterances Aurora heard — so whatever holds language was handed the questions and
+# never its own answers, and the owner's complaint was exact: "parece que é outra pessoa a cada
+# fala". Asked the same thing twice, she answered it for the first time twice.
+#
+# Eight turns, which is four exchanges. Enough to be the same person through a short back and
+# forth, and short enough that none of this is a memory: when the conversation window closes this
+# goes with it, and nothing here is written down anywhere.
+EXCHANGE_REMEMBERED = 8
+
+
+def _remember(state, speaker, said):
+    """Adds one turn to what travels with the next request. Oldest dropped first."""
+    exchange = state.setdefault("exchange", [])
+    exchange.append({"speaker": str(speaker), "said": said})
+    del exchange[:-EXCHANGE_REMEMBERED]
+
+
 # How long a reply waits for a gap before giving up on being said.
 #
 # Not zero, which is what it was. Waiting for silence to be *total* in a voice channel is waiting
@@ -1384,6 +1405,12 @@ def speak_in_conversation(state, text, invited):
 
     if conversation is not None:
         conversation.spoke(int(time.monotonic() * 1000), invited=invited)
+
+    # Her own turn, in the same record as everybody else's. Named rather than blank: whatever reads
+    # this has to be able to tell which lines are its own, and the bot's name is what the people in
+    # the channel call her.
+    gateway = state.get("gateway")
+    _remember(state, (gateway.status() if gateway else {}).get("bot_name") or "Aurora", text)
 
     return {
         "spoke": True,
