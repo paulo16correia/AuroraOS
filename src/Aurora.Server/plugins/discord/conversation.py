@@ -217,7 +217,7 @@ class Conversation:
             # Being named is an invitation, and nearly the only reliable one.
             return "addressed"
 
-        if in_exchange and not trivial and (others <= 1 or question):
+        if in_exchange and not trivial:
             # An exchange already under way with this person, so their next sentence is still part
             # of it. Being named once opens it; it does not have to be reopened every sentence.
             #
@@ -228,10 +228,17 @@ class Conversation:
             # for eight seconds, so the only way to carry on was to say her name again. That is
             # not a conversation, it is a wake word, and it is what the owner was stuck doing.
             #
-            # In a room with other people a question is required as well as the exchange: a
-            # statement might be to somebody else, and claiming it would be worse than missing it.
-            # Alone with her, anything that is not a grunt is for her, because there is nobody else
-            # it could be for.
+            # This used to require a question as well, in a room with other people, on the
+            # grounds that a statement might be addressed to somebody else. Measured live, that
+            # was the rule that made her unusable: the owner answered her and she ignored him,
+            # because "que era show" and "tem aqui demais" are not questions and almost nothing
+            # anybody says in a conversation is.
+            #
+            # What makes it safe without the question is that the exchange is per person and had to
+            # be opened: it is true only of somebody she has answered within the last
+            # forty-five seconds. The other people in the room still get `not_for_me`, because she
+            # has never answered them, which is the distinction that was doing the real work all
+            # along.
             return "invited"
 
         if self._just_spoke(at_ms):

@@ -263,6 +263,38 @@ class BeingTalkedTo(unittest.TestCase):
         self.assertTrue(spoke[0]["named"])
         self.assertFalse(any(turn["named"] for turn in spoke[1:]))
 
+    def test_an_exchange_does_not_need_every_sentence_to_be_a_question(self):
+        """The rule that made her unusable, and the measurement that condemned it.
+
+        An exchange in a room used to need a question as well, on the grounds that a statement
+        might be addressed to somebody else. Live, the owner answered her and she ignored him:
+        "que era show" and "tem aqui demais" are not questions, and almost nothing anybody says in
+        a conversation is.
+        """
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        spoke = self._exchange(room, [
+            (self.PAULO, "Aurora, estás aí?"),
+            (self.PAULO, "Que era show"),
+            (self.PAULO, "Pois, eu também achei"),
+        ])
+
+        self.assertTrue(all(turn["speak"] for turn in spoke))
+        self.assertFalse(any(turn["question"] for turn in spoke[1:]))
+
+    def test_and_still_does_not_answer_somebody_she_never_answered(self):
+        # What makes the above safe. The exchange is per person and has to have been opened, so the
+        # others in the room are unaffected — which was the distinction doing the real work.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        opened = talk.heard(self.PAULO, "Aurora, estás aí?", 10000, present=room)
+        self.assertTrue(opened["speak"])
+
+        # No `spoke` call, so nothing is blocked by having just had the floor: this is the
+        # addressing rule on its own.
+        self.assertFalse(talk.heard(self.MARIA, "Tem aqui demais", 13000, present=room)["speak"])
+        self.assertFalse(talk.heard(self.JOAO, "Deixa eu ver", 16000, present=room)["speak"])
+
     def test_a_grunt_is_still_not_an_opening(self):
         # The exchange staying open is not a licence to answer everything inside it.
         spoke = self._exchange([self.PAULO, self.AURORA], [
