@@ -268,9 +268,14 @@ class WaitingForAGap(unittest.TestCase):
         def __init__(self, busy_for):
             self.busy_for = busy_for
             self.asked = 0
+            self.disregarded = None
 
-        def begin_speaking(self):
+        def begin_speaking(self, unless=None, anyway=False):
             self.asked += 1
+            self.disregarded = unless
+
+            if anyway:
+                return 7
 
             if self.asked <= self.busy_for:
                 return None
@@ -298,15 +303,31 @@ class WaitingForAGap(unittest.TestCase):
         self.assertEqual(7, discord_service._floor_or_wait({}, floor))
         self.assertGreater(floor.asked, 1)
 
-    def test_it_gives_up_if_nobody_ever_stops(self):
-        # Still bounded. Waiting indefinitely would hold the capability open and then say something
-        # answering a question two minutes old.
+    def test_if_the_room_never_quietens_it_speaks_anyway(self):
+        """The behaviour this used to assert was the opposite, and the opposite was wrong.
+
+        It returned None and the sentence was dropped. Measured live: three people in a channel,
+        one of them talking every few seconds, and a direct question to Aurora — "Aurora, sabe por
+        que eu ia quiser falar?" — went unanswered every time, with `recusado: a palavra esta
+        tomada` in the trace. Total silence in a voice channel is a thing that does not happen.
+
+        Half a second of overlap is a smaller rudeness than not answering somebody who just asked.
+        """
         floor = self.Floor(busy_for=10_000)
 
-        self.assertIsNone(discord_service._floor_or_wait({}, floor))
+        self.assertEqual(7, discord_service._floor_or_wait({}, floor))
 
-        # And it tried more than once on the way, rather than returning the first refusal.
+        # And it waited first, rather than talking over the room on the first attempt.
         self.assertGreater(floor.asked, 1)
+
+    def test_the_person_being_answered_is_disregarded(self):
+        # They stopped — that is why there is something to answer — so waiting for them is waiting
+        # for a thing that already happened.
+        floor = self.Floor(busy_for=0)
+
+        discord_service._floor_or_wait({}, floor, answering="444")
+
+        self.assertEqual("444", floor.disregarded)
 
 
 class KnowingWhoIsTalking(unittest.TestCase):

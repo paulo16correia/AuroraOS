@@ -197,13 +197,25 @@ class VoiceSession:
 
     # ---- Aurora speaking ----
 
-    def may_speak(self):
-        """Whether starting to speak now would be talking over somebody."""
-        return not self._talking
+    def may_speak(self, unless=None):
+        """Whether starting to speak now would be talking over somebody.
 
-    def begin_speaking(self):
-        """Returns a speech id, or None when somebody else has the floor."""
-        if not self.may_speak():
+        `unless` names one person to disregard — the one Aurora is answering, who has by definition
+        stopped if there is anything to answer. Without it this asks for silence from the whole
+        room, and in a channel where three people are talking that is a thing that does not happen:
+        measured live, a direct question to Aurora went unanswered because somebody else was still
+        mid-sentence every time it was asked.
+        """
+        return not {who for who in self._talking if who != unless}
+
+    def begin_speaking(self, unless=None, anyway=False):
+        """Returns a speech id, or None when somebody else has the floor.
+
+        `anyway` takes the floor regardless, for the caller that has already waited and would
+        otherwise drop what it was going to say. Staying quiet when somebody asked a direct
+        question is not politeness in a conversation; it reads as being ignored.
+        """
+        if not anyway and not self.may_speak(unless):
             return None
 
         self._speech_id += 1

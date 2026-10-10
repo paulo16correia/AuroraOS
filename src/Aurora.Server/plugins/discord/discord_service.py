@@ -1375,27 +1375,34 @@ def _name_of(state, user_id):
 FLOOR_PATIENCE_MS = 3000
 
 
-def _floor_or_wait(state, session):
+def _floor_or_wait(state, session, answering=None):
     """The floor to speak from, waiting briefly for a gap rather than giving up at once.
 
-    Returns None only if nobody stopped talking for the whole wait, which is the case where
-    speaking really would be talking over somebody.
+    `answering` is the person this reply is for, and they are disregarded: they have stopped, which
+    is why there is something to answer, and waiting for the rest of the room to fall silent as
+    well is waiting for something that does not happen. Measured live — three people in a channel,
+    one of them talking every few seconds — a direct question went unanswered every time.
+
+    Takes the floor anyway when the wait runs out. The alternative is dropping a sentence Aurora
+    had decided to say to somebody who had just asked her something, and half a second of overlap
+    is a smaller rudeness than that.
     """
     until = time.monotonic() + FLOOR_PATIENCE_MS / 1000.0
 
     while True:
-        speech = session.begin_speaking()
+        speech = session.begin_speaking(unless=answering)
 
         if speech is not None:
             return speech
 
         if time.monotonic() >= until:
-            return None
+            _trace(state, "a palavra estava tomada; falou por cima")
+            return session.begin_speaking(unless=answering, anyway=True)
 
         time.sleep(0.1)
 
 
-def speak_in_conversation(state, text, invited):
+def speak_in_conversation(state, text, invited, answering=None):
     """Says something inside an open window, spending one of its utterances.
 
     Separate from `discord.voice.speak` on purpose. That capability is a single sentence somebody
@@ -1416,7 +1423,13 @@ def speak_in_conversation(state, text, invited):
     if state.get("voice_muted"):
         raise Refused(E_VOICE_UNAVAILABLE, "Aurora is muted")
 
-    speech = _floor_or_wait(state, session)
+    if answering is None:
+        # Whoever is waiting for this. The queue is the record of what Aurora decided to answer,
+        # and the last line in it is the one being answered — read before it is cleared below.
+        waiting = state.get("voice_pending") or []
+        answering = waiting[-1]["speaker_id"] if waiting else None
+
+    speech = _floor_or_wait(state, session, answering=answering)
 
     if speech is None:
         # Nobody stopped. Still not queued: by the time they finish, what Aurora was going to say
