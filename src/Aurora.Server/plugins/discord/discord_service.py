@@ -1104,8 +1104,8 @@ def _watch_turns(state):
                     continue
 
                 _trace(state, "turno: quem=%s %dms cortado=%s bytes=%d silencio=%s" % (
-                    speaker, detail.get("duration_ms", -1), detail.get("cut_short"),
-                    len(audio), voice_engines.is_silence(audio)))
+                    _name_of(state, speaker), detail.get("duration_ms", -1),
+                    detail.get("cut_short"), len(audio), voice_engines.is_silence(audio)))
 
                 if voice_engines.is_silence(audio):
                     # Not asked at all. A recogniser handed near-silence answers with the most common
@@ -1323,8 +1323,45 @@ EXCHANGE_REMEMBERED = 8
 def _remember(state, speaker, said):
     """Adds one turn to what travels with the next request. Oldest dropped first."""
     exchange = state.setdefault("exchange", [])
-    exchange.append({"speaker": str(speaker), "said": said})
+    exchange.append({"speaker": _name_of(state, speaker), "said": said})
     del exchange[:-EXCHANGE_REMEMBERED]
+
+
+def _name_of(state, user_id):
+    """What to call whoever is speaking. Their name if Discord will say, else their id.
+
+    Aurora already knew who was talking and was not using it: Discord tags every audio stream with
+    the user it belongs to, the session keeps that map, and what travelled to whatever holds
+    language was the number. Three numbers in a channel are three indistinguishable strangers, and
+    one of them is the owner.
+
+    Not voice recognition, deliberately. A voice is not a credential — the speaking leg of this
+    plugin is a service whose product is cloning one from seconds of audio — so anybody who can put
+    sound into the channel could be anybody. This says who Aurora is talking to; it grants nothing,
+    and authority stays where it was.
+
+    Asked once per person and kept for the session. A name is not worth a request per sentence, and
+    an id is a perfectly good thing to be called if the request fails.
+    """
+    user_id = str(user_id)
+    known = state.setdefault("names", {})
+
+    if user_id in known:
+        return known[user_id]
+
+    name = user_id
+    api = state.get("api")
+
+    if api is not None:
+        try:
+            raw = api.request("GET", "/users/%s" % user_id)
+            name = raw.get("global_name") or raw.get("username") or user_id
+        except Exception:
+            # An unreachable name is not a reason to lose the turn it belonged to.
+            pass
+
+    known[user_id] = name
+    return name
 
 
 # How long a reply waits for a gap before giving up on being said.
@@ -1416,8 +1453,15 @@ def speak_in_conversation(state, text, invited):
     # Her own turn, in the same record as everybody else's. Named rather than blank: whatever reads
     # this has to be able to tell which lines are its own, and the bot's name is what the people in
     # the channel call her.
+    #
+    # Straight into the record rather than through `_name_of`, because her name is known and asking
+    # Discord about her own id would spend a request to be told something she was already told.
     gateway = state.get("gateway")
-    _remember(state, (gateway.status() if gateway else {}).get("bot_name") or "Aurora", text)
+    own = (gateway.status() if gateway else {}).get("bot_name") or "Aurora"
+
+    exchange = state.setdefault("exchange", [])
+    exchange.append({"speaker": own, "said": text})
+    del exchange[:-EXCHANGE_REMEMBERED]
 
     return {
         "spoke": True,

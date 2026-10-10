@@ -309,6 +309,71 @@ class WaitingForAGap(unittest.TestCase):
         self.assertGreater(floor.asked, 1)
 
 
+class KnowingWhoIsTalking(unittest.TestCase):
+    """Aurora calls people by name, which she already knew and was not using.
+
+    Discord tags every audio stream with the user it belongs to. What travelled to whatever holds
+    language was the bare id, so three people in a channel were three indistinguishable numbers and
+    one of them was the owner.
+
+    Not voice recognition, and the distinction is the point: a voice is not a credential. The
+    speaking leg of this plugin is a service whose product is cloning a voice from seconds of audio,
+    so anybody able to put sound into the channel could be anybody. Naming the speaker says who
+    Aurora is talking to and grants nothing.
+    """
+
+    class Api:
+        """Discord's user lookup, counting how often it is asked."""
+
+        def __init__(self, name="Paulo Correia", fails=False):
+            self.name = name
+            self.fails = fails
+            self.asked = 0
+
+        def request(self, method, path, **rest):
+            self.asked += 1
+
+            if self.fails:
+                raise RuntimeError("no network")
+
+            return {"id": path.rsplit("/", 1)[-1], "username": "paulo", "global_name": self.name}
+
+    def test_the_name_replaces_the_number(self):
+        state = {"api": self.Api()}
+
+        self.assertEqual("Paulo Correia", discord_service._name_of(state, "1013819841687343214"))
+
+    def test_it_asks_once_per_person(self):
+        # A name is not worth a request per sentence.
+        api = self.Api()
+        state = {"api": api}
+
+        for _ in range(5):
+            discord_service._name_of(state, "444")
+
+        self.assertEqual(1, api.asked)
+
+    def test_an_unreachable_name_is_not_a_lost_turn(self):
+        # An id is a perfectly good thing to be called. Losing the sentence it belonged to because
+        # Discord was unreachable would be trading something that matters for something that does
+        # not.
+        state = {"api": self.Api(fails=True)}
+
+        self.assertEqual("444", discord_service._name_of(state, "444"))
+
+    def test_with_no_api_it_still_answers(self):
+        self.assertEqual("444", discord_service._name_of({}, "444"))
+
+    def test_the_exchange_carries_names(self):
+        # What actually travels. The record is what the model reads, and it reads names now.
+        state = {"api": self.Api()}
+
+        discord_service._remember(state, "1013819841687343214", "Aurora, estás aí?")
+
+        self.assertEqual(
+            [{"speaker": "Paulo Correia", "said": "Aurora, estás aí?"}], state["exchange"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 
