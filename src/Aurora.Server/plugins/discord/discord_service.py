@@ -850,12 +850,12 @@ def _media_report(state, session, transport, participants):
 # finishing a sentence to hearing a reply, which is not a conversation.
 UNFINISHED_PATIENCE_MS = 800
 
-# How much stitched-together speech is still one question, in characters. Past this somebody is
-# making a speech rather than asking something, and waiting for them to finish is never answering.
-LONGEST_STITCHED = 600
+# How much held audio is still one question, in milliseconds. Past this somebody is making a
+# speech rather than asking something, and waiting for them to finish is never answering.
+LONGEST_HELD_MS = 15000
 
-# Below this much *audio*, a turn is a fragment rather than an utterance, and is held for whatever
-# comes next instead of being transcribed on its own.
+# Below this much audio, a turn is a fragment rather than an utterance, and is held for whatever
+# comes next instead of being sent to the recogniser on its own.
 #
 # A second and a half, measured against what recognition can actually do. Turns were arriving with
 # 60ms, 400ms and 1200ms of audio in them — somebody speaking one clause, breathing, and carrying
@@ -866,6 +866,12 @@ LONGEST_STITCHED = 600
 #
 # Measured on the audio and not on the turn's wall-clock length, because those are different
 # numbers: Discord sends silence frames, so a turn can run two seconds and carry one of speech.
+#
+# What is held is the *audio*. An earlier version of this held the transcript and stitched the
+# pieces together, which could not work: a recogniser handed 240ms returns an empty string, empty
+# strings are dropped before any stitching, and so the sound went in the bin a piece at a time and
+# nothing was ever joined. Holding the sound means the recogniser sees a sentence, which is the
+# only way it gets one right — and it is one request per sentence instead of one per fragment.
 FRAGMENT_MS = 1500
 
 # Discord's audio is 48kHz, two channels, sixteen bits — so this many bytes to the millisecond.
@@ -1017,6 +1023,45 @@ def _watch_turns(state):
             "conversation": list(state.get("exchange") or []),
         })
 
+    def hear(speaker, audio, ended_ms):
+        """Asks the recogniser about one whole utterance, and answers it if it is Aurora's to.
+
+        Reached two ways and identical both times: the sentence finished on its own, or a held
+        fragment's speaker went quiet and what was held is all there is going to be. Written once,
+        because the second copy of this went on reading the keys of an earlier design and a held
+        fragment could never be answered at all.
+        """
+        started = time.monotonic() * 1000
+
+        try:
+            # Uploaded, always. There is no local recogniser in this path any more
+            # (docs/adr/0094), and the audio goes up at the rate it arrived rather than
+            # decimated to the 16kHz whisper.cpp used to insist on.
+            transcript = voice_engines.transcribe_remotely(
+                _wav_as_received(audio), state.get("speech_key"), language=language)
+        except Exception as unheard:
+            # The message. A recogniser that cannot run and one that heard nothing produce the
+            # same exception type and need entirely different fixes.
+            _trace(state, "falhou: %s: %s" % (type(unheard).__name__, str(unheard)[:160]))
+            report("voice.not_understood", {
+                "speaker_id": speaker,
+                "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
+            })
+            return
+
+        heard_at = time.monotonic() * 1000
+
+        _trace(state, "ouviu (%dms de audio): %r" % (
+            len(audio) // BYTES_PER_MS, transcript[:200]))
+        _keep_for_inspection(state, speaker, audio)
+
+        if not transcript.strip() or voice_engines.is_hallucination(transcript):
+            # It got through the energy gate and still came back as one of the things a
+            # recogniser says when it heard nothing. Answering it would be answering nobody.
+            return
+
+        answer(speaker, transcript.strip(), ended_ms, started - ended_ms, heard_at - started)
+
     while state.get("voice_listening"):
         time.sleep(0.05)
 
@@ -1028,24 +1073,23 @@ def _watch_turns(state):
 
         now_ms = int(time.monotonic() * 1000)
 
-        # Halves whose other half never arrived.
+        # Held fragments whose rest never came: whoever was speaking stopped, so what is held is
+        # the whole of it and it is time to ask.
         #
-        # Gated on the speaker actually being quiet, and not only on the clock. The rest of a
-        # sentence cannot arrive until they stop, the turn ends, and it is transcribed — which adds
-        # up to more than any patience worth waiting, so a timer alone would flush every fragment
-        # just before its continuation showed up and the stitching would do nothing.
+        # Gated on the speaker actually being quiet, and not only on the clock. Somebody who
+        # resumes mid-sentence holds the floor again, and a timer on its own would send half a
+        # question up the moment before the other half arrived.
         falando = set((session.snapshot() or {}).get("speaking_now") or [])
 
-        for who, half in list(unfinished.items()):
+        for who, held in list(unfinished.items()):
             if who in falando:
                 continue
 
-            if now_ms - half["held_at_ms"] < UNFINISHED_PATIENCE_MS:
+            if now_ms - held["held_at_ms"] < UNFINISHED_PATIENCE_MS:
                 continue
 
             del unfinished[who]
-            answer(who, half["transcript"], half["ended_ms"],
-                   half["waited_ms"], half["recognised_ms"])
+            hear(who, held["audio"], held["ended_ms"])
 
         for action, detail in session.tick(now_ms):
             try:
@@ -1069,67 +1113,30 @@ def _watch_turns(state):
                     # reliable way not to believe that is not to ask.
                     continue
 
-                recognition_started = time.monotonic() * 1000
+                held = unfinished.pop(speaker, None)
 
-                try:
-                    # Uploaded, always. There is no local recogniser in this path any more
-                    # (docs/adr/0094), and the audio goes up at the rate it arrived rather than
-                    # decimated to the 16kHz whisper.cpp used to insist on.
-                    transcript = voice_engines.transcribe_remotely(
-                        _wav_as_received(audio), state.get("speech_key"), language=language)
-                except Exception as unheard:
-                    # The message. A recogniser that cannot run and one that heard nothing produce the
-                    # same exception type and need entirely different fixes.
-                    report("voice.not_understood", {
-                        "speaker_id": speaker,
-                        "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
-                    })
-                    continue
+                if held:
+                    # The earlier part of the same sentence, waiting for this.
+                    audio = held["audio"] + audio
 
-                recognised_at = time.monotonic() * 1000
+                enough = len(audio) >= FRAGMENT_MS * BYTES_PER_MS
+                room = len(audio) < LONGEST_HELD_MS * BYTES_PER_MS
 
-                _trace(state, "ouviu: %r" % (transcript[:200],))
-                _keep_for_inspection(state, speaker, audio)
+                if (detail.get("cut_short") or not enough) and room:
+                    # Not a sentence yet. Either they were still speaking when the ceiling arrived,
+                    # or the turn ended on silence with too little sound in it to be a sentence —
+                    # a clause and a breath. Held, because asking about a fragment gets a fragment
+                    # of an answer or an empty string, and either way the sound is then gone.
+                    _trace(state, "guardado: %dms de audio" % (len(audio) // BYTES_PER_MS,))
 
-                if not transcript.strip() or voice_engines.is_hallucination(transcript):
-                    # It got through the energy gate and still came back as one of the things a
-                    # recogniser says when it heard nothing. Answering it would be answering nobody.
-                    continue
-
-                transcript = transcript.strip()
-                half = unfinished.pop(speaker, None)
-
-                waited_ms = recognition_started - detail["ended_ms"]
-                recognised_ms = recognised_at - recognition_started
-
-                if half:
-                    # The rest of a sentence the ceiling cut. Joined with a space: the seam falls
-                    # mid-sentence, so neither side ends or starts with punctuation that would make
-                    # one reading of it wrong.
-                    transcript = (half["transcript"] + " " + transcript).strip()
-
-                    # The wait is this fragment's — it is how long after they finally stopped — while
-                    # the recognition time is every fragment's, because that work was all done.
-                    recognised_ms += half["recognised_ms"]
-
-                fragmento = len(audio) < FRAGMENT_MS * BYTES_PER_MS
-
-                if (detail.get("cut_short") or fragmento) and len(transcript) < LONGEST_STITCHED:
-                    # Not a whole thing yet. Either they were still speaking when the ceiling
-                    # arrived, or the turn ended on silence with too little audio in it to have
-                    # been a sentence — a clause and a breath. Either way the rest is coming, and
-                    # transcribing this on its own is how one question became four fragments of
-                    # nonsense.
                     unfinished[speaker] = {
-                        "transcript": transcript,
+                        "audio": audio,
                         "ended_ms": detail["ended_ms"],
-                        "waited_ms": waited_ms,
-                        "recognised_ms": recognised_ms,
                         "held_at_ms": int(time.monotonic() * 1000),
                     }
                     continue
 
-                answer(speaker, transcript, detail["ended_ms"], waited_ms, recognised_ms)
+                hear(speaker, audio, detail["ended_ms"])
             except Exception as broke:
                 # One utterance must not be able to end the listening. This thread has now died
                 # twice to an exception raised while handling a single turn: `session.transport`
