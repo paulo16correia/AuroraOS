@@ -17,6 +17,7 @@ if (PassphraseConsole.TryHandle(args, options)
     || OperationsConsole.TryHandle(args, options)
     || SecretConsole.TryHandle(args, options)
     || PluginConsole.TryHandle(args, options)
+    || IdentityConsole.TryHandle(args, options)
     || DoctorConsole.TryHandle(args, options))
 {
     return;

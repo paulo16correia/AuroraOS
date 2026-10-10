@@ -238,6 +238,33 @@ Shipped plugins and their required secrets (names only):
 
 - **plugin/discord** — `bot_token`
 - **plugin/microsoft** — `tenant_id`, `client_id`, `refresh_token`
+
+## Who Aurora is when it speaks
+
+Until a profile is activated, Aurora runs on the **minimum safe** personality: plain, formal, no
+humour, no initiative, and English by default. It is correct and deliberately austere — it is the
+profile for when something is wrong — and it is what a voice conversation composes its identity
+from, so it is the Aurora people meet until you choose otherwise. `identity show` says plainly
+whether you are on it.
+
+```bash
+dotnet run --project src/Aurora.Server -- identity show
+dotnet run --project src/Aurora.Server -- identity template aurora.json
+dotnet run --project src/Aurora.Server -- identity set aurora.json
+dotnet run --project src/Aurora.Server -- identity history
+```
+
+The template is a starting point to edit, not a default: the four dials run 0 to 1, and `values`,
+`interaction_rules` and `prohibited_claims` are what the voice is actually built from. Read them
+before activating — they are the character, and the tone dials only decide how it sounds.
+
+This is on the console rather than over HTTP for the same reason `secret set` is: being at your
+terminal is the authority. The bearer token belongs to the agent, and an agent able to rewrite who
+Aurora is would be choosing its own character. What is recorded as the approval says exactly what
+happened — the operating-system user, at the console, at a stated time — and `identity history`
+shows every change.
+
+A running Aurora picks up a new profile on the next thing it says; there is nothing to restart.
 - **plugin/voice** — `provider_auth_token`, `openai_api_key`
 
 ---
