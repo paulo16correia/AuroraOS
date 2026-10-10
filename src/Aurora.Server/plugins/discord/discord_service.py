@@ -22,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import scribe_stream
 import voice_engines
 import voice_transport
 from gateway import Gateway
@@ -701,7 +702,15 @@ def voice_listen(state, args, nonce=None):
     if not args["enabled"]:
         transport.deafen()
         state["voice_listening"] = False
-        state.pop("voice_audio", None)
+
+        # The open streams go with it. Each one is a paid session with a ten-minute ceiling, and
+        # one left open after somebody asked Aurora to stop listening is both a bill and a
+        # recogniser still being sent a room nobody agreed to send it.
+        for fluxo in (state.pop("voice_streams", None) or {}).values():
+            fluxo.close()
+
+        state.pop("voice_onset", None)
+        state.pop("voice_stream_seen", None)
 
         # The turn watcher's loop ends with this flag, so its thread is gone. Clearing the guard
         # too, or listening could only ever be turned on once: the second enable would set the
@@ -715,11 +724,6 @@ def voice_listen(state, args, nonce=None):
 
     if not ready["can_listen"]:
         raise Refused(E_VOICE_UNAVAILABLE, "listening needs: " + "; ".join(ready["missing"]))
-
-    # One buffer per speaker, holding only what they are saying right now. Cleared when the turn
-    # ends, because a recording of somebody's conversation is not something to keep.
-    heard = {}
-    state["voice_audio"] = heard
 
     def on_audio(ssrc, pcm, at_ms):
         # Whoever the voice gateway said this stream belongs to. Told to the session here rather
@@ -757,13 +761,31 @@ def voice_listen(state, args, nonce=None):
 
         speaker = session.speaker_for(ssrc)
 
-        # Kept whether or not this frame was loud, as long as a turn of theirs is open. A buffer
-        # only exists between somebody starting to speak and their turn being taken, so the quiet
-        # frames that get kept are the pauses *inside* what they said — which is what makes it a
-        # recording rather than a collage. Room noise between turns still accumulates nowhere,
-        # because between turns there is no buffer to put it in.
-        if speaker is not None and speaker in heard:
-            heard[speaker].extend(pcm)
+        if speaker is None:
+            return
+
+        # Straight onto this speaker's stream, loud frame or quiet one. The service's own voice
+        # activity detection is what decides where their sentence ends, and it cannot do that
+        # without the silence: a gate here would hand it the collage this plugin used to make.
+        fluxo = state.get("voice_streams", {}).get(speaker)
+
+        if fluxo is not None:
+            fluxo.send(scribe_stream.mono(pcm))
+            return
+
+        # No stream yet. The handshake blocks, and blocking here stops the socket being drained
+        # while somebody is talking, so the watcher opens it — and what they said in the meantime
+        # waits rather than being dropped. Losing the first moment of a sentence is the defect this
+        # whole path was rebuilt to stop making.
+        waiting = state.setdefault("voice_onset", {}).setdefault(speaker, bytearray())
+        waiting.extend(scribe_stream.mono(pcm))
+
+        # The oldest goes, not the newest. If opening is slow enough to fill this, what somebody is
+        # saying now matters more than what they said two seconds ago — and keeping the newest is
+        # what makes the seam fall at the start of the held audio rather than in the middle of the
+        # word they are halfway through.
+        if len(waiting) > ONSET_LIMIT:
+            del waiting[:len(waiting) - ONSET_LIMIT]
 
     transport.listen(on_audio)
 
@@ -858,56 +880,20 @@ def _media_report(state, session, transport, participants):
     }
 
 
-# How long half a sentence waits for the rest before it is answered on its own.
+# How much of the start of a sentence is kept while a stream is being opened.
 #
-# Short, because it is no longer what decides. The flush is gated on the speaker having actually
-# stopped, and somebody who resumes mid-sentence is holding the floor again before this elapses —
-# so all this has to cover is the moment between their last packet and being sure of it.
-#
-# Four hundred, down from eight. Every millisecond here is spent before the recogniser is even
-# asked, and the measured budget was 1928ms of waiting plus 710ms of recognising before the model
-# saw a word.
-#
-# It was 2500ms, chosen to outlast the whole silence-plus-recognition round trip in case the rest
-# of the sentence was still coming. That was belt and braces on top of the gate, and it was costing
-# two and a half seconds on every answer: measured end to end, five to seven seconds from the owner
-# finishing a sentence to hearing a reply, which is not a conversation.
-UNFINISHED_PATIENCE_MS = 400
+# Two seconds at 48kHz mono, which is more than a handshake takes and less than a sentence. Past it
+# the oldest is dropped rather than the newest: if opening is that slow, what somebody is saying now
+# matters more than what they said two seconds ago.
+ONSET_LIMIT = 2 * 48000 * 2
 
-# How much held audio is still one question, in milliseconds. Past this somebody is making a
-# speech rather than asking something, and waiting for them to finish is never answering.
-LONGEST_HELD_MS = 15000
+# How long a speaker's stream is kept open with nothing arriving on it.
+#
+# A session costs money while it is open and the service caps one at ten minutes, so an idle stream
+# is closed — and reopened, with its onset buffered, the moment they speak again.
+STREAM_IDLE_SECONDS = 20.0
 
-# Below this much audio, a turn is a fragment rather than an utterance, and is held for whatever
-# comes next instead of being sent to the recogniser on its own.
-#
-# A second and a half, measured against what recognition can actually do. Turns were arriving with
-# 60ms, 400ms and 1200ms of audio in them — somebody speaking one clause, breathing, and carrying
-# on — and a recogniser handed a clause with its first word clipped does not report that it is
-# short: it invents. The same 1.2s clip went to ElevenLabs Scribe and to a local large-v3-turbo and
-# both produced confident nonsense, which is how this was traced to the audio rather than to either
-# of them.
-#
-# Measured on the audio and not on the turn's wall-clock length, because those are different
-# numbers: Discord sends silence frames, so a turn can run two seconds and carry one of speech.
-#
-# What is held is the *audio*. An earlier version of this held the transcript and stitched the
-# pieces together, which could not work: a recogniser handed 240ms returns an empty string, empty
-# strings are dropped before any stitching, and so the sound went in the bin a piece at a time and
-# nothing was ever joined. Holding the sound means the recogniser sees a sentence, which is the
-# only way it gets one right — and it is one request per sentence instead of one per fragment.
-FRAGMENT_MS = 1500
 
-# Below this much audio there is no question in there, and asking costs a request to be told so.
-#
-# Seven hundred milliseconds, from the trail: 'É' at 580ms, 'Isso' at 380ms, 'dá muito' at 400ms,
-# and twice nothing at all from 280ms and 260ms. Every one of those was paid for. A held fragment
-# whose speaker simply stopped can be this short, so the floor is checked where the asking happens
-# rather than where the holding does.
-WORTH_ASKING_MS = 700
-
-# Discord's audio is 48kHz, two channels, sixteen bits — so this many bytes to the millisecond.
-BYTES_PER_MS = 48000 * 2 * 2 // 1000
 
 
 def _trace(state, mensagem):
@@ -943,30 +929,6 @@ def _trace(state, mensagem):
         pass
 
 
-def _keep_for_inspection(state, speaker, pcm):
-    """Writes one utterance beside the trail, when the owner turned the trail on.
-
-    The trail says what came back; this says what went in, and without both there is no way to tell
-    a recogniser that is failing from audio that was never intelligible. Three rounds of this were
-    argued from transcripts alone.
-
-    Under the same setting as the trail and for the same reason: this is a recording of somebody's
-    voice, which is the thing the whole local-only posture exists to protect. It is written to the
-    plugin's own working directory, it is overwritten by the next utterance rather than accumulated,
-    and it goes away when the setting does.
-    """
-    if not _setting("voice_trace", False):
-        return
-
-    try:
-        import tempfile
-
-        caminho = os.path.join(tempfile.gettempdir(), "last-utterance.wav")
-
-        with open(caminho, "wb") as handle:
-            handle.write(_wav_as_received(pcm))
-    except Exception:
-        pass
 
 
 def _watch_turns(state):
@@ -977,10 +939,6 @@ def _watch_turns(state):
     """
     language = _setting("stt_language", "auto")
 
-    # Halves of sentences the ceiling cut, by whoever was speaking. A turn that ended because the
-    # ceiling arrived is not a question, it is the first part of one, and answering it and then
-    # answering the remainder is how one question becomes two wrong answers.
-    unfinished = {}
 
     def answer(speaker, transcript, ended_ms, waited_ms, recognised_ms):
         """Decides whether a finished utterance is Aurora's to answer, and says so if it is."""
@@ -1059,211 +1017,93 @@ def _watch_turns(state):
             "conversation": list(state.get("exchange") or []),
         })
 
-    def hear(speaker, audio, ended_ms):
-        """Asks the recogniser about one whole utterance, and answers it if it is Aurora's to.
-
-        Reached two ways and identical both times: the sentence finished on its own, or a held
-        fragment's speaker went quiet and what was held is all there is going to be. Written once,
-        because the second copy of this went on reading the keys of an earlier design and a held
-        fragment could never be answered at all.
-        """
-        if len(audio) < WORTH_ASKING_MS * BYTES_PER_MS:
-            _trace(state, "curto demais para perguntar: %dms" % (len(audio) // BYTES_PER_MS,))
-            return
-
-        started = time.monotonic() * 1000
-
-        try:
-            # Uploaded, always. There is no local recogniser in this path any more
-            # (docs/adr/0094), and the audio goes up at the rate it arrived rather than
-            # decimated to the 16kHz whisper.cpp used to insist on.
-            transcript = voice_engines.transcribe_remotely(
-                _wav_as_received(audio), state.get("speech_key"), language=language)
-        except Exception as unheard:
-            # The message. A recogniser that cannot run and one that heard nothing produce the
-            # same exception type and need entirely different fixes.
-            _trace(state, "falhou: %s: %s" % (type(unheard).__name__, str(unheard)[:160]))
-            report("voice.not_understood", {
-                "speaker_id": speaker,
-                "reason": "%s: %s" % (type(unheard).__name__, str(unheard)[:200]),
-            })
-            return
-
-        heard_at = time.monotonic() * 1000
-
-        _trace(state, "ouviu (%dms de audio): %r" % (
-            len(audio) // BYTES_PER_MS, transcript[:200]))
-        _keep_for_inspection(state, speaker, audio)
-
-        if not transcript.strip() or voice_engines.is_hallucination(transcript):
-            # It got through the energy gate and still came back as one of the things a
-            # recogniser says when it heard nothing. Answering it would be answering nobody.
-            return
-
-        answer(speaker, transcript.strip(), ended_ms, started - ended_ms, heard_at - started)
 
     while state.get("voice_listening"):
         time.sleep(0.05)
 
         session = state.get("voice")
-        heard = state.get("voice_audio")
 
-        if session is None or heard is None:
+        if session is None:
             continue
 
         now_ms = int(time.monotonic() * 1000)
 
-        # Held fragments whose rest never came: whoever was speaking stopped, so what is held is
-        # the whole of it and it is time to ask.
-        #
-        # Gated on the speaker actually being quiet, and not only on the clock. Somebody who
-        # resumes mid-sentence holds the floor again, and a timer on its own would send half a
-        # question up the moment before the other half arrived.
-        falando = set((session.snapshot() or {}).get("speaking_now") or [])
+        # Turn state, which is no longer read for recognition. The service decides where a sentence
+        # ends; what the session is still for is knowing who currently has the floor, because that
+        # is what stops Aurora speaking over somebody and what lets them interrupt her.
+        session.tick(now_ms)
 
-        for who, held in list(unfinished.items()):
-            if who in falando:
+        talking = set((session.snapshot() or {}).get("speaking_now") or [])
+        streams = state.setdefault("voice_streams", {})
+        onset = state.setdefault("voice_onset", {})
+        seen = state.setdefault("voice_stream_seen", {})
+
+        # Somebody has started talking and has nowhere to send it. Opened here and not in the audio
+        # thread: the handshake blocks, and blocking where the packets arrive stops the socket being
+        # drained while they speak.
+        for who, waiting in list(onset.items()):
+            if who in streams or not waiting:
                 continue
 
-            if now_ms - held["held_at_ms"] < UNFINISHED_PATIENCE_MS:
-                continue
-
-            del unfinished[who]
-            hear(who, held["audio"], held["ended_ms"])
-
-        for action, detail in session.tick(now_ms):
             try:
-                if action != "utterance_ended":
-                    heard.pop(detail.get("user_id"), None)
-                    continue
-
-                speaker = detail["user_id"]
-                audio = bytes(heard.pop(speaker, b""))
-
-                if not audio:
-                    continue
-
-                _trace(state, "turno: quem=%s %dms cortado=%s bytes=%d silencio=%s" % (
-                    _name_of(state, speaker), detail.get("duration_ms", -1),
-                    detail.get("cut_short"), len(audio), voice_engines.is_silence(audio)))
-
-                if voice_engines.is_silence(audio):
-                    # Not asked at all. A recogniser handed near-silence answers with the most common
-                    # phrase in its training data — "Thank you.", "Thanks for watching!" — and the only
-                    # reliable way not to believe that is not to ask.
-                    continue
-
-                held = unfinished.pop(speaker, None)
-
-                if held:
-                    # The earlier part of the same sentence, waiting for this.
-                    audio = held["audio"] + audio
-
-                enough = len(audio) >= FRAGMENT_MS * BYTES_PER_MS
-                room = len(audio) < LONGEST_HELD_MS * BYTES_PER_MS
-
-                if (detail.get("cut_short") or not enough) and room:
-                    # Not a sentence yet. Either they were still speaking when the ceiling arrived,
-                    # or the turn ended on silence with too little sound in it to be a sentence —
-                    # a clause and a breath. Held, because asking about a fragment gets a fragment
-                    # of an answer or an empty string, and either way the sound is then gone.
-                    _trace(state, "guardado: %dms de audio" % (len(audio) // BYTES_PER_MS,))
-
-                    unfinished[speaker] = {
-                        "audio": audio,
-                        "ended_ms": detail["ended_ms"],
-                        "held_at_ms": int(time.monotonic() * 1000),
-                    }
-                    continue
-
-                hear(speaker, audio, detail["ended_ms"])
-            except Exception as broke:
-                # One utterance must not be able to end the listening. This thread has now died
-                # twice to an exception raised while handling a single turn: `session.transport`
-                # after the telephone was removed, and `session.participants()` on what is a
-                # property. Both times a working conversation became indistinguishable from an
-                # empty room — Aurora sat there, audio kept arriving, and nothing was ever
-                # transcribed again.
-                #
-                # Reported rather than swallowed. A turn that was lost is something somebody may
-                # need to know about, and a silent `pass` here would be the same failure wearing
-                # a different hat.
+                stream = scribe_stream.ScribeStream(
+                    state.get("speech_key"), language=language).open()
+            except Exception as refused:
+                _trace(state, "fluxo recusado para %s: %s: %s" % (
+                    _name_of(state, who), type(refused).__name__, str(refused)[:120]))
                 report("voice.not_understood", {
-                    "speaker_id": detail.get("user_id"),
-                    "reason": "the turn could not be handled: %s: %s" % (
-                        type(broke).__name__, str(broke)[:200]),
+                    "speaker_id": who,
+                    "reason": "the recogniser would not open a stream: %s: %s" % (
+                        type(refused).__name__, str(refused)[:200]),
                 })
+                onset.pop(who, None)
+                continue
 
-def _wav(pcm):
-    """Turns Discord's audio into what a speech recogniser expects.
+            # What they said while it was opening, first, in order.
+            stream.send(bytes(waiting))
+            onset.pop(who, None)
+            streams[who] = stream
+            seen[who] = now_ms
 
-    Discord carries 48kHz stereo; whisper.cpp wants 16kHz mono. Handing it the wrong rate does not
-    fail — it transcribes, confidently, into words nobody said. That is worse than an error, and it
-    is what "Araratasmovir." was.
+            _trace(state, "fluxo aberto para %s (%dms guardados no arranque)" % (
+                _name_of(state, who), len(waiting) // (48 * 2)))
 
-    Every third frame is not a resample, it is decimation, and the difference matters. The source
-    carries content up to 24kHz; throwing away two samples in three folds everything above 8kHz
-    back into the speech band as noise. Whisper answered that with repetition loops and by
-    detecting Polish — the sound of a signal that resembles no language at all.
+        for who, stream in list(streams.items()):
+            # Sentences the service has committed to. Partial ones never get here: they change as
+            # it listens, and answering one would be answering a guess it had not finished making.
+            for text in stream.heard():
+                seen[who] = now_ms
 
-    Averaging each group of three first is a box filter: crude, one line, and it removes the
-    aliasing this was suffering from. An earlier comment here argued the filter was unnecessary
-    because speech is narrow-band. That was the wrong question — what matters is what the *source*
-    contains, not what the speech does.
-    """
-    frames = len(pcm) // 4
-    mono = bytearray()
+                _trace(state, "ouviu: %r" % (text[:200],))
 
-    for frame in range(0, frames - 2, 3):
-        total = 0
+                # Nothing waited for and nothing to wait for. The transcript was being made while
+                # they spoke, so the only delay left between their last word and Aurora deciding is
+                # the service noticing they stopped.
+                answer(who, text, now_ms, 0, 0)
 
-        for offset in range(3):
-            left, right = struct.unpack_from("<hh", pcm, (frame + offset) * 4)
-            total += (left + right) // 2
+            if stream.failure is not None:
+                _trace(state, "fluxo falhou para %s: %s" % (_name_of(state, who), stream.failure))
+                report("voice.not_understood", {
+                    "speaker_id": who,
+                    "reason": "the recogniser's stream ended: %s" % (stream.failure,),
+                })
+                stream.close()
+                streams.pop(who, None)
+                seen.pop(who, None)
+                continue
 
-        mono += struct.pack("<h", max(-32768, min(32767, total // 3)))
+            if who in talking:
+                seen[who] = now_ms
+                continue
 
-    channels, rate, bits = 1, 16000, 16
-    block = channels * bits // 8
+            if now_ms - seen.get(who, now_ms) > STREAM_IDLE_SECONDS * 1000:
+                # Quiet long enough that holding the session open is paying for nothing. It opens
+                # again, with its onset buffered, the moment they speak.
+                _trace(state, "fluxo fechado para %s (calado)" % (_name_of(state, who),))
+                stream.close()
+                streams.pop(who, None)
+                seen.pop(who, None)
 
-    return (
-        b"RIFF" + struct.pack("<I", 36 + len(mono)) + b"WAVEfmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
-        + b"data" + struct.pack("<I", len(mono)) + bytes(mono))
-
-
-def _wav_as_received(pcm):
-    """Discord's audio as a WAV, at the rate it arrived: 48kHz, one channel.
-
-    The companion to `_wav`, and the difference between them is the whole point. That one exists
-    because whisper.cpp will only take 16kHz mono, so it decimates — three samples become one, and
-    everything above 8kHz is gone. A recogniser that accepts the original has no reason to be
-    handed the wreckage: the band that decimation throws away is where much of the difference
-    between "Aurora" and "a hora" lives, and the consonants that separate Portuguese words from
-    each other sit right at the top of it.
-
-    Measured in a real channel while the remote recogniser was being fed the 16kHz version:
-    "A hora que eu aredado", "A honor de orador", "Agora eu rede o áudio". The service publishes
-    3.1% word error for Portuguese and none of that is 3.1%.
-
-    Stereo is folded to mono because Discord sends the same voice in both channels and a recogniser
-    has no use for the second copy. That is an average, not a decimation: no rate changes, so no
-    band is lost.
-    """
-    frames = len(pcm) // 4
-    mono = bytearray()
-
-    for frame in range(frames):
-        left, right = struct.unpack_from("<hh", pcm, frame * 4)
-        mono += struct.pack("<h", (left + right) // 2)
-
-    channels, rate, bits = 1, 48000, 16
-    block = channels * bits // 8
-
-    return (
-        b"RIFF" + struct.pack("<I", 36 + len(mono)) + b"WAVEfmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, rate, rate * block, block, bits)
-        + b"data" + struct.pack("<I", len(mono)) + bytes(mono))
 
 
 def voice_speak(state, args, nonce=None):

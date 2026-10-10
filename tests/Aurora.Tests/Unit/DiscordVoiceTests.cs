@@ -91,6 +91,16 @@ public sealed class DiscordVoiceTests : IDisposable
     }
 
     [Fact]
+    public void TheRealtimeRecogniserIsAskedForWhatThisPluginMeant()
+    {
+        // The recogniser is now a WebSocket that transcribes while somebody is still talking, so
+        // every choice about it is declared in a URL — the realtime model, Discord's own sample
+        // rate, and who decides where a sentence ends. These are the kind of thing that stays
+        // wrong quietly: a request that is subtly not what was meant still returns transcripts.
+        RunPython("test_scribe_stream", 14);
+    }
+
+    [Fact]
     public void TheTurnTakingRulesHold()
     {
         // The state machine is Python, so its tests are Python. Run from here so the suite is one
