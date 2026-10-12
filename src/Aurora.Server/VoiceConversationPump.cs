@@ -57,6 +57,12 @@ public sealed class VoiceConversationPump : BackgroundService
     private readonly IServiceProvider _services;
     private readonly ILogger<VoiceConversationPump> _log;
 
+    /// <summary>Whether the model answered the last time it was asked. Null before it was.</summary>
+    private bool? _modelWasThere;
+
+    /// <summary>When it was last asked.</summary>
+    private DateTimeOffset _modelAskedAt = DateTimeOffset.MinValue;
+
     public VoiceConversationPump(IServiceProvider services, ILogger<VoiceConversationPump> log)
     {
         _services = services;
@@ -72,6 +78,8 @@ public sealed class VoiceConversationPump : BackgroundService
         while (!stopping.IsCancellationRequested)
         {
             var drained = 0;
+
+            await WatchTheModelAsync(stopping).ConfigureAwait(false);
 
             try
             {
@@ -158,6 +166,83 @@ public sealed class VoiceConversationPump : BackgroundService
                 "Voice is on but the language model could not be reached, so Aurora will hear "
                 + "people and answer nobody. Start it and she picks up on the next thing said.");
         }
+    }
+
+    /// <summary>How often the model is asked whether it is still there.</summary>
+    /// <remarks>
+    /// A minute. Often enough that an owner who turns to the channel finds out before somebody
+    /// speaks, and rarely enough that it is not a load the runtime notices — the probe is the same
+    /// warm-up call that runs at startup, which an already-loaded model answers immediately.
+    /// </remarks>
+    private static readonly TimeSpan ModelWatch = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Asks the model whether it is still answering, and says so when that changes.
+    /// </summary>
+    /// <remarks>
+    /// Only on the change, in both directions. Repeating "the model is down" every minute would be
+    /// the kind of noise somebody learns to scroll past, and saying nothing when it comes back
+    /// would leave the last word on the subject being wrong.
+    /// </remarks>
+    private async Task WatchTheModelAsync(CancellationToken ct)
+    {
+        if (DateTimeOffset.UtcNow - _modelAskedAt < ModelWatch)
+        {
+            return;
+        }
+
+        _modelAskedAt = DateTimeOffset.UtcNow;
+
+        bool there;
+
+        try
+        {
+            using IServiceScope scope = _services.CreateScope();
+            IServiceProvider services = scope.ServiceProvider;
+
+            VoiceSettings voice = await services.GetRequiredService<IVoicePolicy>()
+                .CurrentAsync(ct).ConfigureAwait(false);
+
+            if (voice.Stopped || !voice.Enabled)
+            {
+                // Nothing is owed by a voice nobody turned on, and probing a runtime for a channel
+                // Aurora is not in would be the cost this has always declined to pay.
+                return;
+            }
+
+            there = services.GetRequiredService<ILocalLanguageModel>() is not OllamaLanguageModel ollama
+                || await ollama.PrepareAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            there = false;
+        }
+
+        var first = _modelWasThere is null;
+
+        if (_modelWasThere == there)
+        {
+            return;
+        }
+
+        _modelWasThere = there;
+
+        if (there)
+        {
+            if (first)
+            {
+                // A model that was there the first time anybody looked has not recovered from
+                // anything, and saying so would be a line about nothing on every ordinary start.
+                return;
+            }
+
+            _log.LogInformation("The language model is answering again.");
+            return;
+        }
+
+        _log.LogWarning(
+            "The language model has stopped answering, so Aurora will hear people and reply to "
+            + "nobody. Her own trail will show her deciding to answer and then nothing.");
     }
 
     /// <summary>One round: how many events the voice consumer took.</summary>
