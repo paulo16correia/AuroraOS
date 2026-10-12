@@ -87,7 +87,7 @@ public sealed class DiscordVoiceTests : IDisposable
     {
         // Found orphaned by a completion audit: eighteen passing tests that nothing ran, because
         // no .NET test referenced the module. A test suite nobody executes is documentation.
-        RunPython("test_conversation", 26);
+        RunPython("test_conversation", 30);
     }
 
     [Fact]

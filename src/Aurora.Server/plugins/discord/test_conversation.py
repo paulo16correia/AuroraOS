@@ -295,6 +295,56 @@ class BeingTalkedTo(unittest.TestCase):
         self.assertFalse(talk.heard(self.MARIA, "Tem aqui demais", 13000, present=room)["speak"])
         self.assertFalse(talk.heard(self.JOAO, "Deixa eu ver", 16000, present=room)["speak"])
 
+    def test_speaking_to_the_room_leaves_an_answer_owed(self):
+        """What a greeting is for, and what it was not doing.
+
+        Measured in the channel: she said "Mekie rapazes" and five people reacted — "Nããão.",
+        "Sim.", "Iiih!", "Fiquei, olha, olha..." — and she answered none of them. `not_for_me`
+        because nobody had named her, and `just_spoke` because she had just had the floor, which is
+        precisely the state a greeting leaves her in.
+        """
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        taken = talk.heard(self.MARIA, "Iiih!", 11500, present=room)
+
+        self.assertTrue(taken["speak"])
+        self.assertEqual("answered_me", taken["reason"])
+
+    def test_the_floor_is_offered_once_and_not_to_everybody(self):
+        # What keeps a greeting from becoming a licence to answer the whole room. The first person
+        # to take it gets the conversation; the rest are where they were.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        self.assertTrue(talk.heard(self.MARIA, "Iiih!", 11500, present=room)["speak"])
+        self.assertFalse(talk.heard(self.JOAO, "Isso foi estranho", 12000, present=room)["speak"])
+
+    def test_an_answer_to_a_person_owes_the_room_nothing(self):
+        # Only what she says unprompted opens this. A reply to somebody's question is already part
+        # of a conversation, and treating it as an offer to the room would hand her the next thing
+        # anybody said after every single answer.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        talk.spoke(10000, invited=True, to_the_room=False)
+
+        self.assertFalse(talk.heard(self.MARIA, "Isso foi estranho", 11500, present=room)["speak"])
+
+    def test_the_offer_does_not_stand_forever(self):
+        # Ten seconds. Past that the room has moved on, and answering what somebody says now as
+        # though it were a reply to a greeting is worse than having let the greeting go unanswered.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        talk = Conversation("Aurora", self.AURORA)
+
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        self.assertFalse(talk.heard(self.MARIA, "Isso foi estranho", 40000, present=room)["speak"])
+
     def test_a_grunt_is_still_not_an_opening(self):
         # The exchange staying open is not a licence to answer everything inside it.
         spoke = self._exchange([self.PAULO, self.AURORA], [

@@ -123,6 +123,12 @@ class Conversation:
         self._unprompted_in_a_row = 0
         self._last_addressed_ms = None
 
+        # When she last said something to the room rather than to a person, and so is owed an
+        # answer by whoever takes it. Cleared the moment somebody does: the floor is offered once,
+        # not left open for everybody, which is what keeps this from turning a greeting into a
+        # licence to answer five people.
+        self._offered_ms = None
+
         # user id -> when they last said something. Used only to tell a two-person conversation
         # from a group, which changes what counts as being spoken to.
         self._recent = {}
@@ -163,7 +169,7 @@ class Conversation:
             named=named, question=question, to_the_room=to_the_room,
             trivial=trivial, others=others, in_exchange=in_exchange, at_ms=at_ms)
 
-        speak = reason == "addressed" or reason == "invited"
+        speak = reason in ("addressed", "invited", "answered_me")
 
         if named or speak:
             self._last_addressed_ms = at_ms
@@ -186,9 +192,17 @@ class Conversation:
             "delay_ms": self._delay_for(reason, question, named) if speak else None,
         }
 
-    def spoke(self, at_ms, invited):
-        """Aurora said something. Invited means somebody had asked for it."""
+    def spoke(self, at_ms, invited, to_the_room=False):
+        """Aurora said something.
+
+        `invited` means somebody had asked for it. `to_the_room` means it was addressed to nobody
+        in particular — a greeting, or anything said without a question waiting — and that is what
+        leaves an answer owed to whoever picks it up.
+        """
         self._last_spoke_ms = at_ms
+
+        if to_the_room:
+            self._offered_ms = at_ms
 
         if invited:
             self._unprompted_in_a_row = 0
@@ -240,6 +254,18 @@ class Conversation:
             # has never answered them, which is the distinction that was doing the real work all
             # along.
             return "invited"
+
+        if self._offered(at_ms) and not trivial:
+            # She spoke to the room and this is somebody answering. Checked before the two rules
+            # below, and that is the whole point: having just had the floor is exactly the state
+            # she is in after a greeting, and being unnamed is exactly what a reply to a greeting
+            # is. Measured in the channel — "Mekie rapazes" drew "Nããão", "Sim", "Iiih!" and
+            # "Fiquei, olha, olha..." from five people, and she answered none of them.
+            #
+            # The offer is spent here rather than left standing, so the first person to take it
+            # gets the conversation and the other four are unaffected.
+            self._offered_ms = None
+            return "answered_me"
 
         if self._just_spoke(at_ms):
             # Having just had the floor makes an *uninvited* contribution less welcome, not more.
@@ -328,6 +354,18 @@ class Conversation:
         return sum(
             1 for user_id, when in self._recent.items()
             if user_id != self.own_user_id and at_ms - when <= window_ms)
+
+    # How long an answer stays owed after she has spoken to the room.
+    #
+    # Ten seconds: long enough for somebody to react to a greeting, short enough that it is not
+    # still standing when the room has moved on to something else entirely.
+    OFFER_WINDOW_MS = 10000
+
+    def _offered(self, at_ms):
+        """Whether she is owed an answer by whoever speaks next."""
+        return (
+            self._offered_ms is not None
+            and at_ms - self._offered_ms <= self.OFFER_WINDOW_MS)
 
     def _just_spoke(self, at_ms):
         return (

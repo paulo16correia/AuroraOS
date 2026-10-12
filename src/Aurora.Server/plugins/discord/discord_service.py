@@ -1341,7 +1341,11 @@ def speak_in_conversation(state, text, invited, answering=None):
     conversation = state.get("conversation")
 
     if conversation is not None:
-        conversation.spoke(int(time.monotonic() * 1000), invited=invited)
+        # To the room when nobody was waiting for this. What she says unprompted leaves an answer
+        # owed to whoever takes it, which is how a greeting becomes a conversation rather than a
+        # thing she said at five people.
+        conversation.spoke(
+            int(time.monotonic() * 1000), invited=invited, to_the_room=answering is None)
 
     # Her own turn, in the same record as everybody else's. Named rather than blank: whatever reads
     # this has to be able to tell which lines are its own, and the bot's name is what the people in
