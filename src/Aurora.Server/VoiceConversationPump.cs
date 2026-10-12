@@ -2,6 +2,7 @@ using Aurora.Adapters.Presence;
 using Aurora.Adapters.Reasoning;
 using Aurora.Core.Abstractions;
 using Aurora.Core.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace Aurora.Server;
 
@@ -54,10 +55,12 @@ public sealed class VoiceConversationPump : BackgroundService
     private const int QuietAfter = 12;
 
     private readonly IServiceProvider _services;
+    private readonly ILogger<VoiceConversationPump> _log;
 
-    public VoiceConversationPump(IServiceProvider services)
+    public VoiceConversationPump(IServiceProvider services, ILogger<VoiceConversationPump> log)
     {
         _services = services;
+        _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stopping)
@@ -113,9 +116,15 @@ public sealed class VoiceConversationPump : BackgroundService
     /// </para>
     /// <para>
     /// Only when voice is enabled, because loading four gigabytes for a channel nobody is in is a
-    /// cost with no return — and voice is off until an owner turns it on. Not awaited for its answer
-    /// beyond logging nothing: if the runtime is absent, the first real question says so in words,
-    /// and a pump that refused to start over a warm-up would be worse than a slow first sentence.
+    /// cost with no return — and voice is off until an owner turns it on. A pump that refused to
+    /// start over a warm-up would be worse than a slow first sentence, so this never throws.
+    /// <para>
+    /// It does log, and it used to not. The comment here said that if the runtime was absent "the
+    /// first real question says so in words", and that was simply untrue: the boundary returns
+    /// Silent(ModelUnavailable), the consumer acknowledges it, and nobody hears anything. The
+    /// owner met that — Ollama had died between sessions, Aurora sat mute in a channel with six
+    /// people in it, and the only way to find out why was to go and look at the process list.
+    /// </para>
     /// </para>
     /// </remarks>
     private async Task PrepareTheModelAsync(CancellationToken ct)
@@ -138,10 +147,16 @@ public sealed class VoiceConversationPump : BackgroundService
                 await ollama.PrepareAsync(ct).ConfigureAwait(false);
             }
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception warm) when (!ct.IsCancellationRequested)
         {
             // A warm-up that failed is a slower first sentence, not a reason for the pump never to
-            // run — which is what throwing from here would mean.
+            // run — which is what throwing from here would mean. But it is also the likeliest
+            // reason Aurora will answer nothing all evening, so it is said here, where somebody
+            // starting her up is looking, rather than inferred from her silence later.
+            _log.LogWarning(
+                warm,
+                "Voice is on but the language model could not be reached, so Aurora will hear "
+                + "people and answer nobody. Start it and she picks up on the next thing said.");
         }
     }
 
