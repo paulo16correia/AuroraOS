@@ -76,6 +76,30 @@ def _edits(word, name, ceiling):
 # why the start is the part worth trusting.
 SURVIVING_PREFIX = 3
 
+# A matching rule for the *end* of the name was tried here and removed. "Aurora" arriving as "hora"
+# is an ordinary thing for a recogniser to do — the first syllable is unstressed and gets swallowed
+# — but a tolerance loose enough to catch it also catches "fora", which is one of the commonest
+# words in the language, and "hora" itself is a word somebody says whenever they ask the time. It
+# cannot be told from the name by looking at the letters, so it is not tried: what catches a
+# question whose name got mangled is the grammar of being spoken to, below.
+
+# Portuguese second-person singular, which is what being spoken to looks like without a name.
+#
+# Verb endings rather than a list of verbs: `-as`, `-es`, `-ste`, `-sses` and the handful of common
+# irregulars carry the person, and a list of whole words would miss the first thing somebody said
+# that was not on it. `tu`, `te`, `ti`, `contigo` and `teu` are the pronouns that do the same job.
+# How much of somebody's name has to be said before a sentence counts as theirs.
+#
+# Four letters. A name's first three are shared with too much of the language, and a sentence does
+# not stop being addressed to Aurora because somebody said "pau".
+NAMES_SOMEBODY = 4
+
+SECOND_PERSON = re.compile(
+    r"\b(tu|te|ti|contigo|teu|tua|teus|tuas|achas|sabes|podes|queres|tens|vais|est[áa]s|"
+    r"consegues|percebes|lembras|dizes|fazes|viste|disseste|falaste|ouviste|percebeste|"
+    r"consegues|conheces|gostas|pensas|precisas)\b",
+    re.UNICODE)
+
 
 def _is_near_miss(word, name):
     """Whether this word is the name, misheard.
@@ -142,8 +166,12 @@ class Conversation:
 
     # ---- what happened ----
 
-    def heard(self, user_id, text, at_ms, present=None):
+    def heard(self, user_id, text, at_ms, present=None, named_present=None):
         """Records an utterance and decides what, if anything, it asks of Aurora.
+
+        `named_present` maps those people to what they are called, when the caller knows. It is what
+        lets a sentence naming somebody else be left to them, which is in turn what makes it safe to
+        treat being spoken to in the second person as being spoken to.
 
         `present` is who is in the channel, when the caller knows. It matters more than it looks:
         without it, how many people are here is guessed from who has spoken lately, and at the
@@ -165,9 +193,18 @@ class Conversation:
         others = self._how_many_others(present, at_ms)
         in_exchange = self._in_exchange_with(user_id, at_ms)
 
+        # Everybody in the room except whoever is speaking. Theirs is excluded because people say
+        # their own name, and a sentence is not addressed to the person saying it.
+        elsewhere = [
+            name for who, name in (named_present or {}).items()
+            if str(who) != str(user_id)]
+
         reason = self._decide(
             named=named, question=question, to_the_room=to_the_room,
-            trivial=trivial, others=others, in_exchange=in_exchange, at_ms=at_ms)
+            trivial=trivial, others=others, in_exchange=in_exchange,
+            spoken_to=self._spoken_to_in(lowered),
+            names_another=self._names_another(lowered, elsewhere),
+            at_ms=at_ms)
 
         speak = reason in ("addressed", "invited", "answered_me")
 
@@ -222,7 +259,14 @@ class Conversation:
 
     # ---- the decision ----
 
-    def _decide(self, named, question, to_the_room, trivial, others, in_exchange, at_ms):
+    def _decide(self, named, question, to_the_room, trivial, others, in_exchange,
+                spoken_to, names_another, at_ms):
+        if names_another and not named:
+            # Somebody else in the room is named in it. The strongest signal there is and the
+            # cheapest: whatever else a sentence looks like, one with another participant's name in
+            # it is that person's. It is also what makes the grammar rule below safe to have.
+            return "for_somebody_else"
+
         if trivial and not named:
             # "yeah" is not an opening, however warmly it is meant.
             return "backchannel"
@@ -267,8 +311,25 @@ class Conversation:
             self._offered_ms = None
             return "answered_me"
 
+        if spoken_to and not trivial and self._in_the_conversation(at_ms):
+            # Spoken to by the grammar of the sentence rather than by name, which is what the owner
+            # asked for: understood without having to say "Aurora" every time.
+            #
+            # Three things make it safe. A sentence naming somebody else never reaches here. It
+            # only applies once she is *in* the conversation — having said something in the last
+            # minute — so a bystander does not start answering two people talking to each other.
+            # And a grunt still does not count.
+            return "invited"
+
         if self._just_spoke(at_ms):
             # Having just had the floor makes an *uninvited* contribution less welcome, not more.
+            #
+            # Checked after every rule above, and that ordering is the fix for a measured spiral:
+            # she gave a 145-character answer that took 9.9 seconds to say, and for the eight
+            # seconds after it everything said to her came back `just_spoke` — "Tô metendo",
+            # "Obrigado, até logo", a question about David. The conversation carried on without her
+            # and she had no way to know. A question is never an uninvited contribution, which is
+            # the only thing this was written to stop.
             return "just_spoke"
 
         if self._unprompted_in_a_row >= self._monologue_limit:
@@ -304,6 +365,47 @@ class Conversation:
         return base + random.randint(0, 400)
 
     # ---- what it knows about the room ----
+
+    def _spoken_to_in(self, lowered):
+        """Whether this sentence is addressed to somebody, by its grammar rather than by a name.
+
+        Portuguese marks the second person on the verb, so being spoken to is visible without
+        anybody being named: "achas", "sabes", "podes", "disseste", "estás". That is the whole of
+        what the owner asked for — being understood without having to say "Aurora" — and on its own
+        it would be too much, because everybody in a channel is addressing somebody.
+
+        What makes it usable is the pair. This says a sentence is aimed at a person; `_names_another`
+        says which person it is not. "Achas que o David é pano de leite" is aimed and names David,
+        so it is his. "Achas que vale a pena" is aimed and names nobody, so it is hers.
+        """
+        return bool(SECOND_PERSON.search(lowered))
+
+    def _names_another(self, lowered, others):
+        """Whether somebody else in the room is named in this sentence.
+
+        The strongest signal available and the cheapest: a sentence with another participant's name
+        in it is that person's, whatever else it looks like. Nothing is inferred when the caller
+        does not pass the names — a room whose names Aurora does not know is a room where this
+        cannot help, rather than one where it guesses.
+        """
+        said = set(re.findall(r"[^\W\d_]+", lowered, re.UNICODE))
+
+        for name in (others or []):
+            whole = str(name or "").strip().lower()
+
+            if len(whole) < NAMES_SOMEBODY:
+                continue
+
+            # A word from the sentence that the name begins with. People say the short form of a
+            # handle — "David" for `davidmartinhob`, "Martinho" for `MARTINHO_` — so comparing a
+            # fixed slice of the name against the sentence misses what people actually say. This was
+            # measured: a question naming David went to Aurora, because the name's first six letters
+            # are "davidm".
+            for word in said:
+                if len(word) >= NAMES_SOMEBODY and whole.startswith(word):
+                    return True
+
+        return False
 
     def _named_in(self, lowered):
         """Whether Aurora was named, allowing for the recogniser mishearing it.
@@ -366,6 +468,19 @@ class Conversation:
         return (
             self._offered_ms is not None
             and at_ms - self._offered_ms <= self.OFFER_WINDOW_MS)
+
+    # How long she counts as being in the conversation after saying something.
+    #
+    # A minute. It is what separates being spoken to from overhearing: somebody who has been
+    # talking with her is plausibly still talking to her, and somebody who has not heard from her
+    # in a minute is talking to the room.
+    IN_THE_CONVERSATION_MS = 60000
+
+    def _in_the_conversation(self, at_ms):
+        """Whether she is a participant here rather than somebody listening."""
+        return (
+            self._last_spoke_ms is not None
+            and at_ms - self._last_spoke_ms <= self.IN_THE_CONVERSATION_MS)
 
     def _just_spoke(self, at_ms):
         return (

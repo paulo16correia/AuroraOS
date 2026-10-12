@@ -345,6 +345,94 @@ class BeingTalkedTo(unittest.TestCase):
 
         self.assertFalse(talk.heard(self.MARIA, "Isso foi estranho", 40000, present=room)["speak"])
 
+    def test_being_spoken_to_does_not_need_her_name(self):
+        """What the owner asked for: "perceber o que é para ela mesmo sem ter de dizer aurora".
+
+        Portuguese marks the second person on the verb, so a sentence aimed at a person is visible
+        without anybody being named. On its own that would be far too much — everybody in a channel
+        is addressing somebody — and what makes it usable is the pair with the rule below.
+        """
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        names = {self.PAULO: "Paulo Correia", self.MARIA: "MARIA_", self.JOAO: "joaozinho"}
+
+        talk = Conversation("Aurora", self.AURORA)
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        asked = talk.heard(
+            self.PAULO, "achas que vale a pena ir amanhã?", 11500,
+            present=room, named_present=names)
+
+        self.assertTrue(asked["speak"])
+        self.assertFalse(asked["named"])
+
+    def test_a_sentence_naming_somebody_else_is_theirs(self):
+        """The rule that makes the one above safe, and the measurement that shaped it.
+
+        "achas que o David é pano de leite ou não?" went to Aurora, because the name was matched
+        against a fixed slice of the handle — `davidmartinhob` begins "davidm" — and people say
+        "David". Matching a word the name *starts with* is what they actually say.
+        """
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        names = {self.PAULO: "Paulo Correia", self.MARIA: "MARIA_", self.JOAO: "davidmartinhob"}
+
+        talk = Conversation("Aurora", self.AURORA)
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        asked = talk.heard(
+            self.MARIA, "achas que o david é pano de leite ou não?", 11500,
+            present=room, named_present=names)
+
+        self.assertFalse(asked["speak"])
+        self.assertEqual("for_somebody_else", asked["reason"])
+
+    def test_she_has_to_be_in_the_conversation_first(self):
+        # Otherwise a bystander starts answering two people talking to each other. Being spoken to
+        # in the second person only counts once she has said something herself.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+        names = {self.PAULO: "Paulo Correia", self.MARIA: "MARIA_", self.JOAO: "joaozinho"}
+
+        talk = Conversation("Aurora", self.AURORA)
+
+        overheard = talk.heard(
+            self.PAULO, "achas que vale a pena?", 11500, present=room, named_present=names)
+
+        self.assertFalse(overheard["speak"])
+
+    def test_having_just_spoken_no_longer_swallows_a_question(self):
+        """The measured spiral, which is what made her unusable.
+
+        She gave a 145-character answer that took 9.9 seconds to say, and for the eight seconds
+        afterwards everything said to her came back `just_spoke` — "Tô metendo", "Obrigado, até
+        logo", a question. The conversation carried on without her and she had no way to know. The
+        rule exists to stop her contributing *uninvited*; a question is never that.
+        """
+        room = [self.PAULO, self.MARIA, self.AURORA]
+        names = {self.PAULO: "Paulo Correia", self.MARIA: "MARIA_"}
+
+        talk = Conversation("Aurora", self.AURORA)
+        talk.spoke(10000, invited=True, to_the_room=False)
+
+        # A second later, which is well inside the quiet window she had just entered.
+        asked = talk.heard(
+            self.PAULO, "e sabes onde fica a Ericeira?", 11000,
+            present=room, named_present=names)
+
+        self.assertTrue(asked["speak"])
+        self.assertNotEqual("just_spoke", asked["reason"])
+
+    def test_without_the_names_it_does_not_guess(self):
+        # A room whose names Aurora does not know is a room where this cannot help, rather than one
+        # where she decides anyway: nothing is inferred from an absent roster.
+        room = [self.PAULO, self.MARIA, self.JOAO, self.AURORA]
+
+        talk = Conversation("Aurora", self.AURORA)
+        talk.spoke(10000, invited=True, to_the_room=True)
+
+        # Taken as hers, because there is no name in it that could say otherwise.
+        asked = talk.heard(self.PAULO, "achas que o david vem?", 11500, present=room)
+
+        self.assertTrue(asked["speak"])
+
     def test_a_grunt_is_still_not_an_opening(self):
         # The exchange staying open is not a licence to answer everything inside it.
         spoke = self._exchange([self.PAULO, self.AURORA], [

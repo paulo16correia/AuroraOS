@@ -1166,7 +1166,8 @@ def utterance_heard(state, user_id, text, at_ms):
 
     decision = (
         conversation.heard(user_id, text, at_ms,
-                           present=session.participants if session else None)
+                           present=session.participants if session else None,
+                           named_present=_everyone_named(state, session))
         if conversation is not None
         else {"speak": False, "reason": "not_conversing", "delay_ms": None})
 
@@ -1205,6 +1206,19 @@ def _remember(state, speaker, said):
     exchange = state.setdefault("exchange", [])
     exchange.append({"speaker": _name_of(state, speaker), "said": said})
     del exchange[:-EXCHANGE_REMEMBERED]
+
+
+def _everyone_named(state, session):
+    """Who is in the channel and what they are called.
+
+    What it is for: a sentence with somebody else's name in it is theirs, and knowing that is what
+    lets Aurora treat an unnamed question as hers. Built from the names already resolved for the
+    conversation record, so it costs nothing beyond what was asked for anyway.
+    """
+    if session is None:
+        return None
+
+    return {who: _name_of(state, who) for who in session.participants}
 
 
 def _name_of(state, user_id):
