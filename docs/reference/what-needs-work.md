@@ -140,16 +140,18 @@ What remains true is narrower and still worth a row: no microphone has been open
 plugin sandbox, and `platform-support.md` still says *"no key exists here"* for ElevenLabs, which
 the 400 contradicts.
 
-## 11. Two platforms are UNVERIFIED where one is VERIFIED
+## 11. One platform is UNVERIFIED, and it is the one that fails closed
 
-**Evidence.** `platform-support.md`: Linux confinement (bubblewrap) UNVERIFIED; Windows owner-only
-key files (ACL) UNVERIFIED, while macOS mode bits and Linux are VERIFIED.
+**Evidence.** `platform-support.md`: confinement is VERIFIED on all three now, and owner-only key
+files are VERIFIED on macOS and Linux. **Windows owner-only key files remain UNVERIFIED — ACL.**
 
-The Windows ACL one matters more than its row suggests: owner-only key protection is now fail-closed,
-so the mechanism that has never been verified on Windows is the one that decides whether Aurora
-starts there at all.
+This was written as "two platforms" and Linux had already been verified; the correction is the third
+thing on this list that a 63-commit-stale read got wrong.
 
----
+What remains matters more than its row suggests. Owner-only key protection is fail-closed (F-3,
+`docs/adr/0079`): if Aurora cannot establish it, Aurora refuses to start rather than continue with a
+key behind a wider permission. So the one mechanism never verified on Windows is the one that
+decides whether Aurora starts there.
 
 ## Not on this list, and deliberately
 
