@@ -32,7 +32,7 @@ public sealed class VoicePluginTests
         // Fewer than before, and the drop is the point: the OpenAI Realtime transport and the
         // telephone provider were removed, and with them fifty-four tests that covered neither
         // hearing nor speaking. What is left is one recogniser and one speaker.
-        RunPython("test_local", 54);
+        RunPython("test_local", 56);
     }
 
     [Fact]

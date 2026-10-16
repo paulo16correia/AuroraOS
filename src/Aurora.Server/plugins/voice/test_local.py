@@ -847,6 +847,39 @@ class Latency(VoiceTest):
             self.assertNotIn("api_key", json.dumps(spent))
 
 
+class TheRecogniserIsGivenALanguageNotAVariety(VoiceTest):
+    """The other half of the locale bug, in the engine that fails more quietly.
+
+    The speech service refuses a tag loudly — 400, "does not support language_code". whisper
+    answers `-l pt-PT` by printing its usage and transcribing nothing, which is indistinguishable
+    from a dead microphone. Verified by running the real binary: `-l pt` returns the sentence.
+    """
+
+    def test_a_tag_arrives_as_the_language_it_names(self):
+        for configured, expected in (
+                ("pt-PT", "pt"), ("pt-BR", "pt"), ("en-GB", "en"), ("sv-SE", "sv"),
+                ("zh-Hant-TW", "zh"), ("pt_PT", "pt"), ("pt", "pt"),
+                # Three letters survive. Filipino is `fil`, and truncating to two would make it
+                # Finnish — a language that exists, so nothing would have errored.
+                ("fil-PH", "fil")):
+            engine = speech.recogniser({"engine": "whisper", "language": configured})
+
+            if engine is None:
+                self.skipTest("whisper-cli is not on this machine")
+
+            self.assertEqual(expected, engine.language, configured)
+
+    def test_whispers_own_word_for_working_it_out_passes_through(self):
+        for configured in ("auto", "", None):
+            engine = speech.recogniser({"engine": "whisper", "language": configured})
+
+            if engine is None:
+                self.skipTest("whisper-cli is not on this machine")
+
+            # Detecting the language is a worse transcript. Refusing to transcribe is a dead one.
+            self.assertEqual("auto", engine.language, repr(configured))
+
+
 class AudioHandling(VoiceTest):
     def test_resampling_averages_rather_than_dropping_samples(self):
         loud = tone(100, rate=48000)

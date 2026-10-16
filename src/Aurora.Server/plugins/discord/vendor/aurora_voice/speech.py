@@ -1107,9 +1107,15 @@ def recogniser(settings):
             (settings or {}).get("transcripts") or [], (settings or {}).get("delay_ms"))
 
     if wanted in (None, "whisper", "whisper.cpp") and WhisperCppRecogniser.available():
+        # The language, not the variety. `language_of` is here because the speech service refuses a
+        # tag; whisper refuses one too, and more quietly — `-l pt-PT` makes it print its usage and
+        # transcribe nothing, which reads as a dead microphone rather than as a wrong setting. The
+        # owner who had set their locale correctly would have been the one to hit it.
+        #
+        # `auto` has no hyphen, so it passes through as itself, which is what it should do.
         return WhisperCppRecogniser(
             model=(settings or {}).get("model"),
-            language=(settings or {}).get("language", "auto"))
+            language=language_of((settings or {}).get("language", "auto")) or "auto")
 
     return None
 

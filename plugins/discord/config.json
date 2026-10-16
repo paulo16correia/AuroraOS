@@ -1,0 +1,7 @@
+{
+  "tts_voice": "Joana",
+  "stt_model": "ggml-base.bin",
+  "stt_language": "pt",
+  "silence_ms": 350,
+  "answer_pace": 0.0
+}
