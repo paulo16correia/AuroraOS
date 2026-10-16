@@ -215,6 +215,20 @@ each with `doctor`.
 - **No generic execution.** There is no shell capability and no arbitrary process launch. Plugins
   are the only out-of-process code, and only through the confined host.
 
+- **An operator passphrase, which is not automatic.** Anything risky enough to need approval is
+  approved through `aurora_approve`, and that is an MCP tool — so the agent can call it. The
+  passphrase is the thing the agent does not hold. The kernel asks for it **only when one is
+  enrolled**, so until you enrol one, whatever is driving Aurora can approve its own requests.
+
+  ```
+  enroll-passphrase
+  ```
+
+  The value is typed when prompted, never passed as an argument. On a machine with a desktop the
+  kernel asks for it in its own window rather than accepting it from the tool call, so the agent
+  composes neither the question nor the answer (docs/adr/0050). `revoke-passphrase` removes the
+  enrollment and returns approvals to unguarded; `doctor` reports which state you are in.
+
 ---
 
 ## 5. Secrets
@@ -349,7 +363,8 @@ dotnet run --project src/Aurora.Server -- doctor
 ```
 
 It checks the database path, every key file (present and **actually** owner-only, not merely
-"the mechanism exists"), the sandbox root, the confinement mechanism, each installed plugin's
+"the mechanism exists"), the sandbox root, the confinement mechanism, whether an operator
+passphrase is enrolled, each installed plugin's
 manifest/interpreter/interpreter-directory-grantability, and each required secret's presence (never
 its value). It reads state and changes nothing.
 

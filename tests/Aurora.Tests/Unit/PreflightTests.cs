@@ -89,6 +89,48 @@ public sealed class PreflightTests
             One(Preflight.Configuration(allowUnconfinedPlugins: false), "configuration").Status);
     }
 
+    // ---- approvals ----
+
+    [Fact]
+    public void NoEnrolledPassphraseIsAWarningThatNamesWhatItCosts()
+    {
+        PreflightCheck check = One(
+            Preflight.Approvals(new FakePassphrase(enrolled: false)), "approvals");
+
+        // The Kernel checks the passphrase only when one is enrolled, so without one anything
+        // that can call aurora_approve can approve its own request. Nothing else in the report
+        // says so, and the gap is invisible from the outside: approvals succeed either way.
+        Assert.Equal(PreflightStatus.Warn, check.Status);
+        Assert.Contains("approve its own request", check.Detail, StringComparison.Ordinal);
+
+        // And the verb that exists. Every guide in this repository once printed a command that
+        // did not (docs/adr/0079), so a check that tells an operator what to run has to be right.
+        Assert.Contains("enroll-passphrase", check.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnEnrolledPassphrasePasses()
+    {
+        Assert.Equal(
+            PreflightStatus.Pass,
+            One(Preflight.Approvals(new FakePassphrase(enrolled: true)), "approvals").Status);
+    }
+
+    [Fact]
+    public void TheApprovalsCheckNeverPrintsTheSecret()
+    {
+        foreach (var enrolled in new[] { true, false })
+        {
+            PreflightCheck check = One(
+                Preflight.Approvals(new FakePassphrase(enrolled, expected: "correct-horse")),
+                "approvals");
+
+            // The preflight report is pasted into issues and chat windows. It carries names, paths
+            // and outcomes, and never a value.
+            Assert.DoesNotContain("correct-horse", check.Detail, StringComparison.Ordinal);
+        }
+    }
+
     // ---- sandbox ----
 
     [Fact]

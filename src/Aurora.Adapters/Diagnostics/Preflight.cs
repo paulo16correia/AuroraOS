@@ -264,6 +264,42 @@ public static class Preflight
         }
     }
 
+    /// <summary>
+    /// Whether a decision to approve is a human act on this installation.
+    /// </summary>
+    /// <remarks>
+    /// <c>aurora_approve</c> is an MCP tool, so the agent can call it. The passphrase is what the
+    /// agent does not hold, and the Kernel checks it only when one is enrolled — so on an
+    /// installation without one, an untrusted reasoner can approve its own request and the gate is
+    /// decoration. That is a deliberate default (docs/adr/0011) and it is the one thing about this
+    /// deployment's posture that nothing else reports.
+    /// <para>
+    /// Warn and not Fail: Aurora works, and a machine where nothing effectful has been granted yet
+    /// is not misconfigured. Failing here would stop a scripted start over a property the owner may
+    /// not have reached a decision about.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<PreflightCheck> Approvals(IPassphraseAuthenticator passphrase)
+    {
+        if (passphrase.IsEnrolled)
+        {
+            return
+            [
+                new PreflightCheck("approvals", PreflightStatus.Pass,
+                    "an operator passphrase is enrolled, so approving a request needs a secret the "
+                    + "agent does not hold"),
+            ];
+        }
+
+        return
+        [
+            new PreflightCheck("approvals", PreflightStatus.Warn,
+                "no operator passphrase is enrolled, so anything that can call aurora_approve can "
+                + "approve its own request — including the reasoner. Enrol one with:  "
+                + "enroll-passphrase"),
+        ];
+    }
+
     /// <summary>Configuration that is legal but worth an operator's eye.</summary>
     public static IReadOnlyList<PreflightCheck> Configuration(bool allowUnconfinedPlugins)
     {

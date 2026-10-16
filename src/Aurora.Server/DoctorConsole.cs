@@ -1,3 +1,4 @@
+using Aurora.Adapters.Consent;
 using Aurora.Adapters.Diagnostics;
 using Aurora.Adapters.Events;
 using Aurora.Adapters.Persistence;
@@ -46,6 +47,8 @@ public static class DoctorConsole
             new Preflight.KeyFile("plugin", options.PluginKeyPath),
         ]));
         checks.AddRange(Preflight.Sandbox(PluginSandbox.ForThisMachine(), options.PluginRoot));
+        checks.AddRange(Preflight.Approvals(new Pbkdf2PassphraseAuthenticator(
+            options.PassphrasePath, new SystemClock(), PassphraseOptions.Default)));
         checks.AddRange(Preflight.Configuration(options.AllowUnconfinedPlugins));
 
         try

@@ -108,9 +108,13 @@ plugin-sandbox PASS — plugins confined by sandbox-exec
 
 ## Voice presence
 
-Aurora's voice is one presence with several transports (`docs/adr/0073`), and since
-`docs/adr/0074` its default speech layer runs on the owner's machine. The table is about providers
-rather than operating systems, because that is where the risk is.
+Aurora's voice is one presence with several transports (`docs/adr/0073`). **Hearing happens on the
+owner's machine and speaking does not.** `docs/adr/0074` proposed a stack that needed nobody; that
+half was given up deliberately once every local European Portuguese voice had been measured and
+none was good enough to be Aurora's. **That reversal has no ADR of its own** — it is recorded in
+the commit that made it and in `docs/guides/voice.md`, and it is the largest decision in this
+repository without a design note. The table is about providers rather than operating systems,
+because that is where the risk is.
 
 | | Status | Tests | Verified against the real thing |
 | --- | --- | --- | --- |
